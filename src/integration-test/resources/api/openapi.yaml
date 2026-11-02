@@ -1,0 +1,189 @@
+openapi: 3.1.0
+info:
+  title: api-partyoverview
+  contact: {}
+  license:
+    name: MIT License
+    url: https://opensource.org/licenses/MIT
+  version: "1.0"
+servers:
+- url: http://localhost:53899
+  description: Generated server url
+paths:
+  /{municipalityId}/parties/{partyId}/overview:
+    get:
+      tags:
+      - Party overview
+      summary: Get the overview of a party
+      description: Returns what the source systems have reported about the party.
+        A party nothing has been reported about gets an empty overview.
+      operationId: getOverview
+      parameters:
+      - name: municipalityId
+        in: path
+        description: Municipality ID
+        required: true
+        schema:
+          type: string
+        example: 2281
+      - name: partyId
+        in: path
+        description: Party ID
+        required: true
+        schema:
+          type: string
+        example: 81471222-5798-11e9-ae24-57fa13b361e1
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartyOverview"
+        "400":
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/Problem"
+                - $ref: "#/components/schemas/ConstraintViolationProblem"
+        "500":
+          description: Internal Server Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api-docs:
+    get:
+      tags:
+      - API
+      summary: OpenAPI
+      operationId: getApiDocs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/yaml:
+              schema:
+                type: string
+      x-auth-type: None
+      x-throttling-tier: Unlimited
+      x-wso2-mutual-ssl: Optional
+components:
+  schemas:
+    Problem:
+      type: object
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+        type:
+          type: string
+          format: uri
+        status:
+          type: integer
+          format: int32
+    ConstraintViolationProblem:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        status:
+          type: integer
+          format: int32
+        violations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Violation"
+        title:
+          type: string
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+    Violation:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+    Asset:
+      type: object
+      description: "Asset model, an asset a party holds or has been given by the municipality"
+      properties:
+        source:
+          type: string
+          description: The system the asset comes from
+          examples:
+          - PARTY_ASSETS
+        sourceId:
+          type: string
+          description: Id of the asset in the source system
+          examples:
+          - 1c8f38a6-b492-4037-b7dc-de5bc6c629f0
+        assetId:
+          type: string
+          description: External asset id used as an identifier by external systems
+          examples:
+          - PRH-123456789
+        origin:
+          type: string
+          description: "Where the asset originates, as the source system reports it"
+          examples:
+          - CASEDATA
+        type:
+          type: string
+          description: Asset type
+          examples:
+          - PERMIT
+        title:
+          type: string
+          description: "Asset title, shown to the party"
+          examples:
+          - Stadigvarande tillstånd för servering av alkohol
+        description:
+          type: string
+          description: Asset description
+          examples:
+          - Asset description
+        status:
+          type: string
+          description: Asset status
+          examples:
+          - ACTIVE
+        statusReason:
+          type: string
+          description: Status reason
+          examples:
+          - Status reason
+        issued:
+          type: string
+          format: date
+          description: Issued date
+          examples:
+          - 2021-01-01
+        validTo:
+          type: string
+          format: date
+          description: Valid to date
+          examples:
+          - 2021-12-31
+    PartyOverview:
+      type: object
+      description: "PartyOverview model, everything the source systems have reported\
+        \ about a party"
+      properties:
+        assets:
+          type: array
+          description: Assets the party holds
+          items:
+            $ref: "#/components/schemas/Asset"
+  securitySchemes: {}

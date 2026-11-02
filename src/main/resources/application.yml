@@ -1,0 +1,31 @@
+integration:
+  party-assets:
+    queue: api-fabriken.party-overview.party-assets
+logging:
+  level:
+    root: 'INFO'
+management:
+  health:
+    rabbit:
+      # dept44-starter-rabbitmq leaves Spring Boot's indicator out while RabbitMQ is off. Plain spring-boot-starter-amqp
+      # does not, so until the starter replaces it the indicator is turned off here.
+      enabled: false
+openapi:
+  name: ${spring.application.name}
+  title: ${spring.application.name}
+  version: '@project.version@'
+spring:
+  application:
+    name: api-partyoverview
+  datasource:
+    driver-class-name: org.mariadb.jdbc.Driver
+  flyway:
+    enabled: false
+  jpa:
+    properties:
+      jakarta:
+        persistence:
+          schema-generation:
+            database:
+              action: none
+    open-in-view: false

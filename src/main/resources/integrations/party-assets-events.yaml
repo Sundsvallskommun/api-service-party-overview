@@ -1,0 +1,83 @@
+openapi: 3.0.1
+info:
+  title: party-assets events
+  description: >-
+    The events party-assets publishes on the exchange api-fabriken.party-assets, one for every change of an asset. The
+    AMQP message id identifies the event. This copy holds the fields party-overview reads, and party-overview ignores
+    any other field.
+  version: "1.0"
+paths: {}
+components:
+  schemas:
+    AssetEvent:
+      type: object
+      description: A change of an asset in party-assets
+      properties:
+        eventType:
+          type: string
+          description: What happened to the asset. DELETED is final, and party-assets never reuses the id of the asset
+          enum:
+            - CREATED
+            - UPDATED
+            - DELETED
+        municipalityId:
+          type: string
+          description: Municipality ID
+          example: "2281"
+        revision:
+          type: integer
+          format: int32
+          description: The revision of the asset after the change. Grows with every change
+          example: 3
+        occurredAt:
+          type: string
+          format: date-time
+          description: When the change happened
+        asset:
+          $ref: "#/components/schemas/Asset"
+    Asset:
+      type: object
+      description: The asset after the change
+      properties:
+        id:
+          type: string
+          description: Unique id of the asset
+          example: 1c8f38a6-b492-4037-b7dc-de5bc6c629f0
+        assetId:
+          type: string
+          description: External asset id used as an identifier by external systems
+          example: PRH-123456789
+        origin:
+          type: string
+          description: Source of origin for the asset
+          example: CASEDATA
+        partyId:
+          type: string
+          description: The party the asset belongs to
+          example: 123e4567-e89b-12d3-a456-426614174000
+        type:
+          type: string
+          description: Asset type
+          example: PERMIT
+        title:
+          type: string
+          description: Asset title, shown to the party
+          example: Stadigvarande tillstånd för servering av alkohol
+        description:
+          type: string
+          description: Asset description
+        status:
+          type: string
+          description: Asset status
+          example: ACTIVE
+        statusReason:
+          type: string
+          description: Status reason
+        issued:
+          type: string
+          format: date
+          description: Issued date
+        validTo:
+          type: string
+          format: date
+          description: Valid to date
