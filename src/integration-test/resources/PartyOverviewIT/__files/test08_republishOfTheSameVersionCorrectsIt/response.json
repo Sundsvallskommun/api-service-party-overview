@@ -1,0 +1,14 @@
+{
+	"assets": [
+		{
+			"source": "PARTY_ASSETS",
+			"sourceId": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
+			"assetId": "PRH-0000000010",
+			"origin": "CASEDATA",
+			"type": "PERMIT",
+			"title": "Serveringstillstånd",
+			"status": "ACTIVE",
+			"issued": "2026-10-01"
+		}
+	]
+}

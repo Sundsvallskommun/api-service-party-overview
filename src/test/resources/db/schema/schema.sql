@@ -1,7 +1,9 @@
 
     create table asset (
+        deleted bit not null,
         issued date,
         valid_to date,
+        lock_version bigint not null,
         version bigint not null,
         status varchar(32),
         source varchar(64) not null,
@@ -28,7 +30,6 @@
         occurred_at datetime(6) not null,
         received_at datetime(6) not null,
         version bigint not null,
-        operation varchar(16) not null check ((operation in ('UPSERT','DELETE'))),
         object_type varchar(32) not null check ((object_type in ('ASSET'))),
         source varchar(64) not null,
         authority varchar(255),
@@ -46,11 +47,8 @@
     create index idx_asset_party_party_id 
        on asset_party (party_id);
 
-    create index idx_event_municipality_id_source_object_type_source_id 
-       on event (municipality_id, source, object_type, source_id);
-
     alter table if exists event 
-       add constraint uq_event_event_id unique (event_id);
+       add constraint uq_event_object_version unique (municipality_id, source, object_type, source_id, version);
 
     alter table if exists asset_party 
        add constraint fk_asset_party_asset_id 

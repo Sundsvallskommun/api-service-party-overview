@@ -4,8 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.OffsetDateTime;
@@ -23,18 +23,15 @@ import static org.hibernate.annotations.TimeZoneStorageType.NORMALIZE;
 import static org.hibernate.type.SqlTypes.VARCHAR;
 
 /**
- * Every event received, kept as the history of the object it describes. A DELETE is kept as a tombstone without
- * payload, once the events before it have been removed.
+ * One version of an object, kept as its history. A version received again replaces the row, so the history holds each
+ * version once. The history of an object is removed when the source deletes it.
  */
 @Entity
 @Table(name = "event",
 	uniqueConstraints = {
-		@UniqueConstraint(name = "uq_event_event_id", columnNames = {
-			"event_id"
+		@UniqueConstraint(name = "uq_event_object_version", columnNames = {
+			"municipality_id", "source", "object_type", "source_id", "version"
 		})
-	},
-	indexes = {
-		@Index(name = "idx_event_municipality_id_source_object_type_source_id", columnList = "municipality_id, source, object_type, source_id")
 	})
 public class EventEntity {
 
@@ -59,11 +56,6 @@ public class EventEntity {
 	@Column(name = "source_id", nullable = false)
 	private String sourceId;
 
-	@Enumerated(STRING)
-	@JdbcTypeCode(VARCHAR)
-	@Column(name = "operation", length = 16, nullable = false)
-	private Operation operation;
-
 	@Column(name = "version", nullable = false)
 	private Long version;
 
@@ -86,7 +78,8 @@ public class EventEntity {
 	}
 
 	@PrePersist
-	void prePersist() {
+	@PreUpdate
+	void onReceive() {
 		receivedAt = now(systemDefault()).truncatedTo(MILLIS);
 	}
 
@@ -168,19 +161,6 @@ public class EventEntity {
 		return this;
 	}
 
-	public Operation getOperation() {
-		return operation;
-	}
-
-	public void setOperation(final Operation operation) {
-		this.operation = operation;
-	}
-
-	public EventEntity withOperation(final Operation operation) {
-		this.operation = operation;
-		return this;
-	}
-
 	public Long getVersion() {
 		return version;
 	}
@@ -253,13 +233,13 @@ public class EventEntity {
 		}
 		final EventEntity that = (EventEntity) o;
 		return Objects.equals(id, that.id) && Objects.equals(eventId, that.eventId) && Objects.equals(municipalityId, that.municipalityId) && Objects.equals(source, that.source)
-			&& objectType == that.objectType && Objects.equals(sourceId, that.sourceId) && operation == that.operation && Objects.equals(version, that.version)
-			&& Objects.equals(occurredAt, that.occurredAt) && Objects.equals(receivedAt, that.receivedAt) && Objects.equals(authority, that.authority) && Objects.equals(payload, that.payload);
+			&& objectType == that.objectType && Objects.equals(sourceId, that.sourceId) && Objects.equals(version, that.version) && Objects.equals(occurredAt, that.occurredAt)
+			&& Objects.equals(receivedAt, that.receivedAt) && Objects.equals(authority, that.authority) && Objects.equals(payload, that.payload);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(id, eventId, municipalityId, source, objectType, sourceId, operation, version, occurredAt, receivedAt, authority, payload);
+		return Objects.hash(id, eventId, municipalityId, source, objectType, sourceId, version, occurredAt, receivedAt, authority, payload);
 	}
 
 	@Override
@@ -271,7 +251,6 @@ public class EventEntity {
 			", source='" + source + '\'' +
 			", objectType=" + objectType +
 			", sourceId='" + sourceId + '\'' +
-			", operation=" + operation +
 			", version=" + version +
 			", occurredAt=" + occurredAt +
 			", receivedAt=" + receivedAt +

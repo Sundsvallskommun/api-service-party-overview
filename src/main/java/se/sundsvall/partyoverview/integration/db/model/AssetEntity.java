@@ -10,16 +10,24 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.UuidGenerator;
 
 import static jakarta.persistence.FetchType.EAGER;
 import static org.hibernate.Length.LONG32;
+import static org.hibernate.annotations.FetchMode.SUBSELECT;
 
 /**
- * The current state of an asset, from the newest event received for it.
+ * The current state of an asset, from the newest event received for it. Once the source has deleted the asset, the row
+ * stays as a tombstone, marked deleted and emptied of everything but the asset's identity.
+ * <p>
+ * The row is also what keeps two consumers handling the same asset apart: a new asset collides on the unique key, a
+ * known
+ * one on lockVersion.
  */
 @Entity
 @Table(name = "asset",
@@ -46,10 +54,18 @@ public class AssetEntity {
 	@Column(name = "version", nullable = false)
 	private Long version;
 
+	@Version
+	@Column(name = "lock_version", nullable = false)
+	private Long lockVersion;
+
+	@Column(name = "deleted", nullable = false)
+	private Boolean deleted;
+
 	@Column(name = "authority")
 	private String authority;
 
 	@ElementCollection(fetch = EAGER)
+	@Fetch(SUBSELECT)
 	@CollectionTable(name = "asset_party",
 		joinColumns = @JoinColumn(name = "asset_id", referencedColumnName = "id", foreignKey = @ForeignKey(name = "fk_asset_party_asset_id")),
 		indexes = {
@@ -150,6 +166,32 @@ public class AssetEntity {
 
 	public AssetEntity withVersion(final Long version) {
 		this.version = version;
+		return this;
+	}
+
+	public Long getLockVersion() {
+		return lockVersion;
+	}
+
+	public void setLockVersion(final Long lockVersion) {
+		this.lockVersion = lockVersion;
+	}
+
+	public AssetEntity withLockVersion(final Long lockVersion) {
+		this.lockVersion = lockVersion;
+		return this;
+	}
+
+	public Boolean getDeleted() {
+		return deleted;
+	}
+
+	public void setDeleted(final Boolean deleted) {
+		this.deleted = deleted;
+	}
+
+	public AssetEntity withDeleted(final Boolean deleted) {
+		this.deleted = deleted;
 		return this;
 	}
 
@@ -303,14 +345,15 @@ public class AssetEntity {
 		}
 		final AssetEntity that = (AssetEntity) o;
 		return Objects.equals(id, that.id) && Objects.equals(municipalityId, that.municipalityId) && Objects.equals(source, that.source) && Objects.equals(sourceId, that.sourceId)
-			&& Objects.equals(version, that.version) && Objects.equals(authority, that.authority) && Objects.equals(parties, that.parties) && Objects.equals(assetId, that.assetId)
+			&& Objects.equals(version, that.version) && Objects.equals(lockVersion, that.lockVersion) && Objects.equals(deleted, that.deleted) && Objects.equals(authority, that.authority)
+			&& Objects.equals(parties, that.parties) && Objects.equals(assetId, that.assetId)
 			&& Objects.equals(origin, that.origin) && Objects.equals(type, that.type) && Objects.equals(title, that.title) && Objects.equals(description, that.description)
 			&& Objects.equals(status, that.status) && Objects.equals(statusReason, that.statusReason) && Objects.equals(issued, that.issued) && Objects.equals(validTo, that.validTo);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(id, municipalityId, source, sourceId, version, authority, parties, assetId, origin, type, title, description, status, statusReason, issued, validTo);
+		return Objects.hash(id, municipalityId, source, sourceId, version, lockVersion, deleted, authority, parties, assetId, origin, type, title, description, status, statusReason, issued, validTo);
 	}
 
 	@Override
@@ -321,6 +364,8 @@ public class AssetEntity {
 			", source='" + source + '\'' +
 			", sourceId='" + sourceId + '\'' +
 			", version=" + version +
+			", lockVersion=" + lockVersion +
+			", deleted=" + deleted +
 			", authority='" + authority + '\'' +
 			", parties=" + parties +
 			", assetId='" + assetId + '\'' +

@@ -4,7 +4,7 @@
 		"event": {
 			"eventType": "CREATED",
 			"municipalityId": "2281",
-			"revision": 1,
+			"version": 1,
 			"occurredAt": "2026-10-01T10:00:00+02:00",
 			"asset": {
 				"id": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
@@ -13,7 +13,7 @@
 				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
 				"type": "PERMIT",
 				"title": "Serveringstillstånd",
-				"status": "DRAFT",
+				"status": "ACTIVE",
 				"issued": "2026-10-01"
 			}
 		}
@@ -23,19 +23,19 @@
 		"event": {
 			"eventType": "UPDATED",
 			"municipalityId": "2281",
-			"revision": 2,
+			"version": 2,
 			"occurredAt": "2026-10-02T10:00:00+02:00",
 			"asset": {
 				"id": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
 				"assetId": "PRH-0000000010",
 				"origin": "CASEDATA",
 				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
-				"partyType": "PRIVATE",
 				"type": "PERMIT",
 				"title": "Serveringstillstånd",
 				"status": "ACTIVE",
 				"issued": "2026-10-01",
 				"validTo": "2027-10-01",
+				"partyType": "PRIVATE",
 				"additionalParameters": {
 					"foo": "bar"
 				}
@@ -47,7 +47,7 @@
 		"event": {
 			"eventType": "CREATED",
 			"municipalityId": "2281",
-			"revision": 1,
+			"version": 1,
 			"occurredAt": "2026-10-01T10:00:00+02:00",
 			"asset": {
 				"id": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
@@ -56,7 +56,7 @@
 				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
 				"type": "PERMIT",
 				"title": "Serveringstillstånd",
-				"status": "DRAFT",
+				"status": "ACTIVE",
 				"issued": "2026-10-01"
 			}
 		}
@@ -66,7 +66,7 @@
 		"event": {
 			"eventType": "CREATED",
 			"municipalityId": "2281",
-			"revision": 1,
+			"version": 1,
 			"occurredAt": "2026-10-03T10:00:00+02:00",
 			"asset": {
 				"id": "7f6e5d4c-3b2a-4190-8e7d-6c5b4a3f2e1d",
@@ -76,7 +76,7 @@
 				"type": "PERMIT",
 				"title": "Parkeringstillstånd",
 				"status": "ACTIVE",
-				"issued": "2026-10-03"
+				"issued": "2026-10-01"
 			}
 		}
 	},
@@ -85,10 +85,36 @@
 		"event": {
 			"eventType": "DELETED",
 			"municipalityId": "2281",
-			"revision": 2,
+			"version": 2,
 			"occurredAt": "2026-10-04T10:00:00+02:00",
 			"asset": {
-				"id": "7f6e5d4c-3b2a-4190-8e7d-6c5b4a3f2e1d"
+				"id": "7f6e5d4c-3b2a-4190-8e7d-6c5b4a3f2e1d",
+				"assetId": "PRH-0000000011",
+				"origin": "CASEDATA",
+				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
+				"type": "PERMIT",
+				"title": "Parkeringstillstånd",
+				"status": "ACTIVE",
+				"issued": "2026-10-01"
+			}
+		}
+	},
+	{
+		"messageId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c05",
+		"event": {
+			"eventType": "CREATED",
+			"municipalityId": "2281",
+			"version": 1,
+			"occurredAt": "2026-10-05T10:00:00+02:00",
+			"asset": {
+				"id": "8a7f6e5d-4c3b-4a21-9f8e-7d6c5b4a3f2e",
+				"assetId": "PRH-0000000012",
+				"origin": "CASEDATA",
+				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
+				"type": "PERMIT",
+				"title": "Serveringstillstånd",
+				"status": "DRAFT",
+				"issued": "2026-10-01"
 			}
 		}
 	}

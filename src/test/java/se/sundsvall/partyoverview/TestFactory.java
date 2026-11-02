@@ -6,9 +6,9 @@ import generated.se.sundsvall.partyassets.AssetEvent.EventTypeEnum;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
-import se.sundsvall.partyoverview.integration.db.model.Operation;
 import se.sundsvall.partyoverview.service.model.AssetData;
 import se.sundsvall.partyoverview.service.model.ObjectChange;
+import se.sundsvall.partyoverview.service.model.Operation;
 import se.sundsvall.partyoverview.service.model.Party;
 
 import static java.util.UUID.randomUUID;
@@ -36,11 +36,11 @@ public final class TestFactory {
 			List.of(new Party(PARTY_ID, ROLE)), assetData());
 	}
 
-	public static AssetEvent assetEvent(final EventTypeEnum eventType, final int revision) {
+	public static AssetEvent assetEvent(final EventTypeEnum eventType, final long version) {
 		return new AssetEvent()
 			.eventType(eventType)
 			.municipalityId(MUNICIPALITY_ID)
-			.revision(revision)
+			.version(version)
 			.occurredAt(OffsetDateTime.now())
 			.asset(new Asset()
 				.id(SOURCE_ID)

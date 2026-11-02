@@ -11,7 +11,7 @@
 	<groupId>se.sundsvall</groupId>
 	<artifactId>api-service-party-overview</artifactId>
 	<version>1.0</version>
-	<name>party-overview</name>
+	<name>api-service-party-overview</name>
 	<properties>
 		<generated-sources-path>${project.build.directory}/generated-sources</generated-sources-path>
 	</properties>
@@ -25,7 +25,7 @@
 			<artifactId>dept44-starter-jpa</artifactId>
 		</dependency>
 		<!-- Stand-in for dept44-starter-rabbitmq until it is released. Swap the dependency, then remove the condition on
-			PartyEventListener and management.health.rabbit.enabled in application.yml -->
+			the listeners under integration/source and management.health.rabbit.enabled in application.yml -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-amqp</artifactId>

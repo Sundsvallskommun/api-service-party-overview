@@ -9,13 +9,13 @@ import java.util.List;
 import se.sundsvall.dept44.common.validators.annotation.ValidMunicipalityId;
 import se.sundsvall.dept44.common.validators.annotation.ValidUuid;
 import se.sundsvall.partyoverview.integration.db.model.ObjectType;
-import se.sundsvall.partyoverview.integration.db.model.Operation;
 
 /**
  * A change of an object in a source system. The translator of each source creates it from the source's own event, and
- * from there on every source is handled alike. A version replaces the same or a lower one, and a DELETE is final.
+ * from there on every source is handled alike. An object and a version identify a change: a version replaces the same
+ * or a lower one, and a DELETE is final.
  *
- * @param eventId        unique id of the event, used to recognize a redelivery
+ * @param eventId        id of the event, the AMQP message id. Kept for tracing only
  * @param source         the system the event comes from, e.g. PARTY_ASSETS
  * @param objectType     what kind of object changed
  * @param operation      UPSERT for a new or changed object, DELETE when the source has removed it
@@ -24,8 +24,8 @@ import se.sundsvall.partyoverview.integration.db.model.Operation;
  * @param occurredAt     when the change happened in the source system
  * @param municipalityId the municipality the object belongs to
  * @param authority      the committee (nämnd) responsible for the object, when the translator knows it
- * @param parties        the parties the object concerns
- * @param data           the object itself. Not needed for a DELETE
+ * @param parties        the parties the object concerns. At least one for an UPSERT
+ * @param data           the object itself. Needed for an UPSERT only
  */
 public record ObjectChange(
 	@ValidUuid String eventId,

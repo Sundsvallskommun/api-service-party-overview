@@ -23,6 +23,7 @@ public final class AssetMapper {
 			.withSource(change.source())
 			.withSourceId(change.sourceId())
 			.withVersion(change.version())
+			.withDeleted(false)
 			.withAuthority(change.authority())
 			.withParties(toPartyEmbeddables(change.parties()))
 			.withAssetId(data.assetId())
@@ -34,6 +35,30 @@ public final class AssetMapper {
 			.withStatusReason(data.statusReason())
 			.withIssued(data.issued())
 			.withValidTo(data.validTo());
+	}
+
+	/**
+	 * Turns the asset into a tombstone. Nothing but its identity and the version of the deletion is kept, since nothing
+	 * about the asset may outlive its deletion in the source system.
+	 */
+	public static AssetEntity toDeletedAssetEntity(final AssetEntity entity, final ObjectChange change) {
+		return entity
+			.withMunicipalityId(change.municipalityId())
+			.withSource(change.source())
+			.withSourceId(change.sourceId())
+			.withVersion(change.version())
+			.withDeleted(true)
+			.withAuthority(null)
+			.withParties(new ArrayList<>())
+			.withAssetId(null)
+			.withOrigin(null)
+			.withType(null)
+			.withTitle(null)
+			.withDescription(null)
+			.withStatus(null)
+			.withStatusReason(null)
+			.withIssued(null)
+			.withValidTo(null);
 	}
 
 	public static List<Asset> toAssets(final List<AssetEntity> entities) {

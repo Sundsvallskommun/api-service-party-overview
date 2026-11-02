@@ -1,0 +1,59 @@
+[
+	{
+		"messageId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c21",
+		"event": {
+			"eventType": "CREATED",
+			"municipalityId": "2281",
+			"version": 1,
+			"occurredAt": "2026-10-01T10:00:00+02:00",
+			"asset": {
+				"id": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
+				"assetId": "PRH-0000000010",
+				"origin": "CASEDATA",
+				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
+				"type": "PERMIT",
+				"title": "Serveringstillstånd",
+				"status": "ACTIVE",
+				"issued": "2026-10-01"
+			}
+		}
+	},
+	{
+		"messageId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c22",
+		"event": {
+			"eventType": "DELETED",
+			"municipalityId": "2281",
+			"version": 2,
+			"occurredAt": "2026-10-02T10:00:00+02:00",
+			"asset": {
+				"id": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
+				"assetId": "PRH-0000000010",
+				"origin": "CASEDATA",
+				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
+				"type": "PERMIT",
+				"title": "Serveringstillstånd",
+				"status": "ACTIVE",
+				"issued": "2026-10-01"
+			}
+		}
+	},
+	{
+		"messageId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c23",
+		"event": {
+			"eventType": "UPDATED",
+			"municipalityId": "2281",
+			"version": 3,
+			"occurredAt": "2026-10-03T10:00:00+02:00",
+			"asset": {
+				"id": "6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c",
+				"assetId": "PRH-0000000010",
+				"origin": "CASEDATA",
+				"partyId": "d4c3b2a1-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
+				"type": "PERMIT",
+				"title": "Serveringstillstånd",
+				"status": "ACTIVE",
+				"issued": "2026-10-01"
+			}
+		}
+	}
+]

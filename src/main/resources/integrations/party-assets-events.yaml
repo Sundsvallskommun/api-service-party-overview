@@ -2,9 +2,8 @@ openapi: 3.0.1
 info:
   title: party-assets events
   description: >-
-    The events party-assets publishes on the exchange api-fabriken.party-assets, one for every change of an asset. The
-    AMQP message id identifies the event. This copy holds the fields party-overview reads, and party-overview ignores
-    any other field.
+    The events party-assets publishes on the exchange api-fabriken.party-assets, one for every change of an asset. This
+    copy holds the fields party-overview reads, and party-overview ignores any other field.
   version: "1.0"
 paths: {}
 components:
@@ -12,6 +11,12 @@ components:
     AssetEvent:
       type: object
       description: A change of an asset in party-assets
+      required:
+        - eventType
+        - municipalityId
+        - version
+        - occurredAt
+        - asset
       properties:
         eventType:
           type: string
@@ -24,11 +29,13 @@ components:
           type: string
           description: Municipality ID
           example: "2281"
-        revision:
+        version:
           type: integer
-          format: int32
-          description: The revision of the asset after the change. Grows with every change
-          example: 3
+          format: int64
+          description: >-
+            The JPA version of the asset after the change. Grows with every change, drafts included, unlike the
+            revision of the asset
+          example: 7
         occurredAt:
           type: string
           format: date-time
@@ -37,7 +44,12 @@ components:
           $ref: "#/components/schemas/Asset"
     Asset:
       type: object
-      description: The asset after the change
+      description: The asset after the change, or as it was when it was deleted
+      required:
+        - id
+        - partyId
+        - type
+        - status
       properties:
         id:
           type: string
@@ -68,7 +80,7 @@ components:
           description: Asset description
         status:
           type: string
-          description: Asset status
+          description: Asset status. party-overview skips drafts
           example: ACTIVE
         statusReason:
           type: string

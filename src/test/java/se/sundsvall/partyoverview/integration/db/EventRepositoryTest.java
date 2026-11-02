@@ -14,8 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase.Replace.NONE;
 import static se.sundsvall.partyoverview.integration.db.model.ObjectType.ASSET;
-import static se.sundsvall.partyoverview.integration.db.model.Operation.DELETE;
-import static se.sundsvall.partyoverview.integration.db.model.Operation.UPSERT;
+import static se.sundsvall.partyoverview.integration.source.Collisions.isCollision;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = NONE)
@@ -29,63 +28,61 @@ class EventRepositoryTest {
 	private static final String MUNICIPALITY_ID = "2281";
 	private static final String SOURCE = "PARTY_ASSETS";
 	private static final String SOURCE_ID = "1c8f38a6-b492-4037-b7dc-de5bc6c629f0";
-	private static final String DELETED_SOURCE_ID = "5f0b5b0a-7b1c-4cf2-9a8e-2d6f6f0f1a01";
+	private static final String OTHER_SOURCE_ID = "5f0b5b0a-7b1c-4cf2-9a8e-2d6f6f0f1a01";
 
 	@Autowired
 	private EventRepository repository;
 
 	@Test
-	void existsByEventId() {
-		assertThat(repository.existsByEventId("b82bd8ac-1507-4d9a-958d-369261eecc15")).isTrue();
-		assertThat(repository.existsByEventId("f0000000-0000-0000-0000-000000000000")).isFalse();
+	void findByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndVersion() {
+		final var result = repository.findByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndVersion(MUNICIPALITY_ID, SOURCE, ASSET, SOURCE_ID, 2L);
+
+		assertThat(result).hasValueSatisfying(event -> {
+			assertThat(event.getEventId()).isEqualTo("c0a4e9f2-6d3b-4f1a-9e8c-7b5a3d1f2e04");
+			assertThat(event.getPayload()).isEqualTo("{\"version\":2}");
+		});
 	}
 
 	@Test
-	void existsByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndOperation() {
-		assertThat(repository.existsByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndOperation(MUNICIPALITY_ID, SOURCE, ASSET, DELETED_SOURCE_ID, DELETE)).isTrue();
-		assertThat(repository.existsByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndOperation(MUNICIPALITY_ID, SOURCE, ASSET, SOURCE_ID, DELETE)).isFalse();
+	void findByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndVersionForUnknownVersion() {
+		assertThat(repository.findByMunicipalityIdAndSourceAndObjectTypeAndSourceIdAndVersion(MUNICIPALITY_ID, SOURCE, ASSET, SOURCE_ID, 3L)).isEmpty();
 	}
 
 	@Test
-	void deleteByMunicipalityIdAndSourceAndObjectTypeAndSourceId() {
+	void deleteByMunicipalityIdAndSourceAndObjectTypeAndSourceIdRemovesTheWholeHistory() {
 		repository.deleteByMunicipalityIdAndSourceAndObjectTypeAndSourceId(MUNICIPALITY_ID, SOURCE, ASSET, SOURCE_ID);
-		repository.flush();
 
 		assertThat(repository.findAll())
 			.extracting(EventEntity::getSourceId)
-			.containsExactly(DELETED_SOURCE_ID);
+			.containsExactly(OTHER_SOURCE_ID);
 	}
 
 	@Test
 	void saveAssignsAnIdAndReceivedAt() {
-		final var saved = repository.saveAndFlush(EventEntity.create()
-			.withEventId("e2c6ab14-8f5d-4b3c-9a0e-9d7c5f3b4a06")
-			.withMunicipalityId(MUNICIPALITY_ID)
-			.withSource(SOURCE)
-			.withObjectType(ASSET)
-			.withSourceId(SOURCE_ID)
-			.withOperation(UPSERT)
-			.withVersion(3L)
-			.withOccurredAt(OffsetDateTime.now())
-			.withPayload("{}"));
+		final var saved = repository.saveAndFlush(event(3L));
 
 		assertThat(saved.getId()).isNotBlank();
 		assertThat(saved.getReceivedAt()).isNotNull();
 	}
 
 	@Test
-	void duplicateEventIdIsRejected() {
-		final var duplicate = EventEntity.create()
-			.withEventId("b82bd8ac-1507-4d9a-958d-369261eecc15")
+	void sameVersionOfTheSameObjectTwiceIsRejectedAsUniqueViolation() {
+		final var duplicate = event(2L);
+
+		assertThatExceptionOfType(DataIntegrityViolationException.class)
+			.isThrownBy(() -> repository.saveAndFlush(duplicate))
+			.satisfies(exception -> assertThat(isCollision(exception)).isTrue());
+	}
+
+	private static EventEntity event(final long version) {
+		return EventEntity.create()
+			.withEventId("e2c6ab14-8f5d-4b3c-9a0e-9d7c5f3b4a06")
 			.withMunicipalityId(MUNICIPALITY_ID)
 			.withSource(SOURCE)
 			.withObjectType(ASSET)
 			.withSourceId(SOURCE_ID)
-			.withOperation(UPSERT)
-			.withVersion(3L)
-			.withOccurredAt(OffsetDateTime.now());
-
-		assertThatExceptionOfType(DataIntegrityViolationException.class)
-			.isThrownBy(() -> repository.saveAndFlush(duplicate));
+			.withVersion(version)
+			.withOccurredAt(OffsetDateTime.now())
+			.withPayload("{}");
 	}
 }

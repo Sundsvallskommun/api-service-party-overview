@@ -13,7 +13,7 @@ So far it handles assets from party-assets.
 2. The service consumes it from a queue of its own for that source, e.g. `api-fabriken.party-overview.party-assets`.
 3. The source's translator turns the event into an `ObjectChange`, the service's own model. From there on every source
    is handled alike.
-4. Every change is kept in the `event` table, as the history of the object it describes.
+4. Each version of an object is kept once in the `event` table, as the history of the object.
 5. The newest version of each object is kept in a table of its own (`asset` so far), linked to its parties.
 6. `GET /{municipalityId}/parties/{partyId}/overview` reads the newest versions.
 
@@ -26,24 +26,28 @@ applicant. The rest of the service knows nothing about the sources.
 The service keeps a copy of each source's event format in `src/main/resources/integrations` and generates its models
 from it, as for any other integration. The copy holds the fields the service reads. Other fields are ignored.
 
-|    Source    |          Exchange           |              Event format               |
-|--------------|-----------------------------|-----------------------------------------|
-| party-assets | `api-fabriken.party-assets` | `integrations/party-assets-events.yaml` |
+|    Source    |          Exchange           |              Event format               |                Skipped                 |
+|--------------|-----------------------------|-----------------------------------------|----------------------------------------|
+| party-assets | `api-fabriken.party-assets` | `integrations/party-assets-events.yaml` | Drafts, like party-assets' own listing |
 
 A source publishes in its own model, but the service relies on a few things from every source:
 
 - An event carries the whole object, not the change. The service has nowhere to fetch the rest.
-- The AMQP message id is a UUID and identifies the event. A redelivered event is recognized by it and skipped.
-- A version grows with every change of an object. Events may arrive out of order: an older version is kept as history
-  but does not replace a newer one. The same version does replace the stored object, so that publishing again corrects
+- An object and a version identify a change. The version grows with every change of the object, including changes that
+  are not shown. Events may arrive out of order: an older version is kept as history but does not replace a newer one.
+- The same version received again replaces what is stored, both the object and its history. A redelivery is therefore
+  harmless, and the AMQP message id is kept for tracing only. It must be a UUID.
+- A deletion is published, and it is final: the source never reuses the id of the object. The service removes the
+  history of the object, keeps the object as a tombstone without any personal data, and ignores every later event for
   it.
-- A deletion is published, and it is final: the source never reuses the id of the object. The service removes the object
-  and all of its history, keeps a tombstone without any personal data, and ignores every later event for the object.
-- The parties an object concerns are given by partyId, since the service makes no lookups of its own.
+- An object concerns at least one party, given by partyId, since the service makes no lookups of its own.
 - The source can publish everything it has again on request. That is how the service is loaded the first time, and how
-  it recovers if a translator has had a bug. Each event published again needs a new message id, or the service takes it
-  for a redelivery and skips it. Only the newest version is corrected that way. The history of older versions stays as
-  it was translated, unless the source can publish those versions again too.
+  it recovers if a translator has had a bug. Publishing again corrects the newest version of each object, in the
+  overview and in the history. Older versions in the history stay as they were translated, unless the source can
+  publish those versions again too.
+
+An event that breaks these rules is dead-lettered, so the dead letter queue of each source needs an alert. A deletion
+that ends up there leaves personal data behind until someone moves it back.
 
 ## Getting started
 
@@ -79,15 +83,18 @@ The service never declares exchanges, queues or bindings. They are declared in
 permission.
 
 Each source's queue is bound to the source's exchange, has a dead letter queue of its own, and must be declared with
-`x-single-active-consumer: true`. The service takes no locks when it stores an event, so with two replicas consuming at
-once an older version of an object could overwrite a newer one. The argument cannot be added to a quorum queue
-afterwards, so it has to be there when the queue is first created.
+`x-single-active-consumer: true`. The argument cannot be added to a quorum queue afterwards, so it has to be there when
+the queue is first created. Single active consumer keeps two replicas from handling the same object at once. During
+the short overlap around a redelivery it still can happen, and then the consumer that commits last collides on the
+object's lock version or unique key. Its listener requeues the message, and handling it again reads what the other
+consumer committed.
 
 ### RabbitMQ starter
 
 The service is built for `dept44-starter-rabbitmq`, which is not released yet. Until it is, `spring-boot-starter-amqp`
 stands in for it. That means the listeners have no retries or dead-lettering of their own and cannot read JSON messages
-yet. When the starter is released:
+yet. **Do not set `dept44.rabbitmq.enabled` to `true` before the swap**: every message would fail to convert and be
+dead-lettered, or dropped if the queue has no dead letter queue. When the starter is released:
 
 1. Replace `spring-boot-starter-amqp` with `dept44-starter-rabbitmq` in `pom.xml`.
 2. Remove `@ConditionalOnProperty` from the listeners under `integration/source`.

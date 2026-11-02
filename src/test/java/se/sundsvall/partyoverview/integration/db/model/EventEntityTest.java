@@ -17,7 +17,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.hamcrest.CoreMatchers.allOf;
 import static se.sundsvall.partyoverview.integration.db.model.ObjectType.ASSET;
-import static se.sundsvall.partyoverview.integration.db.model.Operation.UPSERT;
 
 class EventEntityTest {
 
@@ -57,7 +56,6 @@ class EventEntityTest {
 			.withSource(source)
 			.withObjectType(ASSET)
 			.withSourceId(sourceId)
-			.withOperation(UPSERT)
 			.withVersion(version)
 			.withOccurredAt(occurredAt)
 			.withReceivedAt(receivedAt)
@@ -71,7 +69,6 @@ class EventEntityTest {
 		assertThat(result.getSource()).isEqualTo(source);
 		assertThat(result.getObjectType()).isEqualTo(ASSET);
 		assertThat(result.getSourceId()).isEqualTo(sourceId);
-		assertThat(result.getOperation()).isEqualTo(UPSERT);
 		assertThat(result.getVersion()).isEqualTo(version);
 		assertThat(result.getOccurredAt()).isEqualTo(occurredAt);
 		assertThat(result.getReceivedAt()).isEqualTo(receivedAt);
@@ -80,10 +77,10 @@ class EventEntityTest {
 	}
 
 	@Test
-	void prePersistSetsReceivedAt() {
+	void onReceiveSetsReceivedAt() {
 		final var entity = EventEntity.create();
 
-		entity.prePersist();
+		entity.onReceive();
 
 		assertThat(entity.getReceivedAt()).isCloseTo(OffsetDateTime.now(), within(1, SECONDS));
 	}

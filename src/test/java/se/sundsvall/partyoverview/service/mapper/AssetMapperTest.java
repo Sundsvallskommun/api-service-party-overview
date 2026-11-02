@@ -23,11 +23,13 @@ import static se.sundsvall.partyoverview.TestFactory.SOURCE;
 import static se.sundsvall.partyoverview.TestFactory.SOURCE_ID;
 import static se.sundsvall.partyoverview.TestFactory.assetChange;
 import static se.sundsvall.partyoverview.TestFactory.assetData;
-import static se.sundsvall.partyoverview.integration.db.model.Operation.UPSERT;
 import static se.sundsvall.partyoverview.service.mapper.AssetMapper.toAsset;
 import static se.sundsvall.partyoverview.service.mapper.AssetMapper.toAssets;
+import static se.sundsvall.partyoverview.service.mapper.AssetMapper.toDeletedAssetEntity;
 import static se.sundsvall.partyoverview.service.mapper.AssetMapper.toPartyEmbeddables;
 import static se.sundsvall.partyoverview.service.mapper.AssetMapper.updateAssetEntity;
+import static se.sundsvall.partyoverview.service.model.Operation.DELETE;
+import static se.sundsvall.partyoverview.service.model.Operation.UPSERT;
 
 class AssetMapperTest {
 
@@ -46,6 +48,7 @@ class AssetMapperTest {
 			.withSource(SOURCE)
 			.withSourceId(SOURCE_ID)
 			.withVersion(3L)
+			.withDeleted(false)
 			.withAuthority(AUTHORITY)
 			.withParties(List.of(PartyEmbeddable.create().withPartyId(PARTY_ID).withRole(ROLE)))
 			.withAssetId("PRH-123456789")
@@ -69,6 +72,24 @@ class AssetMapperTest {
 		final var result = updateAssetEntity(entity, changeWithoutParties, assetData());
 
 		assertThat(result.getParties()).isEmpty();
+	}
+
+	@Test
+	void toDeletedAssetEntityKeepsOnlyTheIdentity() {
+		final var entity = updateAssetEntity(AssetEntity.create().withId(ID).withLockVersion(2L), assetChange(UPSERT, 3), assetData());
+
+		final var result = toDeletedAssetEntity(entity, assetChange(DELETE, 4));
+
+		assertThat(result).isSameAs(entity);
+		assertThat(result).usingRecursiveComparison().isEqualTo(AssetEntity.create()
+			.withId(ID)
+			.withLockVersion(2L)
+			.withMunicipalityId(MUNICIPALITY_ID)
+			.withSource(SOURCE)
+			.withSourceId(SOURCE_ID)
+			.withVersion(4L)
+			.withDeleted(true)
+			.withParties(List.of()));
 	}
 
 	@ParameterizedTest

@@ -1,6 +1,8 @@
     create table asset (
+        deleted bit not null,
         issued date,
         valid_to date,
+        lock_version bigint not null,
         version bigint not null,
         status varchar(32),
         source varchar(64) not null,
@@ -23,13 +25,12 @@
         party_id varchar(255) not null
     ) engine=InnoDB;
 
-    -- No check constraints on operation and object_type, unlike the schema Hibernate generates: a new object type
-    -- should not need a migration of its own.
+    -- No check constraint on object_type, unlike the schema Hibernate generates. A new object type gets a table of its
+    -- own, but should not have to alter this one.
     create table event (
         occurred_at datetime(6) not null,
         received_at datetime(6) not null,
         version bigint not null,
-        operation varchar(16) not null,
         object_type varchar(32) not null,
         source varchar(64) not null,
         authority varchar(255),
@@ -47,11 +48,8 @@
     create index idx_asset_party_party_id
        on asset_party (party_id);
 
-    create index idx_event_municipality_id_source_object_type_source_id
-       on event (municipality_id, source, object_type, source_id);
-
     alter table if exists event
-       add constraint uq_event_event_id unique (event_id);
+       add constraint uq_event_object_version unique (municipality_id, source, object_type, source_id, version);
 
     alter table if exists asset_party
        add constraint fk_asset_party_asset_id

@@ -17,6 +17,6 @@ public class PartyOverviewService {
 
 	public PartyOverview getOverview(final String municipalityId, final String partyId) {
 		return PartyOverview.create()
-			.withAssets(toAssets(assetRepository.findDistinctByMunicipalityIdAndPartiesPartyId(municipalityId, partyId)));
+			.withAssets(toAssets(assetRepository.findByMunicipalityIdAndPartyId(municipalityId, partyId)));
 	}
 }

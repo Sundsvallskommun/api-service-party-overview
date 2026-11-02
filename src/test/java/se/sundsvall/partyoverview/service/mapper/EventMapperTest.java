@@ -5,27 +5,29 @@ import se.sundsvall.partyoverview.integration.db.model.EventEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static se.sundsvall.partyoverview.TestFactory.assetChange;
-import static se.sundsvall.partyoverview.integration.db.model.Operation.DELETE;
-import static se.sundsvall.partyoverview.integration.db.model.Operation.UPSERT;
-import static se.sundsvall.partyoverview.service.mapper.EventMapper.toEventEntity;
-import static se.sundsvall.partyoverview.service.mapper.EventMapper.toTombstoneEntity;
+import static se.sundsvall.partyoverview.service.mapper.EventMapper.updateEventEntity;
+import static se.sundsvall.partyoverview.service.model.Operation.UPSERT;
 
 class EventMapperTest {
 
+	private static final String ID = "5c3f1f0e-1a2b-4c3d-8e4f-5a6b7c8d9e01";
+
 	@Test
-	void toEventEntityMapsEveryField() {
+	void updateEventEntitySetsEveryField() {
 		final var change = assetChange(UPSERT, 3);
 		final var payload = "{\"key\":\"value\"}";
+		final var entity = EventEntity.create().withId(ID);
 
-		final var result = toEventEntity(change, payload);
+		final var result = updateEventEntity(entity, change, payload);
 
+		assertThat(result).isSameAs(entity);
 		assertThat(result).usingRecursiveComparison().isEqualTo(EventEntity.create()
+			.withId(ID)
 			.withEventId(change.eventId())
 			.withMunicipalityId(change.municipalityId())
 			.withSource(change.source())
 			.withObjectType(change.objectType())
 			.withSourceId(change.sourceId())
-			.withOperation(UPSERT)
 			.withVersion(3L)
 			.withOccurredAt(change.occurredAt())
 			.withAuthority(change.authority())
@@ -33,19 +35,14 @@ class EventMapperTest {
 	}
 
 	@Test
-	void toEventEntityFromNull() {
-		assertThat(toEventEntity(null, "{}")).isNull();
-	}
+	void updateEventEntityReplacesWhatAnEarlierDeliveryStored() {
+		final var change = assetChange(UPSERT, 3);
+		final var entity = EventEntity.create().withId(ID).withEventId("earlier-event-id").withPayload("{\"earlier\":true}");
 
-	@Test
-	void toTombstoneEntityKeepsNoPayload() {
-		final var change = assetChange(DELETE, 4);
+		final var result = updateEventEntity(entity, change, "{}");
 
-		final var result = toTombstoneEntity(change);
-
+		assertThat(result.getId()).isEqualTo(ID);
 		assertThat(result.getEventId()).isEqualTo(change.eventId());
-		assertThat(result.getOperation()).isEqualTo(DELETE);
-		assertThat(result.getVersion()).isEqualTo(4L);
-		assertThat(result.getPayload()).isNull();
+		assertThat(result.getPayload()).isEqualTo("{}");
 	}
 }

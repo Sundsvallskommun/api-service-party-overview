@@ -40,6 +40,8 @@ class AssetEntityTest {
 		final var source = "PARTY_ASSETS";
 		final var sourceId = "1c8f38a6-b492-4037-b7dc-de5bc6c629f0";
 		final var version = 3L;
+		final var lockVersion = 1L;
+		final var deleted = false;
 		final var authority = "authority";
 		final var parties = List.of(PartyEmbeddable.create().withPartyId("81471222-5798-11e9-ae24-57fa13b361e1"));
 		final var assetId = "PRH-123456789";
@@ -58,6 +60,8 @@ class AssetEntityTest {
 			.withSource(source)
 			.withSourceId(sourceId)
 			.withVersion(version)
+			.withLockVersion(lockVersion)
+			.withDeleted(deleted)
 			.withAuthority(authority)
 			.withParties(parties)
 			.withAssetId(assetId)
@@ -76,6 +80,8 @@ class AssetEntityTest {
 		assertThat(result.getSource()).isEqualTo(source);
 		assertThat(result.getSourceId()).isEqualTo(sourceId);
 		assertThat(result.getVersion()).isEqualTo(version);
+		assertThat(result.getLockVersion()).isEqualTo(lockVersion);
+		assertThat(result.getDeleted()).isEqualTo(deleted);
 		assertThat(result.getAuthority()).isEqualTo(authority);
 		assertThat(result.getParties()).isEqualTo(parties);
 		assertThat(result.getAssetId()).isEqualTo(assetId);

@@ -29,7 +29,7 @@ class PartyOverviewServiceTest {
 
 	@Test
 	void getOverview() {
-		when(assetRepositoryMock.findDistinctByMunicipalityIdAndPartiesPartyId(MUNICIPALITY_ID, PARTY_ID))
+		when(assetRepositoryMock.findByMunicipalityIdAndPartyId(MUNICIPALITY_ID, PARTY_ID))
 			.thenReturn(List.of(AssetEntity.create().withSourceId("1").withTitle("title")));
 
 		final var result = service.getOverview(MUNICIPALITY_ID, PARTY_ID);
@@ -37,18 +37,18 @@ class PartyOverviewServiceTest {
 		assertThat(result.getAssets())
 			.extracting(Asset::getSourceId, Asset::getTitle)
 			.containsExactly(tuple("1", "title"));
-		verify(assetRepositoryMock).findDistinctByMunicipalityIdAndPartiesPartyId(MUNICIPALITY_ID, PARTY_ID);
+		verify(assetRepositoryMock).findByMunicipalityIdAndPartyId(MUNICIPALITY_ID, PARTY_ID);
 		verifyNoMoreInteractions(assetRepositoryMock);
 	}
 
 	@Test
 	void getOverviewForPartyWithoutAssets() {
-		when(assetRepositoryMock.findDistinctByMunicipalityIdAndPartiesPartyId(MUNICIPALITY_ID, PARTY_ID)).thenReturn(List.of());
+		when(assetRepositoryMock.findByMunicipalityIdAndPartyId(MUNICIPALITY_ID, PARTY_ID)).thenReturn(List.of());
 
 		final var result = service.getOverview(MUNICIPALITY_ID, PARTY_ID);
 
 		assertThat(result.getAssets()).isEmpty();
-		verify(assetRepositoryMock).findDistinctByMunicipalityIdAndPartiesPartyId(MUNICIPALITY_ID, PARTY_ID);
+		verify(assetRepositoryMock).findByMunicipalityIdAndPartyId(MUNICIPALITY_ID, PARTY_ID);
 		verifyNoMoreInteractions(assetRepositoryMock);
 	}
 }
