@@ -89,16 +89,12 @@ the short overlap around a redelivery it still can happen, and then the consumer
 object's lock version or unique key. Its listener requeues the message, and handling it again reads what the other
 consumer committed.
 
-### RabbitMQ starter
+### RabbitMQ
 
-The service is built for `dept44-starter-rabbitmq`, which is not released yet. Until it is, `spring-boot-starter-amqp`
-stands in for it. That means the listeners have no retries or dead-lettering of their own and cannot read JSON messages
-yet. **Do not set `dept44.rabbitmq.enabled` to `true` before the swap**: every message would fail to convert and be
-dead-lettered, or dropped if the queue has no dead letter queue. When the starter is released:
-
-1. Replace `spring-boot-starter-amqp` with `dept44-starter-rabbitmq` in `pom.xml`.
-2. Remove `@ConditionalOnProperty` from the listeners under `integration/source`.
-3. Remove `management.health.rabbit.enabled` from `application.yml`.
+The listeners run on `dept44-starter-rabbitmq`. It reads each message as the type of the listener's parameter, retries
+a failure that may pass, such as a database that does not answer, and dead-letters the rest. Its README has the details.
+With `dept44.rabbitmq.enabled` off, the default, the service does not connect to the broker and the events wait in the
+queues.
 
 ## API documentation
 

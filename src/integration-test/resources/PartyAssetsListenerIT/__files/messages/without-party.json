@@ -1,0 +1,17 @@
+{
+	"eventType": "CREATED",
+	"municipalityId": "2281",
+	"version": 0,
+	"occurredAt": "2026-11-03T14:12:09.123+01:00",
+	"asset": {
+		"id": "3f2c8a51-6d4e-4b7a-9c1f-2e8d5b6a7c90",
+		"assetId": "CON-0000000021",
+		"origin": "CASEDATA",
+		"type": "PERMIT",
+		"title": "Bygglov för fritidshus",
+		"description": "Bygglov",
+		"status": "ACTIVE",
+		"issued": "2023-01-01",
+		"validTo": "2099-12-31"
+	}
+}

@@ -19,3 +19,7 @@ spring:
             scripts:
               action: create
               create-target: target/database/generated-schema.sql
+logbook:
+  body-filters:
+    allowlist:
+      enabled: false

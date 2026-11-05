@@ -11,3 +11,7 @@ spring:
           schema-generation:
             database:
               action: validate
+logbook:
+  body-filters:
+    allowlist:
+      enabled: false
