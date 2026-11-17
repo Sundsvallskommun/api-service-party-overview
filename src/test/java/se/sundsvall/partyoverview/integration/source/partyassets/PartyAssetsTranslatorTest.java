@@ -1,7 +1,8 @@
 package se.sundsvall.partyoverview.integration.source.partyassets;
 
 import generated.se.sundsvall.partyassets.AssetEvent;
-import generated.se.sundsvall.partyassets.AssetEvent.EventTypeEnum;
+import generated.se.sundsvall.partyassets.AssetEvent.EventType;
+import generated.se.sundsvall.partyassets.Status;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,7 +29,7 @@ class PartyAssetsTranslatorTest {
 
 	@Test
 	void toObjectChangeMapsEveryField() {
-		final var event = assetEvent(EventTypeEnum.UPDATED, 3);
+		final var event = assetEvent(EventType.UPDATED, 3);
 
 		final var result = toObjectChange(MESSAGE_ID, event);
 
@@ -42,16 +43,16 @@ class PartyAssetsTranslatorTest {
 		"UPDATED, UPSERT",
 		"DELETED, DELETE"
 	})
-	void toObjectChangeTranslatesTheEventType(final EventTypeEnum eventType, final Operation expected) {
+	void toObjectChangeTranslatesTheEventType(final EventType eventType, final Operation expected) {
 		assertThat(toObjectChange(MESSAGE_ID, assetEvent(eventType, 1)))
 			.hasValueSatisfying(change -> assertThat(change.operation()).isEqualTo(expected));
 	}
 
 	@ParameterizedTest
-	@EnumSource(EventTypeEnum.class)
-	void toObjectChangeSkipsDrafts(final EventTypeEnum eventType) {
+	@EnumSource(EventType.class)
+	void toObjectChangeSkipsDrafts(final EventType eventType) {
 		final var event = assetEvent(eventType, 1);
-		event.getAsset().setStatus("DRAFT");
+		event.getAsset().setStatus(Status.DRAFT);
 
 		assertThat(toObjectChange(MESSAGE_ID, event)).isEmpty();
 	}

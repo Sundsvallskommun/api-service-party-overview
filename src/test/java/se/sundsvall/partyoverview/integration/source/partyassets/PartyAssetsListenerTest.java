@@ -1,6 +1,7 @@
 package se.sundsvall.partyoverview.integration.source.partyassets;
 
-import generated.se.sundsvall.partyassets.AssetEvent.EventTypeEnum;
+import generated.se.sundsvall.partyassets.AssetEvent.EventType;
+import generated.se.sundsvall.partyassets.Status;
 import java.sql.SQLException;
 import java.util.stream.Stream;
 import org.hibernate.exception.ConstraintViolationException;
@@ -39,7 +40,7 @@ class PartyAssetsListenerTest {
 
 	@Test
 	void receive() {
-		final var event = assetEvent(EventTypeEnum.UPDATED, 1);
+		final var event = assetEvent(EventType.UPDATED, 1);
 
 		listener.receive(event, MESSAGE_ID);
 
@@ -49,8 +50,8 @@ class PartyAssetsListenerTest {
 
 	@Test
 	void receiveDraft() {
-		final var event = assetEvent(EventTypeEnum.CREATED, 1);
-		event.getAsset().setStatus("DRAFT");
+		final var event = assetEvent(EventType.CREATED, 1);
+		event.getAsset().setStatus(Status.DRAFT);
 
 		listener.receive(event, MESSAGE_ID);
 
@@ -60,7 +61,7 @@ class PartyAssetsListenerTest {
 	@ParameterizedTest
 	@MethodSource("collisions")
 	void receiveRequeuesACollision(final RuntimeException collision) {
-		final var event = assetEvent(EventTypeEnum.UPDATED, 1);
+		final var event = assetEvent(EventType.UPDATED, 1);
 		doThrow(collision).when(eventServiceMock).handle(any());
 
 		assertThatExceptionOfType(ImmediateRequeueAmqpException.class)
@@ -72,7 +73,7 @@ class PartyAssetsListenerTest {
 	@ParameterizedTest
 	@MethodSource("otherFailures")
 	void receiveLeavesAnyOtherFailureToTheStarter(final RuntimeException failure) {
-		final var event = assetEvent(EventTypeEnum.UPDATED, 1);
+		final var event = assetEvent(EventType.UPDATED, 1);
 		doThrow(failure).when(eventServiceMock).handle(any());
 
 		assertThatExceptionOfType(RuntimeException.class)

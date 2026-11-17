@@ -23,12 +23,14 @@ Each source has a package of its own under `integration/source`, with a listener
 holds what the source does not know itself, such as which committee (nämnd) a namespace belongs to or which role means
 applicant. The rest of the service knows nothing about the sources.
 
-The service keeps a copy of each source's event format in `src/main/resources/integrations` and generates its models
-from it, as for any other integration. The copy holds the fields the service reads. Other fields are ignored.
+The service keeps a copy of each source's event contract in `src/main/resources/integrations` and generates its models
+from it with the [ZenWave SDK](https://www.zenwave360.io/zenwave-sdk/) Maven plugin. The copy is the source's AsyncAPI
+document exactly as the source publishes it, so updating it means copying the file again. party-assets keeps its
+document in `src/integration-test/resources/api/asyncapi.yaml`. Fields the service does not read are ignored.
 
-|    Source    |          Exchange           |              Event format               |                Skipped                 |
-|--------------|-----------------------------|-----------------------------------------|----------------------------------------|
-| party-assets | `api-fabriken.party-assets` | `integrations/party-assets-events.yaml` | Drafts, like party-assets' own listing |
+|    Source    |          Exchange           |              Event contract               |                Skipped                 |
+|--------------|-----------------------------|-------------------------------------------|----------------------------------------|
+| party-assets | `api-fabriken.party-assets` | `integrations/party-assets-asyncapi.yaml` | Drafts, like party-assets' own listing |
 
 A source publishes in its own model, but the service relies on a few things from every source:
 

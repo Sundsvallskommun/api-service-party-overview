@@ -2,7 +2,8 @@ package se.sundsvall.partyoverview.integration.source.partyassets;
 
 import generated.se.sundsvall.partyassets.Asset;
 import generated.se.sundsvall.partyassets.AssetEvent;
-import generated.se.sundsvall.partyassets.AssetEvent.EventTypeEnum;
+import generated.se.sundsvall.partyassets.AssetEvent.EventType;
+import generated.se.sundsvall.partyassets.Status;
 import java.util.List;
 import java.util.Optional;
 import se.sundsvall.partyoverview.service.model.AssetData;
@@ -27,13 +28,12 @@ public final class PartyAssetsTranslator {
 
 	static final String SOURCE = "PARTY_ASSETS";
 	static final String OWNER_ROLE = "OWNER";
-	static final String DRAFT_STATUS = "DRAFT";
 
 	private PartyAssetsTranslator() {}
 
 	public static Optional<ObjectChange> toObjectChange(final String messageId, final AssetEvent event) {
 		final var asset = ofNullable(event.getAsset());
-		if (asset.map(Asset::getStatus).filter(DRAFT_STATUS::equals).isPresent()) {
+		if (asset.map(Asset::getStatus).filter(Status.DRAFT::equals).isPresent()) {
 			return Optional.empty();
 		}
 
@@ -52,7 +52,7 @@ public final class PartyAssetsTranslator {
 			asset.map(PartyAssetsTranslator::toAssetData).orElse(null)));
 	}
 
-	private static Operation toOperation(final EventTypeEnum eventType) {
+	private static Operation toOperation(final EventType eventType) {
 		return switch (eventType) {
 			case CREATED, UPDATED -> UPSERT;
 			case DELETED -> DELETE;
@@ -70,7 +70,7 @@ public final class PartyAssetsTranslator {
 			asset.getType(),
 			asset.getTitle(),
 			asset.getDescription(),
-			asset.getStatus(),
+			ofNullable(asset.getStatus()).map(Status::value).orElse(null),
 			asset.getStatusReason(),
 			asset.getIssued(),
 			asset.getValidTo());

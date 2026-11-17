@@ -2,7 +2,8 @@ package se.sundsvall.partyoverview;
 
 import generated.se.sundsvall.partyassets.Asset;
 import generated.se.sundsvall.partyassets.AssetEvent;
-import generated.se.sundsvall.partyassets.AssetEvent.EventTypeEnum;
+import generated.se.sundsvall.partyassets.AssetEvent.EventType;
+import generated.se.sundsvall.partyassets.Status;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -36,23 +37,23 @@ public final class TestFactory {
 			List.of(new Party(PARTY_ID, ROLE)), assetData());
 	}
 
-	public static AssetEvent assetEvent(final EventTypeEnum eventType, final long version) {
+	public static AssetEvent assetEvent(final EventType eventType, final long version) {
 		return new AssetEvent()
-			.eventType(eventType)
-			.municipalityId(MUNICIPALITY_ID)
-			.version(version)
-			.occurredAt(OffsetDateTime.now())
-			.asset(new Asset()
-				.id(SOURCE_ID)
-				.assetId("PRH-123456789")
-				.origin("CASEDATA")
-				.partyId(PARTY_ID)
-				.type("PERMIT")
-				.title("title")
-				.description("description")
-				.status("ACTIVE")
-				.statusReason("statusReason")
-				.issued(ISSUED)
-				.validTo(VALID_TO));
+			.withEventType(eventType)
+			.withMunicipalityId(MUNICIPALITY_ID)
+			.withVersion(version)
+			.withOccurredAt(OffsetDateTime.now())
+			.withAsset(new Asset()
+				.withId(SOURCE_ID)
+				.withAssetId("PRH-123456789")
+				.withOrigin("CASEDATA")
+				.withPartyId(PARTY_ID)
+				.withType("PERMIT")
+				.withTitle("title")
+				.withDescription("description")
+				.withStatus(Status.ACTIVE)
+				.withStatusReason("statusReason")
+				.withIssued(ISSUED)
+				.withValidTo(VALID_TO));
 	}
 }
