@@ -35,51 +35,51 @@ listar de krav party-overview ställer på det.
 
 ## 0. Beslutslogg
 
-| #  | Beslut | Valdes bort | Skäl |
-|----|--------|-------------|------|
-| 1  | Tjänsten behåller namnet party-overview: repot `api-service-party-overview`, paketet `se.sundsvall.partyoverview` och köerna `api-fabriken.party-overview.<källa>`. | Byta namn till crm. | Repot och namnet finns redan, så ett namnbyte vore bara kostnad. |
-| 2  | POC-koden skrotas och `V1_0__create_tables.sql` skrivs om från grunden. | En `V1_1` som tar bort POC-tabellerna. | V1_0 har aldrig körts mot någon miljö. |
-| 3  | Källsystemen är master för engagemang och kunddata. party-overview lagrar envelope-data men aldrig meddelandets payload. | Att lagra hela payloaden, som POC:en gör. | Tjänsten ska vara lättviktig, och en payload kan innehålla personuppgifter som inte behövs. |
-| 4  | Kunddata (namn, adress, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST. | Att party-overview är master för kunddata. | Källsystemen har redan datan, och det ska bara finnas en skrivväg. |
-| 5  | Noteringar ägs av party-overview och skapas, ändras och raderas via REST. En notering hör alltid till ett namespace, och det finns inga globala noteringar. | Noteringar från källsystem. | Noteringar är kundvyns egna anteckningar, och kravet är att en verksamhet bara ser sina egna. |
-| 6  | En notering på en kund som inte finns skapar kunden. Party avgör partytypen, och Citizen eller LegalEntity ger namn och adress. | Att svara 404 för okända kunder. | Handläggaren ska kunna anteckna om en kund som inget källsystem har nämnt än. |
-| 7  | Engagemang syns för alla verksamheter i kommunen, med namespace som valfritt filter. Kontaktuppgifter syns för det egna namespacet plus de globala. Noteringar syns bara för det egna namespacet. | Att begränsa engagemang till eget namespace, eller att göra synligheten konfigurerbar. | Kundvyn ska ge helheten. Det som är känsligt stoppas redan hos publiceraren (beslut 19). |
-| 8  | Ett engagemang lagras som en rad per kund. Ett ärende med tre kunder blir alltså tre rader. | En delad rad med kopplingstabell. | Det är det enda alternativet där `DELETE FROM customer` direkt i databasen tar med allt och inte lämnar föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data. |
-| 9  | En gemensam tabell, `engagement`, med en typkolumn för ärenden, assets och kontrakt. | En tabell per typ. | Typerna har samma envelope, och kundvyns lista sorterad på "senast ändrad" blir en enda indexerad fråga i stället för en UNION. |
-| 10 | Historiken ligger i en tabell per förälder, `engagement_history` och `note_history`, med FK och `on delete cascade`. | En gemensam polymorf tabell. | En polymorf tabell kan inte ha FK, och då försvinner kaskaden. |
-| 11 | Den tekniska loggen har ingen FK till kunden. Den finns kvar efter en kundradering och sparas tills den raderas manuellt via REST (§8.2). | Mjukradering, att loggen kaskadraderas med kunden, eller automatisk gallring. | Loggen ska kunna visa att kunden raderades. Beställaren vill behålla loggen tills någon aktivt raderar den. |
-| 12 | Versionsvakten ligger i ett register per källobjekt, `source_object`, som saknar koppling till kunder och persondata. En DELETE lämnar en tombstone, och en senare UPDATE med högre version väcker objektet till liv igen. Tombstones sparas för alltid. | En vakt på engagemangsraderna, ett register över message-id, eller gallring av tombstones. | När objektet är raderat finns inga engagemangsrader kvar att jämföra mot, och en gammal UPDATE från en grundladdning skulle då väcka det till liv. Tombstones innehåller inga personuppgifter. |
-| 13 | Samtidighet hanteras med radlås på `source_object` och kunder (IODKU + `SELECT … FOR UPDATE`, kunderna i partyId-ordning), plus `x-single-active-consumer` på varje kö. | Att lita enbart på single-active-consumer, som POC:en gör. | Flera köer och REST kan skriva till samma kund. Single-active-consumer behövs ändå för att objektets historik ska komma i rätt ordning. |
-| 14 | En kund raderas av ett CUSTOMER DELETE-meddelande, av REST DELETE eller automatiskt när kunden saknar både engagemang och noteringar. | — | Beställarens krav. |
-| 15 | party-overview härleder kontaktpersoner. En part med kontaktpersonsroll blir kontaktperson på objektets företagskunder men blir aldrig själv kund. Vilka roller som räknas som kontaktpersonsroller konfigureras per kommun och källa via REST. | Att publiceraren kopplar ihop dem, eller en lista i `application.yml`. | Beställarens val. I SM är rollerna metadata per namespace, så nya roller ska inte kräva en deploy. |
-| 16 | Publicerarna skickar partyId när de har det. Det som ändå kommer som personnummer eller organisationsnummer mappar party-overview till partyId via api-service-party. Sådana nummer lagras och loggas aldrig. En part som Party inte hittar hoppas över. | Att bara party-overview mappar, eller att bara publicerarna gör det. | Personnummer ska färdas över köerna så sällan som möjligt, men kravtexten gäller fortfarande. Ett 404 från Party blir inte bättre av omförsök. |
-| 17 | En lyssnare och en mappning hanterar alla köer. Källan bestäms av kön, inte av något i meddelandet. | Ett paket och en översättare per källa, som i POC:en. | Det gemensamma formatet gör översättarna onödiga. Kön kan dessutom bara nås via källans egen exchange. |
-| 18 | Historiken byggs bara av de aktiviteter meddelandet bär (vad som hände och vem som gjorde det). Ett meddelande från en grundladdning bär inga aktiviteter. | Att party-overview själv härleder CREATED och UPDATED. | Bara källan vet vad som hände och vem som gjorde det. |
-| 19 | SupportManagement publicerar bara ärenden från namespaces som har slagit på det i `namespace_config`. | Att alltid publicera, eller att publicera utan titel. | SM har åtkomstkontroll per namespace, och party-overview får inte kringgå den. |
-| 20 | Varje publicerare har en transaktionell outbox och en relay som körs direkt efter commit och dessutom schemalagt med ShedLock. Grundladdningen går genom samma outbox. | En gemensam outbox i dept44, eller att publicera efter commit utan outbox. | Inga meddelanden får tappas, och mönstret finns redan i SM. |
-| 21 | Namn och adress följer regeln "nyast vinner", mätt på källans `sourceModified`. | Att den som skrev senast vinner. | Ordningen blir deterministisk oavsett i vilken ordning meddelandena kommer, även vid grundladdning. |
-| 22 | Kontaktuppgifter lagras per engagemang och ersätts som helhet varje gång ett meddelande appliceras. Dubbletter slås ihop vid läsning. | Ett separat kontaktregister per kund. | Uppgifterna följer källobjektet och försvinner med det. Det finns aldrig några inaktuella kontaktuppgifter att städa bort. |
-| 23 | contract och party-assets publicerar utan namespace. Deras engagemang och kontaktuppgifter blir därmed globala. | Ett fast namespace per publicerare. | Ingen av källorna har namespace, och beställaren valde förslaget. |
-| 24 | party-overview kan slå upp en kund på personnummer eller organisationsnummer via `POST …/customers/lookup`, med numret i kroppen. Numret mappas till partyId via Party och kastas sedan. | Att bara ta emot partyId. | Tredjepartstjänster som anropar party-overview har inte alltid partyId. Numret ska inte ligga i URL:en. |
-| 25 | Kunder kan sökas med fritext via OpenSearch, med Hibernate Search som i SupportManagement (§6.2). Hibernate Search sköter mappning, schema, fråge-DSL och MassIndexer, men dess automatiska lyssnare är avstängda. I stället markeras kunder för indexering i tabellen `search_index_queue` i samma transaktion som ändringen, och en relay skriver till indexet. | SM:s asynkrona lyssnare med nattlig reindexering, eller opensearch-java utan Hibernate Search. | Lyssnarna ser varken IODKU, bulk-delete eller databasens kaskad. Asynkron indexering utan kö kan tappa ändringar. Kön ger leveransgaranti och slår ihop ändringar per kund, vilket behövs vid grundladdning. |
-| 25a | Ingen databastrigger fångar raderingar för sökindexet. Tjänsten markerar sina egna raderingar. En kund som raderas direkt i databasen filtreras bort ur sökträffarna och försvinner ur indexet vid nästa reindexering. | En `after delete`-trigger på `customer`. | En trigger kräver särskilda databasrättigheter och syns inte i `schema.sql`. Att radera direkt i databasen är en manuell undantagsåtgärd. |
-| 25b | Sökfrågan är `simple_query_string` med AND, och klienten får inte använda full Lucene-syntax. Kontaktuppgifter indexeras i ett fält per namespace (`contacts_ns_<namespace>`) och i ett globalt fält, inte som `nested`. | SM:s fulla Lucene-syntax och `nested`-dokument. | Full syntax kostade SM ett 40-tal rättelser. Med ett fält per namespace blir synligheten en del av frågan, och AND fungerar över namn och kontaktuppgifter. |
-| 26 | SupportManagement publicerar inte utkast (`lifecycle = DRAFT`). | Att publicera utkast. | Ett utkast är inget engagemang än. |
-| 27 | Skyddad identitet (§5.4) är en egenskap på kunden med tre nivåer: `NONE`, `SECRECY_MARKING` och `PROTECTED_REGISTRATION`. Den effektiva nivån är den högsta av folkbokföringens (Citizen), CUSTOMER-meddelandenas och engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna kontaktuppgifter, och de indexeras inte för sökning. | Att lagra uppgifterna och bara dölja dem i API:et, eller att bara lita på publicerarnas flagga. | Skatteverkets och eSams vägledning: namn, adress, telefon och e-post är skyddsvärda, man ska inte hämta eller spara mer än nödvändigt, och skyddet ska hållas uppdaterat från folkbokföringens flaggor. SPAR gör likadant och tar bort namn och adress. |
-| 28 | Folkbokföringens skyddsstatus hämtas från Citizen (`ShowClassified=true`) när en privatkund skapas, och dessutom för alla privatkunder varje natt. | Att bara kontrollera vid skapandet, eller att bara lita på meddelandena. | Skyddet kan tillkomma eller upphöra när som helst, och vägledningen kräver att uppgifterna hålls uppdaterade. |
-| 29 | Den tekniska loggen raderas inte automatiskt när en kund raderas på begäran enligt GDPR. Den kan raderas manuellt (§8.2). | Att radera loggen direkt. | partyId är ett pseudonymt id, och loggen innehåller inga andra personuppgifter. |
-| 30 | De administrativa endpoints (kundradering, teknisk logg och kontaktpersonsroller) ligger i samma API som resten. | En egen API-produkt i gatewayen. | API:et är internt, och användarna är förvaltningen själv. |
-| 31 | Dead letter-köerna har ingen TTL, och drift och utvecklare har åtkomst. En health-indikator i party-overview blir `DOWN` när någon av dem innehåller meddelanden, och Spring Boot Admin larmar då till Slack (§12.1). | TTL på köerna, eller larm i brokerns egen övervakning. | Inget meddelande får försvinna utan att någon har tittat på det. Spring Boot Admin med Slack-notifiering används redan. |
-| 32 | Organisationsnummer skickas i URL:en mot Party, eftersom Party saknar batch för `ENTERPRISE`. | Att beställa en POST-endpoint i Party. | Det är befintlig funktionalitet och accepterat. |
-| 33 | Kontaktpersonsrollerna sätts till `CONTACT_PERSON` för SupportManagement, contract och Casedata via REST vid driftsättning. | Att lägga in startvärdena i en Flyway-migrering. | Migreringarna ska vara oberoende av kommun. |
-| 34 | Casedata blir en publicerare av `ERRAND` med källan `CASE_DATA` (§11.5). Ärenden med `confidential = true` publiceras som `DELETE`. | Att publicera sekretessmarkerade ärenden. | Beställaren räknar Casedata som ärendekälla. Ett ärende markerat som sekretess ska inte synas för hela kommunen. |
-| 35 | Läsningar av skyddade kunder loggas inte särskilt i version 1. | En egen åtkomstlogg. | party-overview lagrar inga namn, adresser eller kontaktuppgifter för skyddade kunder. |
-| 36 | En notering kan bara skapas med partyId. En tjänst som bara har personnummer hämtar partyId från Party först. | Att skapa en notering direkt med personnummer. | Beställarens val. |
-| 37 | Casedata publicerar bara namespacet `SBK_MEX` tills dataskyddsombudet har tagit ställning till parkeringstillstånd och färdtjänst. Kontaktpersonsrollen för `CASE_DATA` är bara `CONTACT_PERSON`. | Att publicera alla namespaces från början. | Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden. |
-| 38 | party-overview får en egen OpenSearch-container per miljö i väntan på ett riktigt kluster, som SupportManagement har. Indexnamnet `customer` behöver därför inget miljöprefix. | Att dela kluster med SupportManagement. | Indexet byggs alltid om från databasen, så en enkel container räcker tills klustret finns. |
-| 39 | I princip allt om kunden är sökbart: namn, adress, kontaktuppgifter och kontaktpersoner, engagemangens referens, titel och kategori, samt det egna namespacets noteringar. För en skyddad kund är bara engagemangens referenser sökbara (§6.2). | Att bara söka på namn, adress och kontaktuppgifter. | Beställarens krav. En referens som ärendenummer avslöjar inget om en skyddad person, men fritext i titlar och noteringar kan göra det. |
-| 40 | Sökindexets relay körs direkt efter varje commit som markerar kunder, och dessutom var 10:e sekund som skyddsnät. En ändring blir sökbar inom någon sekund. | Bara schemalagd körning. | Med OpenSearch som eget system kan indexeringen inte ingå i databasens transaktion utan att meddelandeflödet blir beroende av OpenSearch och håller lås medan det väntar. Med körning direkt efter commit blir fördröjningen ändå kort. |
-| 41 | `classified = "J"` i Citizen tolkas som sekretessmarkering, och `protectedNR = "J"` som skyddad folkbokföring. | Den omvända tolkningen, som api-service-caremanagement har i sin javadoc. | "NR" betyder folkbokföring (jämför fältet `nrDate`), och Citizen-dokumentationen skiljer på sekretessmarkerade personer och personer med skyddad folkbokföring. Det verifieras mot testpersoner i C3. |
+|  #  |                                                                                                                                                                                Beslut                                                                                                                                                                                |                                           Valdes bort                                           |                                                                                                                          Skäl                                                                                                                           |
+|-----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1   | Tjänsten behåller namnet party-overview: repot `api-service-party-overview`, paketet `se.sundsvall.partyoverview` och köerna `api-fabriken.party-overview.<källa>`.                                                                                                                                                                                                  | Byta namn till crm.                                                                             | Repot och namnet finns redan, så ett namnbyte vore bara kostnad.                                                                                                                                                                                        |
+| 2   | POC-koden skrotas och `V1_0__create_tables.sql` skrivs om från grunden.                                                                                                                                                                                                                                                                                              | En `V1_1` som tar bort POC-tabellerna.                                                          | V1_0 har aldrig körts mot någon miljö.                                                                                                                                                                                                                  |
+| 3   | Källsystemen är master för engagemang och kunddata. party-overview lagrar envelope-data men aldrig meddelandets payload.                                                                                                                                                                                                                                             | Att lagra hela payloaden, som POC:en gör.                                                       | Tjänsten ska vara lättviktig, och en payload kan innehålla personuppgifter som inte behövs.                                                                                                                                                             |
+| 4   | Kunddata (namn, adress, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST.                                                                                                                                                                                                                                                | Att party-overview är master för kunddata.                                                      | Källsystemen har redan datan, och det ska bara finnas en skrivväg.                                                                                                                                                                                      |
+| 5   | Noteringar ägs av party-overview och skapas, ändras och raderas via REST. En notering hör alltid till ett namespace, och det finns inga globala noteringar.                                                                                                                                                                                                          | Noteringar från källsystem.                                                                     | Noteringar är kundvyns egna anteckningar, och kravet är att en verksamhet bara ser sina egna.                                                                                                                                                           |
+| 6   | En notering på en kund som inte finns skapar kunden. Party avgör partytypen, och Citizen eller LegalEntity ger namn och adress.                                                                                                                                                                                                                                      | Att svara 404 för okända kunder.                                                                | Handläggaren ska kunna anteckna om en kund som inget källsystem har nämnt än.                                                                                                                                                                           |
+| 7   | Engagemang syns för alla verksamheter i kommunen, med namespace som valfritt filter. Kontaktuppgifter syns för det egna namespacet plus de globala. Noteringar syns bara för det egna namespacet.                                                                                                                                                                    | Att begränsa engagemang till eget namespace, eller att göra synligheten konfigurerbar.          | Kundvyn ska ge helheten. Det som är känsligt stoppas redan hos publiceraren (beslut 19).                                                                                                                                                                |
+| 8   | Ett engagemang lagras som en rad per kund. Ett ärende med tre kunder blir alltså tre rader.                                                                                                                                                                                                                                                                          | En delad rad med kopplingstabell.                                                               | Det är det enda alternativet där `DELETE FROM customer` direkt i databasen tar med allt och inte lämnar föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data.                                                               |
+| 9   | En gemensam tabell, `engagement`, med en typkolumn för ärenden, assets och kontrakt.                                                                                                                                                                                                                                                                                 | En tabell per typ.                                                                              | Typerna har samma envelope, och kundvyns lista sorterad på "senast ändrad" blir en enda indexerad fråga i stället för en UNION.                                                                                                                         |
+| 10  | Historiken ligger i en tabell per förälder, `engagement_history` och `note_history`, med FK och `on delete cascade`.                                                                                                                                                                                                                                                 | En gemensam polymorf tabell.                                                                    | En polymorf tabell kan inte ha FK, och då försvinner kaskaden.                                                                                                                                                                                          |
+| 11  | Den tekniska loggen har ingen FK till kunden. Den finns kvar efter en kundradering och sparas tills den raderas manuellt via REST (§8.2).                                                                                                                                                                                                                            | Mjukradering, att loggen kaskadraderas med kunden, eller automatisk gallring.                   | Loggen ska kunna visa att kunden raderades. Beställaren vill behålla loggen tills någon aktivt raderar den.                                                                                                                                             |
+| 12  | Versionsvakten ligger i ett register per källobjekt, `source_object`, som saknar koppling till kunder och persondata. En DELETE lämnar en tombstone, och en senare UPDATE med högre version väcker objektet till liv igen. Tombstones sparas för alltid.                                                                                                             | En vakt på engagemangsraderna, ett register över message-id, eller gallring av tombstones.      | När objektet är raderat finns inga engagemangsrader kvar att jämföra mot, och en gammal UPDATE från en grundladdning skulle då väcka det till liv. Tombstones innehåller inga personuppgifter.                                                          |
+| 13  | Samtidighet hanteras med radlås på `source_object` och kunder (IODKU + `SELECT … FOR UPDATE`, kunderna i partyId-ordning), plus `x-single-active-consumer` på varje kö.                                                                                                                                                                                              | Att lita enbart på single-active-consumer, som POC:en gör.                                      | Flera köer och REST kan skriva till samma kund. Single-active-consumer behövs ändå för att objektets historik ska komma i rätt ordning.                                                                                                                 |
+| 14  | En kund raderas av ett CUSTOMER DELETE-meddelande, av REST DELETE eller automatiskt när kunden saknar både engagemang och noteringar.                                                                                                                                                                                                                                | —                                                                                               | Beställarens krav.                                                                                                                                                                                                                                      |
+| 15  | party-overview härleder kontaktpersoner. En part med kontaktpersonsroll blir kontaktperson på objektets företagskunder men blir aldrig själv kund. Vilka roller som räknas som kontaktpersonsroller konfigureras per kommun och källa via REST.                                                                                                                      | Att publiceraren kopplar ihop dem, eller en lista i `application.yml`.                          | Beställarens val. I SM är rollerna metadata per namespace, så nya roller ska inte kräva en deploy.                                                                                                                                                      |
+| 16  | Publicerarna skickar partyId när de har det. Det som ändå kommer som personnummer eller organisationsnummer mappar party-overview till partyId via api-service-party. Sådana nummer lagras och loggas aldrig. En part som Party inte hittar hoppas över.                                                                                                             | Att bara party-overview mappar, eller att bara publicerarna gör det.                            | Personnummer ska färdas över köerna så sällan som möjligt, men kravtexten gäller fortfarande. Ett 404 från Party blir inte bättre av omförsök.                                                                                                          |
+| 17  | En lyssnare och en mappning hanterar alla köer. Källan bestäms av kön, inte av något i meddelandet.                                                                                                                                                                                                                                                                  | Ett paket och en översättare per källa, som i POC:en.                                           | Det gemensamma formatet gör översättarna onödiga. Kön kan dessutom bara nås via källans egen exchange.                                                                                                                                                  |
+| 18  | Historiken byggs bara av de aktiviteter meddelandet bär (vad som hände och vem som gjorde det). Ett meddelande från en grundladdning bär inga aktiviteter.                                                                                                                                                                                                           | Att party-overview själv härleder CREATED och UPDATED.                                          | Bara källan vet vad som hände och vem som gjorde det.                                                                                                                                                                                                   |
+| 19  | SupportManagement publicerar bara ärenden från namespaces som har slagit på det i `namespace_config`.                                                                                                                                                                                                                                                                | Att alltid publicera, eller att publicera utan titel.                                           | SM har åtkomstkontroll per namespace, och party-overview får inte kringgå den.                                                                                                                                                                          |
+| 20  | Varje publicerare har en transaktionell outbox och en relay som körs direkt efter commit och dessutom schemalagt med ShedLock. Grundladdningen går genom samma outbox.                                                                                                                                                                                               | En gemensam outbox i dept44, eller att publicera efter commit utan outbox.                      | Inga meddelanden får tappas, och mönstret finns redan i SM.                                                                                                                                                                                             |
+| 21  | Namn och adress följer regeln "nyast vinner", mätt på källans `sourceModified`.                                                                                                                                                                                                                                                                                      | Att den som skrev senast vinner.                                                                | Ordningen blir deterministisk oavsett i vilken ordning meddelandena kommer, även vid grundladdning.                                                                                                                                                     |
+| 22  | Kontaktuppgifter lagras per engagemang och ersätts som helhet varje gång ett meddelande appliceras. Dubbletter slås ihop vid läsning.                                                                                                                                                                                                                                | Ett separat kontaktregister per kund.                                                           | Uppgifterna följer källobjektet och försvinner med det. Det finns aldrig några inaktuella kontaktuppgifter att städa bort.                                                                                                                              |
+| 23  | contract och party-assets publicerar utan namespace. Deras engagemang och kontaktuppgifter blir därmed globala.                                                                                                                                                                                                                                                      | Ett fast namespace per publicerare.                                                             | Ingen av källorna har namespace, och beställaren valde förslaget.                                                                                                                                                                                       |
+| 24  | party-overview kan slå upp en kund på personnummer eller organisationsnummer via `POST …/customers/lookup`, med numret i kroppen. Numret mappas till partyId via Party och kastas sedan.                                                                                                                                                                             | Att bara ta emot partyId.                                                                       | Tredjepartstjänster som anropar party-overview har inte alltid partyId. Numret ska inte ligga i URL:en.                                                                                                                                                 |
+| 25  | Kunder kan sökas med fritext via OpenSearch, med Hibernate Search som i SupportManagement (§6.2). Hibernate Search sköter mappning, schema, fråge-DSL och MassIndexer, men dess automatiska lyssnare är avstängda. I stället markeras kunder för indexering i tabellen `search_index_queue` i samma transaktion som ändringen, och en relay skriver till indexet.    | SM:s asynkrona lyssnare med nattlig reindexering, eller opensearch-java utan Hibernate Search.  | Lyssnarna ser varken IODKU, bulk-delete eller databasens kaskad. Asynkron indexering utan kö kan tappa ändringar. Kön ger leveransgaranti och slår ihop ändringar per kund, vilket behövs vid grundladdning.                                            |
+| 25a | Ingen databastrigger fångar raderingar för sökindexet. Tjänsten markerar sina egna raderingar. En kund som raderas direkt i databasen filtreras bort ur sökträffarna och försvinner ur indexet vid nästa reindexering.                                                                                                                                               | En `after delete`-trigger på `customer`.                                                        | En trigger kräver särskilda databasrättigheter och syns inte i `schema.sql`. Att radera direkt i databasen är en manuell undantagsåtgärd.                                                                                                               |
+| 25b | Sökfrågan är `simple_query_string` med AND, och klienten får inte använda full Lucene-syntax. Kontaktuppgifter indexeras i ett fält per namespace (`contacts_ns_<namespace>`) och i ett globalt fält, inte som `nested`.                                                                                                                                             | SM:s fulla Lucene-syntax och `nested`-dokument.                                                 | Full syntax kostade SM ett 40-tal rättelser. Med ett fält per namespace blir synligheten en del av frågan, och AND fungerar över namn och kontaktuppgifter.                                                                                             |
+| 26  | SupportManagement publicerar inte utkast (`lifecycle = DRAFT`).                                                                                                                                                                                                                                                                                                      | Att publicera utkast.                                                                           | Ett utkast är inget engagemang än.                                                                                                                                                                                                                      |
+| 27  | Skyddad identitet (§5.4) är en egenskap på kunden med tre nivåer: `NONE`, `SECRECY_MARKING` och `PROTECTED_REGISTRATION`. Den effektiva nivån är den högsta av folkbokföringens (Citizen), CUSTOMER-meddelandenas och engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna kontaktuppgifter, och de indexeras inte för sökning. | Att lagra uppgifterna och bara dölja dem i API:et, eller att bara lita på publicerarnas flagga. | Skatteverkets och eSams vägledning: namn, adress, telefon och e-post är skyddsvärda, man ska inte hämta eller spara mer än nödvändigt, och skyddet ska hållas uppdaterat från folkbokföringens flaggor. SPAR gör likadant och tar bort namn och adress. |
+| 28  | Folkbokföringens skyddsstatus hämtas från Citizen (`ShowClassified=true`) när en privatkund skapas, och dessutom för alla privatkunder varje natt.                                                                                                                                                                                                                   | Att bara kontrollera vid skapandet, eller att bara lita på meddelandena.                        | Skyddet kan tillkomma eller upphöra när som helst, och vägledningen kräver att uppgifterna hålls uppdaterade.                                                                                                                                           |
+| 29  | Den tekniska loggen raderas inte automatiskt när en kund raderas på begäran enligt GDPR. Den kan raderas manuellt (§8.2).                                                                                                                                                                                                                                            | Att radera loggen direkt.                                                                       | partyId är ett pseudonymt id, och loggen innehåller inga andra personuppgifter.                                                                                                                                                                         |
+| 30  | De administrativa endpoints (kundradering, teknisk logg och kontaktpersonsroller) ligger i samma API som resten.                                                                                                                                                                                                                                                     | En egen API-produkt i gatewayen.                                                                | API:et är internt, och användarna är förvaltningen själv.                                                                                                                                                                                               |
+| 31  | Dead letter-köerna har ingen TTL, och drift och utvecklare har åtkomst. En health-indikator i party-overview blir `DOWN` när någon av dem innehåller meddelanden, och Spring Boot Admin larmar då till Slack (§12.1).                                                                                                                                                | TTL på köerna, eller larm i brokerns egen övervakning.                                          | Inget meddelande får försvinna utan att någon har tittat på det. Spring Boot Admin med Slack-notifiering används redan.                                                                                                                                 |
+| 32  | Organisationsnummer skickas i URL:en mot Party, eftersom Party saknar batch för `ENTERPRISE`.                                                                                                                                                                                                                                                                        | Att beställa en POST-endpoint i Party.                                                          | Det är befintlig funktionalitet och accepterat.                                                                                                                                                                                                         |
+| 33  | Kontaktpersonsrollerna sätts till `CONTACT_PERSON` för SupportManagement, contract och Casedata via REST vid driftsättning.                                                                                                                                                                                                                                          | Att lägga in startvärdena i en Flyway-migrering.                                                | Migreringarna ska vara oberoende av kommun.                                                                                                                                                                                                             |
+| 34  | Casedata blir en publicerare av `ERRAND` med källan `CASE_DATA` (§11.5). Ärenden med `confidential = true` publiceras som `DELETE`.                                                                                                                                                                                                                                  | Att publicera sekretessmarkerade ärenden.                                                       | Beställaren räknar Casedata som ärendekälla. Ett ärende markerat som sekretess ska inte synas för hela kommunen.                                                                                                                                        |
+| 35  | Läsningar av skyddade kunder loggas inte särskilt i version 1.                                                                                                                                                                                                                                                                                                       | En egen åtkomstlogg.                                                                            | party-overview lagrar inga namn, adresser eller kontaktuppgifter för skyddade kunder.                                                                                                                                                                   |
+| 36  | En notering kan bara skapas med partyId. En tjänst som bara har personnummer hämtar partyId från Party först.                                                                                                                                                                                                                                                        | Att skapa en notering direkt med personnummer.                                                  | Beställarens val.                                                                                                                                                                                                                                       |
+| 37  | Casedata publicerar bara namespacet `SBK_MEX` tills dataskyddsombudet har tagit ställning till parkeringstillstånd och färdtjänst. Kontaktpersonsrollen för `CASE_DATA` är bara `CONTACT_PERSON`.                                                                                                                                                                    | Att publicera alla namespaces från början.                                                      | Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden.                                                                                                                                                                            |
+| 38  | party-overview får en egen OpenSearch-container per miljö i väntan på ett riktigt kluster, som SupportManagement har. Indexnamnet `customer` behöver därför inget miljöprefix.                                                                                                                                                                                       | Att dela kluster med SupportManagement.                                                         | Indexet byggs alltid om från databasen, så en enkel container räcker tills klustret finns.                                                                                                                                                              |
+| 39  | I princip allt om kunden är sökbart: namn, adress, kontaktuppgifter och kontaktpersoner, engagemangens referens, titel och kategori, samt det egna namespacets noteringar. För en skyddad kund är bara engagemangens referenser sökbara (§6.2).                                                                                                                      | Att bara söka på namn, adress och kontaktuppgifter.                                             | Beställarens krav. En referens som ärendenummer avslöjar inget om en skyddad person, men fritext i titlar och noteringar kan göra det.                                                                                                                  |
+| 40  | Sökindexets relay körs direkt efter varje commit som markerar kunder, och dessutom var 10:e sekund som skyddsnät. En ändring blir sökbar inom någon sekund.                                                                                                                                                                                                          | Bara schemalagd körning.                                                                        | Med OpenSearch som eget system kan indexeringen inte ingå i databasens transaktion utan att meddelandeflödet blir beroende av OpenSearch och håller lås medan det väntar. Med körning direkt efter commit blir fördröjningen ändå kort.                 |
+| 41  | `classified = "J"` i Citizen tolkas som sekretessmarkering, och `protectedNR = "J"` som skyddad folkbokföring.                                                                                                                                                                                                                                                       | Den omvända tolkningen, som api-service-caremanagement har i sin javadoc.                       | "NR" betyder folkbokföring (jämför fältet `nrDate`), och Citizen-dokumentationen skiljer på sekretessmarkerade personer och personer med skyddad folkbokföring. Det verifieras mot testpersoner i C3.                                                   |
 
 ---
 
@@ -111,13 +111,13 @@ flowchart LR
     FE -->|detaljer om ett objekt| CD
 ```
 
-| Del | Ansvar |
-|-----|--------|
-| Publicerare | Äger sina objekt. Varje ändring publiceras som hela objektets tillstånd (`UPDATE`) eller som `DELETE`. Kan publicera om allt (grundladdning). |
-| RabbitMQ | En exchange per publicerare och en kö per källa för party-overview. Varje kö har en dead letter-kö. Topologin deklareras i rabbitmq-topology. |
-| party-overview | Gör upsert av kunder och engagemang, för historik och teknisk logg, äger noteringarna och exponerar kundvyn via REST. |
-| OpenSearch | Sökindex för fritextsökning bland kunderna. MariaDB är master, och indexet kan alltid byggas om därifrån. |
-| Frontend | Bygger kundvyn från party-overview och hämtar detaljer om ett objekt från källsystemet med `source` och `sourceId`. |
+|      Del       |                                                                    Ansvar                                                                     |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| Publicerare    | Äger sina objekt. Varje ändring publiceras som hela objektets tillstånd (`UPDATE`) eller som `DELETE`. Kan publicera om allt (grundladdning). |
+| RabbitMQ       | En exchange per publicerare och en kö per källa för party-overview. Varje kö har en dead letter-kö. Topologin deklareras i rabbitmq-topology. |
+| party-overview | Gör upsert av kunder och engagemang, för historik och teknisk logg, äger noteringarna och exponerar kundvyn via REST.                         |
+| OpenSearch     | Sökindex för fritextsökning bland kunderna. MariaDB är master, och indexet kan alltid byggas om därifrån.                                     |
+| Frontend       | Bygger kundvyn från party-overview och hämtar detaljer om ett objekt från källsystemet med `source` och `sourceId`.                           |
 
 ---
 
@@ -153,45 +153,45 @@ inte i ett giltigt meddelande, och ett meddelande som bryter mot kraven dead-let
 
 **AMQP-egenskaper**
 
-| Egenskap | Krav |
-|----------|------|
-| `message-id` | **krav**, UUID. Samma meddelande får samma id om det skickas igen, medan en grundladdning ger nya id:n. |
-| `content-type` | `application/json` |
-| `x-request-id` | Sätts av dept44-starter-rabbitmq och lagras i den tekniska loggen. |
-| Routing key | `<objektTyp>.<operation>` med gemener, t.ex. `errand.update` eller `customer.delete`. |
+|    Egenskap    |                                                  Krav                                                   |
+|----------------|---------------------------------------------------------------------------------------------------------|
+| `message-id`   | **krav**, UUID. Samma meddelande får samma id om det skickas igen, medan en grundladdning ger nya id:n. |
+| `content-type` | `application/json`                                                                                      |
+| `x-request-id` | Sätts av dept44-starter-rabbitmq och lagras i den tekniska loggen.                                      |
+| Routing key    | `<objektTyp>.<operation>` med gemener, t.ex. `errand.update` eller `customer.delete`.                   |
 
 **Kropp**
 
-| Fält | Typ | Krav | Beskrivning |
-|------|-----|------|-------------|
-| `operation` | `UPDATE` \| `DELETE` | **krav** | `UPDATE` innebär hela tillståndet och används även vid grundladdning. |
-| `objectType` | `ERRAND` \| `ASSET` \| `CONTRACT` \| `CUSTOMER` | **krav** | |
-| `municipalityId` | sträng | **krav** | Valideras med `@ValidMunicipalityId`. |
-| `namespace` | sträng | valfri | Valideras med `@ValidNamespace`. Saknas den räknas objektet och dess kontaktuppgifter som globala. |
-| `sourceId` | sträng | **krav** utom för `CUSTOMER` | Objektets id i källan, aldrig ett personnummer. |
-| `version` | heltal (long) | **krav** | Ökar vid varje publicerad ändring av objektet. En `DELETE` bär minst den senaste versionen. |
-| `sourceModified` | tidpunkt med zon | **krav** vid `UPDATE` | När objektet senast ändrades i källan. Sorteringsnyckel och mått för "nyast vinner". |
-| `activities[]` | lista | valfri | Det som hände i den här ändringen. Listan är tom vid grundladdning. |
-| `activities[].type` | sträng | **krav** | T.ex. `CREATED`, `UPDATED`, `STATUS_CHANGED`. Källan bestämmer värdena. |
-| `activities[].description` | sträng ≤ 1024 | valfri | Kort text utan personuppgifter. |
-| `activities[].performedBy.type` | sträng | valfri | T.ex. `AD_ACCOUNT`, `PARTY_ID` eller `SYSTEM`. |
-| `activities[].performedBy.value` | sträng | valfri | Den som utförde ändringen, från `X-Sent-By` i källan. |
-| `activities[].occurredAt` | tidpunkt med zon | **krav** | |
-| `object.reference` | sträng | valfri | Visningsid, t.ex. ärendenummer, `assetId` eller `contractId`. |
-| `object.title` | sträng | valfri | |
-| `object.category` | sträng | valfri | Typ eller klassificering i källan. |
-| `object.status` | sträng | valfri | Källans statuskod. Frontend översätter den. |
-| `object.validFrom`, `object.validTo` | datum | valfri | |
-| `object.sourceCreated` | tidpunkt med zon | valfri | |
-| `parties[]` | lista | **krav** vid `UPDATE` (kan vara tom) | Objektets parter. För `CUSTOMER` exakt en. |
-| `parties[].partyId` | UUID | partyId eller legalId | Bör alltid skickas när publiceraren har det. |
-| `parties[].legalId` | sträng | partyId eller legalId | Personnummer eller organisationsnummer. Används bara när partyId saknas, och party-overview mappar det och kastar det sedan. |
-| `parties[].partyType` | `PRIVATE` \| `ENTERPRISE` | **krav** | |
-| `parties[].roles[]` | strängar | valfri | Källans rollkoder. |
-| `parties[].name` | sträng | valfri | Visningsnamn: för- och efternamn, eller organisationsnamn. |
-| `parties[].address` | objekt | valfri | `careOf`, `street`, `postalCode`, `city`, `country`. |
-| `parties[].contactChannels[]` | lista | valfri | `type` (t.ex. `EMAIL`, `PHONE`) och `value`. |
-| `parties[].protection` | `SECRECY_MARKING` \| `PROTECTED_REGISTRATION` | valfri | Sätts när källan vet att parten har skyddade personuppgifter. Då skickas varken `name`, `address` eller `contactChannels`. |
+|                 Fält                 |                       Typ                       |                 Krav                 |                                                         Beskrivning                                                          |
+|--------------------------------------|-------------------------------------------------|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| `operation`                          | `UPDATE` \| `DELETE`                            | **krav**                             | `UPDATE` innebär hela tillståndet och används även vid grundladdning.                                                        |
+| `objectType`                         | `ERRAND` \| `ASSET` \| `CONTRACT` \| `CUSTOMER` | **krav**                             |                                                                                                                              |
+| `municipalityId`                     | sträng                                          | **krav**                             | Valideras med `@ValidMunicipalityId`.                                                                                        |
+| `namespace`                          | sträng                                          | valfri                               | Valideras med `@ValidNamespace`. Saknas den räknas objektet och dess kontaktuppgifter som globala.                           |
+| `sourceId`                           | sträng                                          | **krav** utom för `CUSTOMER`         | Objektets id i källan, aldrig ett personnummer.                                                                              |
+| `version`                            | heltal (long)                                   | **krav**                             | Ökar vid varje publicerad ändring av objektet. En `DELETE` bär minst den senaste versionen.                                  |
+| `sourceModified`                     | tidpunkt med zon                                | **krav** vid `UPDATE`                | När objektet senast ändrades i källan. Sorteringsnyckel och mått för "nyast vinner".                                         |
+| `activities[]`                       | lista                                           | valfri                               | Det som hände i den här ändringen. Listan är tom vid grundladdning.                                                          |
+| `activities[].type`                  | sträng                                          | **krav**                             | T.ex. `CREATED`, `UPDATED`, `STATUS_CHANGED`. Källan bestämmer värdena.                                                      |
+| `activities[].description`           | sträng ≤ 1024                                   | valfri                               | Kort text utan personuppgifter.                                                                                              |
+| `activities[].performedBy.type`      | sträng                                          | valfri                               | T.ex. `AD_ACCOUNT`, `PARTY_ID` eller `SYSTEM`.                                                                               |
+| `activities[].performedBy.value`     | sträng                                          | valfri                               | Den som utförde ändringen, från `X-Sent-By` i källan.                                                                        |
+| `activities[].occurredAt`            | tidpunkt med zon                                | **krav**                             |                                                                                                                              |
+| `object.reference`                   | sträng                                          | valfri                               | Visningsid, t.ex. ärendenummer, `assetId` eller `contractId`.                                                                |
+| `object.title`                       | sträng                                          | valfri                               |                                                                                                                              |
+| `object.category`                    | sträng                                          | valfri                               | Typ eller klassificering i källan.                                                                                           |
+| `object.status`                      | sträng                                          | valfri                               | Källans statuskod. Frontend översätter den.                                                                                  |
+| `object.validFrom`, `object.validTo` | datum                                           | valfri                               |                                                                                                                              |
+| `object.sourceCreated`               | tidpunkt med zon                                | valfri                               |                                                                                                                              |
+| `parties[]`                          | lista                                           | **krav** vid `UPDATE` (kan vara tom) | Objektets parter. För `CUSTOMER` exakt en.                                                                                   |
+| `parties[].partyId`                  | UUID                                            | partyId eller legalId                | Bör alltid skickas när publiceraren har det.                                                                                 |
+| `parties[].legalId`                  | sträng                                          | partyId eller legalId                | Personnummer eller organisationsnummer. Används bara när partyId saknas, och party-overview mappar det och kastar det sedan. |
+| `parties[].partyType`                | `PRIVATE` \| `ENTERPRISE`                       | **krav**                             |                                                                                                                              |
+| `parties[].roles[]`                  | strängar                                        | valfri                               | Källans rollkoder.                                                                                                           |
+| `parties[].name`                     | sträng                                          | valfri                               | Visningsnamn: för- och efternamn, eller organisationsnamn.                                                                   |
+| `parties[].address`                  | objekt                                          | valfri                               | `careOf`, `street`, `postalCode`, `city`, `country`.                                                                         |
+| `parties[].contactChannels[]`        | lista                                           | valfri                               | `type` (t.ex. `EMAIL`, `PHONE`) och `value`.                                                                                 |
+| `parties[].protection`               | `SECRECY_MARKING` \| `PROTECTED_REGISTRATION`   | valfri                               | Sätts när källan vet att parten har skyddade personuppgifter. Då skickas varken `name`, `address` eller `contactChannels`.   |
 
 En part som saknar både partyId och legalId kan bara bli kontaktperson (§5.3). Annars ignoreras den.
 
@@ -245,12 +245,12 @@ och genererar sina modeller från den, som för alla andra integrationer.
 
 ### 3.2 Topologi
 
-| Publicerare | Exchange | Kö för party-overview | Källa (`source`) |
-|-------------|----------|------------------------|------------------|
+|    Publicerare    |             Exchange              |              Kö för party-overview               |   Källa (`source`)   |
+|-------------------|-----------------------------------|--------------------------------------------------|----------------------|
 | SupportManagement | `api-fabriken.support-management` | `api-fabriken.party-overview.support-management` | `SUPPORT_MANAGEMENT` |
-| party-assets | `api-fabriken.party-assets` | `api-fabriken.party-overview.party-assets` | `PARTY_ASSETS` |
-| contract | `api-fabriken.contract` | `api-fabriken.party-overview.contract` | `CONTRACT` |
-| Casedata | `api-fabriken.case-data` | `api-fabriken.party-overview.case-data` | `CASE_DATA` |
+| party-assets      | `api-fabriken.party-assets`       | `api-fabriken.party-overview.party-assets`       | `PARTY_ASSETS`       |
+| contract          | `api-fabriken.contract`           | `api-fabriken.party-overview.contract`           | `CONTRACT`           |
+| Casedata          | `api-fabriken.case-data`          | `api-fabriken.party-overview.case-data`          | `CASE_DATA`          |
 
 Varje kö deklareras i rabbitmq-topology som en quorum-kö med följande:
 
@@ -296,11 +296,11 @@ MessageListener (alla köer)                          ingen transaktion
 
 `s` är versionen i `source_object`, och `v` är meddelandets version.
 
-| Lagrat `source_object` | `UPDATE` med version v | `DELETE` med version v |
-|------------------------|-------------------------|-------------------------|
-| saknas | Tillämpa. Raden skapas med version v. | Spara en tombstone (`deleted = true`, version v). |
-| aktivt, version s | `v < s`: inaktuellt.<br/>`v = s`: tillämpa som rättning, utan historik.<br/>`v > s`: tillämpa med historik. | `v < s`: inaktuellt.<br/>`v ≥ s`: radera objektets engagemang och markera raden som raderad. |
-| raderat, version s | `v ≤ s`: inaktuellt.<br/>`v > s`: objektet väcks till liv. Tillämpa med historik. | `v ≤ s`: inaktuellt.<br/>`v > s`: höj versionen, inget mer. |
+| Lagrat `source_object` |                                           `UPDATE` med version v                                            |                                    `DELETE` med version v                                    |
+|------------------------|-------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| saknas                 | Tillämpa. Raden skapas med version v.                                                                       | Spara en tombstone (`deleted = true`, version v).                                            |
+| aktivt, version s      | `v < s`: inaktuellt.<br/>`v = s`: tillämpa som rättning, utan historik.<br/>`v > s`: tillämpa med historik. | `v < s`: inaktuellt.<br/>`v ≥ s`: radera objektets engagemang och markera raden som raderad. |
+| raderat, version s     | `v ≤ s`: inaktuellt.<br/>`v > s`: objektet väcks till liv. Tillämpa med historik.                           | `v ≤ s`: inaktuellt.<br/>`v > s`: höj versionen, inget mer.                                  |
 
 - Ett inaktuellt meddelande ändrar ingenting utom den tekniska loggen (`IGNORED_STALE`).
 - Om samma meddelande levereras igen blir det en rättning med samma version, och därmed ingen dubblerad historik.
@@ -353,11 +353,11 @@ Radera kunden med allt den äger (§3.6) och logga `CUSTOMER_DELETED`.
 
 En kund raderas i tre fall:
 
-| Orsak | Kanal i loggen | Objekttyp i loggen |
-|-------|----------------|--------------------|
-| Ett `CUSTOMER DELETE`-meddelande | `MESSAGE` | `CUSTOMER` |
-| `DELETE /{municipalityId}/customers/{partyId}` | `REST` | — |
-| Sista engagemanget är borta och kunden har inga noteringar | `MESSAGE` | det objekt som tog bort engagemanget |
+|                           Orsak                            | Kanal i loggen |          Objekttyp i loggen          |
+|------------------------------------------------------------|----------------|--------------------------------------|
+| Ett `CUSTOMER DELETE`-meddelande                           | `MESSAGE`      | `CUSTOMER`                           |
+| `DELETE /{municipalityId}/customers/{partyId}`             | `REST`         | —                                    |
+| Sista engagemanget är borta och kunden har inga noteringar | `MESSAGE`      | det objekt som tog bort engagemanget |
 
 - Raderingen görs som en bulk-delete (`@Modifying(flushAutomatically = true, clearAutomatically = true)`).
   Databasens kaskad tar resten. Hibernate får alltså inte ha barnrader laddade som det sedan försöker skriva tillbaka.
@@ -370,14 +370,14 @@ En kund raderas i tre fall:
 
 Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
 
-| Fel | Följd |
-|-----|-------|
-| Valideringsfel (`ConstraintViolationException`), okänd objekttyp, saknad version | Dead letter direkt |
-| Party svarar 404 på ett legalId | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `sourceId`, men utan legalId. |
-| 5xx från Party (`ServerProblem`) | Omförsök i cirka 8 minuter, sedan dead letter |
-| Databasen svarar inte, öppen circuit breaker | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit` |
-| Deadlock eller lock timeout (`TransientDataAccessException`) | Omförsök |
-| `DataIntegrityViolationException` | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer. |
+|                                       Fel                                        |                                                      Följd                                                      |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| Valideringsfel (`ConstraintViolationException`), okänd objekttyp, saknad version | Dead letter direkt                                                                                              |
+| Party svarar 404 på ett legalId                                                  | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `sourceId`, men utan legalId. |
+| 5xx från Party (`ServerProblem`)                                                 | Omförsök i cirka 8 minuter, sedan dead letter                                                                   |
+| Databasen svarar inte, öppen circuit breaker                                     | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                       |
+| Deadlock eller lock timeout (`TransientDataAccessException`)                     | Omförsök                                                                                                        |
+| `DataIntegrityViolationException`                                                | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                   |
 
 Ett meddelande som misslyckas rullas tillbaka helt och syns inte i den tekniska loggen. Det syns i starterns WARN-rad
 och i dead letter-kön.
@@ -435,20 +435,20 @@ erDiagram
 
 **`customer`**: en kund per kommun och partyId.
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `id` | varchar(36) | nej | PK |
-| `municipality_id` | varchar(8) | nej | |
-| `party_id` | varchar(36) | nej | |
-| `party_type` | varchar(16) | nej | `PRIVATE` eller `ENTERPRISE` |
-| `name` | varchar(255) | ja | Alltid null om kunden är skyddad |
-| `care_of`, `street`, `postal_code`, `city`, `country` | varchar(255), postal_code varchar(16) | ja | Alltid null om kunden är skyddad |
-| `profile_modified` | datetime(6) | ja | `sourceModified` för de namn- och adressuppgifter som är lagrade (§5.2) |
-| `protection_level` | varchar(32) | nej | Effektiv nivå: `NONE`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` (§5.4) |
-| `registry_protection` | varchar(32) | ja | Folkbokföringens nivå enligt Citizen. Alltid null för `ENTERPRISE`. |
-| `registry_checked` | datetime(6) | ja | När Citizen senast tillfrågades |
-| `asserted_protection` | varchar(32) | ja | Nivån från det senast tillämpade `CUSTOMER`-meddelandet |
-| `created`, `modified` | datetime(6) | nej/ja | |
+|                        Kolumn                         |                  Typ                  |  Null  |                                   Anmärkning                                   |
+|-------------------------------------------------------|---------------------------------------|--------|--------------------------------------------------------------------------------|
+| `id`                                                  | varchar(36)                           | nej    | PK                                                                             |
+| `municipality_id`                                     | varchar(8)                            | nej    |                                                                                |
+| `party_id`                                            | varchar(36)                           | nej    |                                                                                |
+| `party_type`                                          | varchar(16)                           | nej    | `PRIVATE` eller `ENTERPRISE`                                                   |
+| `name`                                                | varchar(255)                          | ja     | Alltid null om kunden är skyddad                                               |
+| `care_of`, `street`, `postal_code`, `city`, `country` | varchar(255), postal_code varchar(16) | ja     | Alltid null om kunden är skyddad                                               |
+| `profile_modified`                                    | datetime(6)                           | ja     | `sourceModified` för de namn- och adressuppgifter som är lagrade (§5.2)        |
+| `protection_level`                                    | varchar(32)                           | nej    | Effektiv nivå: `NONE`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` (§5.4) |
+| `registry_protection`                                 | varchar(32)                           | ja     | Folkbokföringens nivå enligt Citizen. Alltid null för `ENTERPRISE`.            |
+| `registry_checked`                                    | datetime(6)                           | ja     | När Citizen senast tillfrågades                                                |
+| `asserted_protection`                                 | varchar(32)                           | ja     | Nivån från det senast tillämpade `CUSTOMER`-meddelandet                        |
+| `created`, `modified`                                 | datetime(6)                           | nej/ja |                                                                                |
 
 Index:
 
@@ -457,24 +457,24 @@ Index:
 
 **`engagement`**: ett källobjekt sett från en kund (beslut 8).
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `id` | varchar(36) | nej | PK |
-| `customer_id` | varchar(36) | nej | FK `fk_engagement_customer_id`, cascade |
-| `municipality_id` | varchar(8) | nej | |
-| `namespace` | varchar(32) | ja | null betyder globalt |
-| `object_type` | varchar(32) | nej | `ERRAND`, `ASSET` eller `CONTRACT` |
-| `source` | varchar(64) | nej | `SUPPORT_MANAGEMENT`, `PARTY_ASSETS` eller `CONTRACT` |
-| `source_id` | varchar(255) | nej | |
-| `reference`, `title`, `category` | varchar(255) | ja | |
-| `status` | varchar(64) | ja | |
-| `roles` | varchar(255) | ja | Kundens roller, sorterade och kommaseparerade (`AttributeConverter`) |
-| `party_protection` | varchar(32) | ja | Skyddsnivån som källan angav för kunden i det här objektet |
-| `valid_from`, `valid_to` | date | ja | |
-| `source_created` | datetime(6) | ja | |
-| `source_modified` | datetime(6) | nej | Sorteringsnyckel. `modified` ändras av varje grundladdning och duger inte till det. |
-| `last_message_id` | varchar(36) | nej | |
-| `created`, `modified` | datetime(6) | nej/ja | |
+|              Kolumn              |     Typ      |  Null  |                                     Anmärkning                                      |
+|----------------------------------|--------------|--------|-------------------------------------------------------------------------------------|
+| `id`                             | varchar(36)  | nej    | PK                                                                                  |
+| `customer_id`                    | varchar(36)  | nej    | FK `fk_engagement_customer_id`, cascade                                             |
+| `municipality_id`                | varchar(8)   | nej    |                                                                                     |
+| `namespace`                      | varchar(32)  | ja     | null betyder globalt                                                                |
+| `object_type`                    | varchar(32)  | nej    | `ERRAND`, `ASSET` eller `CONTRACT`                                                  |
+| `source`                         | varchar(64)  | nej    | `SUPPORT_MANAGEMENT`, `PARTY_ASSETS` eller `CONTRACT`                               |
+| `source_id`                      | varchar(255) | nej    |                                                                                     |
+| `reference`, `title`, `category` | varchar(255) | ja     |                                                                                     |
+| `status`                         | varchar(64)  | ja     |                                                                                     |
+| `roles`                          | varchar(255) | ja     | Kundens roller, sorterade och kommaseparerade (`AttributeConverter`)                |
+| `party_protection`               | varchar(32)  | ja     | Skyddsnivån som källan angav för kunden i det här objektet                          |
+| `valid_from`, `valid_to`         | date         | ja     |                                                                                     |
+| `source_created`                 | datetime(6)  | ja     |                                                                                     |
+| `source_modified`                | datetime(6)  | nej    | Sorteringsnyckel. `modified` ändras av varje grundladdning och duger inte till det. |
+| `last_message_id`                | varchar(36)  | nej    |                                                                                     |
+| `created`, `modified`            | datetime(6)  | nej/ja |                                                                                     |
 
 Index:
 
@@ -485,58 +485,58 @@ Index:
 
 **`engagement_history`**: aktiviteter från meddelandena (beslut 18).
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `id` | varchar(36) | nej | PK |
-| `engagement_id` | varchar(36) | nej | FK `fk_engagement_history_engagement_id`, cascade |
-| `municipality_id` | varchar(8) | nej | |
-| `type` | varchar(64) | nej | |
-| `description` | varchar(1024) | ja | |
-| `performed_by_type`, `performed_by` | varchar(32), varchar(255) | ja | |
-| `occurred_at` | datetime(6) | nej | |
-| `message_id` | varchar(36) | nej | |
-| `created` | datetime(6) | nej | |
+|               Kolumn                |            Typ            | Null |                    Anmärkning                     |
+|-------------------------------------|---------------------------|------|---------------------------------------------------|
+| `id`                                | varchar(36)               | nej  | PK                                                |
+| `engagement_id`                     | varchar(36)               | nej  | FK `fk_engagement_history_engagement_id`, cascade |
+| `municipality_id`                   | varchar(8)                | nej  |                                                   |
+| `type`                              | varchar(64)               | nej  |                                                   |
+| `description`                       | varchar(1024)             | ja   |                                                   |
+| `performed_by_type`, `performed_by` | varchar(32), varchar(255) | ja   |                                                   |
+| `occurred_at`                       | datetime(6)               | nej  |                                                   |
+| `message_id`                        | varchar(36)               | nej  |                                                   |
+| `created`                           | datetime(6)               | nej  |                                                   |
 
 Index: `idx_engagement_history_engagement_id_occurred_at`.
 
 **`contact`**: kontaktuppgifter som syns per namespace (§5.3).
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `id` | varchar(36) | nej | PK |
-| `customer_id` | varchar(36) | nej | FK `fk_contact_customer_id`, cascade |
-| `engagement_id` | varchar(36) | ja | FK `fk_contact_engagement_id`, cascade. null betyder att uppgiften kommer från ett `CUSTOMER`-meddelande. |
-| `municipality_id` | varchar(8) | nej | |
-| `namespace` | varchar(32) | ja | null betyder globalt |
-| `source` | varchar(64) | nej | |
-| `contact_type` | varchar(32) | nej | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON` |
-| `name` | varchar(255) | ja | Kontaktpersonens namn |
-| `role` | varchar(64) | ja | Kontaktpersonens roll |
-| `message_id` | varchar(36) | nej | |
-| `created` | datetime(6) | nej | Raderna ersätts som helhet och uppdateras aldrig. |
+|      Kolumn       |     Typ      | Null |                                                Anmärkning                                                 |
+|-------------------|--------------|------|-----------------------------------------------------------------------------------------------------------|
+| `id`              | varchar(36)  | nej  | PK                                                                                                        |
+| `customer_id`     | varchar(36)  | nej  | FK `fk_contact_customer_id`, cascade                                                                      |
+| `engagement_id`   | varchar(36)  | ja   | FK `fk_contact_engagement_id`, cascade. null betyder att uppgiften kommer från ett `CUSTOMER`-meddelande. |
+| `municipality_id` | varchar(8)   | nej  |                                                                                                           |
+| `namespace`       | varchar(32)  | ja   | null betyder globalt                                                                                      |
+| `source`          | varchar(64)  | nej  |                                                                                                           |
+| `contact_type`    | varchar(32)  | nej  | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON`                                                |
+| `name`            | varchar(255) | ja   | Kontaktpersonens namn                                                                                     |
+| `role`            | varchar(64)  | ja   | Kontaktpersonens roll                                                                                     |
+| `message_id`      | varchar(36)  | nej  |                                                                                                           |
+| `created`         | datetime(6)  | nej  | Raderna ersätts som helhet och uppdateras aldrig.                                                         |
 
 Index: `idx_contact_customer_id_namespace` och `idx_contact_engagement_id`.
 
 **`contact_channel`**: `@ElementCollection` på `contact`.
 
-| Kolumn | Typ | Null |
-|--------|-----|------|
-| `contact_id` | varchar(36) | nej, FK `fk_contact_channel_contact_id`, cascade |
-| `type` | varchar(32) | nej |
-| `value` | varchar(255) | nej |
+|    Kolumn    |     Typ      |                       Null                       |
+|--------------|--------------|--------------------------------------------------|
+| `contact_id` | varchar(36)  | nej, FK `fk_contact_channel_contact_id`, cascade |
+| `type`       | varchar(32)  | nej                                              |
+| `value`      | varchar(255) | nej                                              |
 
 **`note`**
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `id` | varchar(36) | nej | PK |
-| `customer_id` | varchar(36) | nej | FK `fk_note_customer_id`, cascade |
-| `municipality_id` | varchar(8) | nej | |
-| `namespace` | varchar(32) | nej | |
-| `subject` | varchar(255) | ja | |
-| `body` | longtext | nej | |
-| `created`, `created_by` | datetime(6), varchar(255) | nej | |
-| `modified`, `modified_by` | datetime(6), varchar(255) | ja | |
+|          Kolumn           |            Typ            | Null |            Anmärkning             |
+|---------------------------|---------------------------|------|-----------------------------------|
+| `id`                      | varchar(36)               | nej  | PK                                |
+| `customer_id`             | varchar(36)               | nej  | FK `fk_note_customer_id`, cascade |
+| `municipality_id`         | varchar(8)                | nej  |                                   |
+| `namespace`               | varchar(32)               | nej  |                                   |
+| `subject`                 | varchar(255)              | ja   |                                   |
+| `body`                    | longtext                  | nej  |                                   |
+| `created`, `created_by`   | datetime(6), varchar(255) | nej  |                                   |
+| `modified`, `modified_by` | datetime(6), varchar(255) | ja   |                                   |
 
 Index: `idx_note_customer_id_namespace_created`.
 
@@ -548,64 +548,64 @@ Index: `idx_note_history_note_id_occurred_at`.
 
 **`source_object`**: versionsregistret (beslut 12). Tabellen har inga kunduppgifter och ingen FK.
 
-| Kolumn | Typ | Null |
-|--------|-----|------|
-| `id` | varchar(36) | nej |
-| `municipality_id` | varchar(8) | nej |
-| `object_type` | varchar(32) | nej |
-| `source` | varchar(64) | nej |
-| `source_id` | varchar(255) | nej. För `CUSTOMER` är det kundens partyId. |
-| `version` | bigint | nej |
-| `deleted` | bit | nej |
-| `last_message_id` | varchar(36) | nej |
-| `created`, `modified` | datetime(6) | nej/ja |
+|        Kolumn         |     Typ      |                    Null                     |
+|-----------------------|--------------|---------------------------------------------|
+| `id`                  | varchar(36)  | nej                                         |
+| `municipality_id`     | varchar(8)   | nej                                         |
+| `object_type`         | varchar(32)  | nej                                         |
+| `source`              | varchar(64)  | nej                                         |
+| `source_id`           | varchar(255) | nej. För `CUSTOMER` är det kundens partyId. |
+| `version`             | bigint       | nej                                         |
+| `deleted`             | bit          | nej                                         |
+| `last_message_id`     | varchar(36)  | nej                                         |
+| `created`, `modified` | datetime(6)  | nej/ja                                      |
 
 Index: `uq_source_object_municipality_id_object_type_source_source_id`.
 
 **`technical_log`**: den tekniska loggen (beslut 11, §8). Tabellen har ingen FK.
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `id` | varchar(36) | nej | |
-| `municipality_id` | varchar(8) | nej | |
-| `party_id` | varchar(36) | nej | |
-| `channel` | varchar(16) | nej | `MESSAGE`, `REST` eller `SCHEDULER` |
-| `message_id`, `request_id` | varchar(36) | ja | |
-| `source` | varchar(64) | ja | |
-| `object_type` | varchar(32) | ja | |
-| `source_id` | varchar(255) | ja | |
-| `operation` | varchar(16) | ja | `UPDATE` eller `DELETE` |
-| `source_version` | bigint | ja | |
-| `outcome` | varchar(32) | nej | §8.1 |
-| `performed_by` | varchar(255) | ja | Vid REST |
-| `protection_level` | varchar(32) | ja | Den nya nivån vid `PROTECTION_CHANGED` |
-| `created` | datetime(6) | nej | |
+|           Kolumn           |     Typ      | Null |               Anmärkning               |
+|----------------------------|--------------|------|----------------------------------------|
+| `id`                       | varchar(36)  | nej  |                                        |
+| `municipality_id`          | varchar(8)   | nej  |                                        |
+| `party_id`                 | varchar(36)  | nej  |                                        |
+| `channel`                  | varchar(16)  | nej  | `MESSAGE`, `REST` eller `SCHEDULER`    |
+| `message_id`, `request_id` | varchar(36)  | ja   |                                        |
+| `source`                   | varchar(64)  | ja   |                                        |
+| `object_type`              | varchar(32)  | ja   |                                        |
+| `source_id`                | varchar(255) | ja   |                                        |
+| `operation`                | varchar(16)  | ja   | `UPDATE` eller `DELETE`                |
+| `source_version`           | bigint       | ja   |                                        |
+| `outcome`                  | varchar(32)  | nej  | §8.1                                   |
+| `performed_by`             | varchar(255) | ja   | Vid REST                               |
+| `protection_level`         | varchar(32)  | ja   | Den nya nivån vid `PROTECTION_CHANGED` |
+| `created`                  | datetime(6)  | nej  |                                        |
 
 Index: `idx_technical_log_municipality_id_party_id_created` och `idx_technical_log_created`, som används vid manuell
 radering på datum (§8.2).
 
 **`contact_person_role`**: konfiguration (beslut 15).
 
-| Kolumn | Typ | Null |
-|--------|-----|------|
-| `id` | varchar(36) | nej |
-| `municipality_id` | varchar(8) | nej |
-| `source` | varchar(64) | nej |
-| `role` | varchar(64) | nej |
-| `created`, `created_by` | datetime(6), varchar(255) | nej |
+|         Kolumn          |            Typ            | Null |
+|-------------------------|---------------------------|------|
+| `id`                    | varchar(36)               | nej  |
+| `municipality_id`       | varchar(8)                | nej  |
+| `source`                | varchar(64)               | nej  |
+| `role`                  | varchar(64)               | nej  |
+| `created`, `created_by` | datetime(6), varchar(255) | nej  |
 
 Index: `uq_contact_person_role_municipality_id_source_role`.
 
 **`search_index_queue`**: kunder som ska indexeras om eller tas bort ur sökindexet (§6.2). Tabellen har ingen FK, så
 att en raderad kund finns kvar i kön tills den har tagits bort ur indexet.
 
-| Kolumn | Typ | Null | Anmärkning |
-|--------|-----|------|------------|
-| `customer_id` | varchar(36) | nej | PK. Flera markeringar av samma kund slås ihop. |
-| `municipality_id` | varchar(8) | nej | |
-| `version` | bigint | nej | Ökas vid varje ny markering |
-| `attempts` | int | nej | Antal misslyckade försök, förval 0 |
-| `queued` | datetime(6) | nej | |
+|      Kolumn       |     Typ     | Null |                   Anmärkning                   |
+|-------------------|-------------|------|------------------------------------------------|
+| `customer_id`     | varchar(36) | nej  | PK. Flera markeringar av samma kund slås ihop. |
+| `municipality_id` | varchar(8)  | nej  |                                                |
+| `version`         | bigint      | nej  | Ökas vid varje ny markering                    |
+| `attempts`        | int         | nej  | Antal misslyckade försök, förval 0             |
+| `queued`          | datetime(6) | nej  |                                                |
 
 Index: `idx_search_index_queue_queued`.
 
@@ -625,13 +625,13 @@ Index: `idx_search_index_queue_queued`.
 
 ### 5.1 Synlighet per namespace
 
-| Data | Vad en verksamhet (`{namespace}` i sökvägen) ser |
-|------|-------------------------------------------------|
-| Kund (namn, adress, typ, skyddsnivå) | Allt. För en skyddad kund finns varken namn eller adress (§5.4). |
-| Engagemang och deras historik | Alla i kommunen. Valfritt filter: `engagementNamespace`. |
-| Kontaktuppgifter och kontaktpersoner | `namespace = {namespace}` eller `namespace is null` |
-| Noteringar och deras historik | `namespace = {namespace}` |
-| Teknisk logg | Ingen namespace-filtrering. Exponeras utan namespace i sökvägen (§6). |
+|                 Data                 |           Vad en verksamhet (`{namespace}` i sökvägen) ser            |
+|--------------------------------------|-----------------------------------------------------------------------|
+| Kund (namn, adress, typ, skyddsnivå) | Allt. För en skyddad kund finns varken namn eller adress (§5.4).      |
+| Engagemang och deras historik        | Alla i kommunen. Valfritt filter: `engagementNamespace`.              |
+| Kontaktuppgifter och kontaktpersoner | `namespace = {namespace}` eller `namespace is null`                   |
+| Noteringar och deras historik        | `namespace = {namespace}`                                             |
+| Teknisk logg                         | Ingen namespace-filtrering. Exponeras utan namespace i sökvägen (§6). |
 
 Frågan för kontakter, `customer_id = ? and (namespace = ? or namespace is null)`, går via
 `idx_contact_customer_id_namespace` (`ref_or_null`).
@@ -650,11 +650,11 @@ Frågan för kontakter, `customer_id = ? and (namespace = ? or namespace is null
 
 Varje part i ett meddelande sorteras så här:
 
-| Parten har | Har en roll i `contact_person_role` för (kommun, källa) | Resultat |
-|------------|---------------------------------------------------------|----------|
-| partyId eller legalId som går att mappa | nej | **Kund**, med engagemang |
-| vad som helst | ja | **Kontaktperson** på objektets alla `ENTERPRISE`-kunder. Blir aldrig själv kund. Har objektet ingen företagskund ignoreras parten. |
-| varken partyId eller legalId | nej | Ignoreras |
+|               Parten har                | Har en roll i `contact_person_role` för (kommun, källa) |                                                              Resultat                                                              |
+|-----------------------------------------|---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| partyId eller legalId som går att mappa | nej                                                     | **Kund**, med engagemang                                                                                                           |
+| vad som helst                           | ja                                                      | **Kontaktperson** på objektets alla `ENTERPRISE`-kunder. Blir aldrig själv kund. Har objektet ingen företagskund ignoreras parten. |
+| varken partyId eller legalId            | nej                                                     | Ignoreras                                                                                                                          |
 
 För varje kunds engagemangsrad ersätts kontaktuppgifterna (`contact` med `engagement_id` = raden) med:
 
@@ -682,30 +682,37 @@ och eSams promemoria
 Det som styr designen:
 
 - **Skyddade personuppgifter** är två nivåer som Skatteverket beslutar om:
+
   - *sekretessmarkering*: en varningssignal om att en skadeprövning krävs innan uppgifterna lämnas ut
   - *skyddad folkbokföring*: den högre nivån, där den verkliga adressen inte finns i folkbokföringen
 
   I Navet visas sekretessmarkering med en flagga och skyddad folkbokföring med två. Systemen ska kunna skilja nivåerna
   åt.
+
 - *Fingerade personuppgifter* beslutas av Polismyndigheten. Personen har då en annan, fullständig identitet, och den
   syns inte som skydd. party-overview hanterar dem inte särskilt.
+
 - Inte bara adressen är skyddsvärd. Vägledningen räknar upp bland annat namn, adress, e-post, telefonnummer,
   arbetsgivare och skola. Det gäller även uppgifter som fanns innan personen fick skydd.
+
 - Skyddet ska vara tydligt utmärkt i varje vy. Behörigheten ska vara begränsad, och man ska inte hämta eller spara fler
   uppgifter än nödvändigt.
+
 - Skyddet kan tillkomma, ändras och upphöra. Uppgifterna ska hållas uppdaterade, och man bör undvika egna markeringar
   utöver folkbokföringens flaggor.
+
 - SPAR tar bort namn och adress för personer med skydd och behåller bara personnumret och en flagga.
+
 - En person kan ha ett skyddsbehov utan att vara markerad i folkbokföringen. Därför räknas också källsystemens uppgift
   om skydd.
 
 **Nivåer och källor.** Kundens effektiva nivå, `customer.protection_level`, är den högsta av:
 
-| Källa | Kolumn | Uppdateras |
-|-------|--------|------------|
-| Folkbokföringen via Citizen, bara för `PRIVATE` | `customer.registry_protection` | när kunden skapas, och varje natt |
-| `CUSTOMER`-meddelanden | `customer.asserted_protection` | när ett `CUSTOMER UPDATE` tillämpas |
-| Engagemangsmeddelanden | `engagement.party_protection` | när objektet uppdateras. Försvinner med engagemanget. |
+|                      Källa                      |             Kolumn             |                      Uppdateras                       |
+|-------------------------------------------------|--------------------------------|-------------------------------------------------------|
+| Folkbokföringen via Citizen, bara för `PRIVATE` | `customer.registry_protection` | när kunden skapas, och varje natt                     |
+| `CUSTOMER`-meddelanden                          | `customer.asserted_protection` | när ett `CUSTOMER UPDATE` tillämpas                   |
+| Engagemangsmeddelanden                          | `engagement.party_protection`  | när objektet uppdateras. Försvinner med engagemanget. |
 
 Ordningen är `NONE` < `SECRECY_MARKING` < `PROTECTED_REGISTRATION`. Nivån räknas om i samma transaktion varje gång
 någon av källorna ändras. En ändrad nivå loggas som `PROTECTION_CHANGED` i den tekniska loggen.
@@ -721,12 +728,12 @@ skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassif
 
 party-overview frågar alltid med `ShowClassified=true` och tolkar svaret så här (beslut 41):
 
-| `protectedNR` | `classified` | `registry_protection` |
-|---------------|--------------|-----------------------|
-| `J` | valfritt | `PROTECTED_REGISTRATION` |
-| inte `J` | `J` | `SECRECY_MARKING` |
-| inte `J` | inte `J` | `NONE` |
-| Citizen har ingen post (204) | | `NONE` |
+|        `protectedNR`         | `classified` |  `registry_protection`   |
+|------------------------------|--------------|--------------------------|
+| `J`                          | valfritt     | `PROTECTED_REGISTRATION` |
+| inte `J`                     | `J`          | `SECRECY_MARKING`        |
+| inte `J`                     | inte `J`     | `NONE`                   |
+| Citizen har ingen post (204) |              | `NONE`                   |
 
 Citizens dokumentation säger inte uttryckligen vilken flagga som betyder vad. Tolkningen bygger på namngivningen, och
 den verifieras mot testpersoner i C3. En felaktig tolkning skulle bara ändra vilken nivå som visas, eftersom
@@ -769,26 +776,26 @@ kräver `X-Sent-By`. `@ValidUuid` sätts inte på id-fält som är READ_ONLY.
 
 ### 6.1 Endpoints
 
-| Metod och sökväg | Beskrivning | Svar |
-|------------------|-------------|------|
-| `GET /{municipalityId}/{namespace}/customers/{partyId}` | Kunden med de kontaktuppgifter och kontaktpersoner som syns för namespacet | 200, 404 |
-| `POST /{municipalityId}/{namespace}/customers/lookup` | Slår upp en kund på personnummer eller organisationsnummer. Kropp: `legalId` och `partyType`. Numret mappas till partyId via Party (§7.1) och kastas sedan. Svaret är detsamma som för `GET` på kunden. | 200, 404 |
-| `GET /{municipalityId}/{namespace}/customers/search` | Fritextsökning bland kunderna (§6.2) | 200, 400, 503, 504 |
-| `POST /search/reindex` | Bygger om sökindexet från databasen, asynkront (§6.2) | 202, 409 |
-| `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements` | Engagemang. Filter `objectType` och `engagementNamespace`. Sorteras förvalt på `sourceModified,desc`. | 200, 404 |
-| `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements/{engagementId}` | Ett engagemang | 200, 404 |
-| `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements/{engagementId}/history` | Historik, förvalt `occurredAt,desc` | 200, 404 |
-| `GET /{municipalityId}/{namespace}/customers/{partyId}/notes` | Namespacets noteringar, förvalt `created,desc` | 200, 404 |
-| `POST /{municipalityId}/{namespace}/customers/{partyId}/notes` | Skapar en notering och vid behov kunden (§7.2) | 201 med Location, 404 om parten är okänd |
-| `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}` | En notering | 200, 404 |
-| `PATCH /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}` | Ändrar `subject` eller `body` | 200, 404 |
-| `DELETE /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}` | Raderar noteringen och dess historik | 204, 404 |
-| `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}/history` | Noteringens historik | 200, 404 |
-| `DELETE /{municipalityId}/customers/{partyId}` | Raderar kunden med allt den äger och loggar `CUSTOMER_DELETED` | 204, 404 |
-| `GET /{municipalityId}/customers/{partyId}/technical-log` | Den tekniska loggen, förvalt `created,desc`. Fungerar även efter radering. | 200 |
-| `DELETE /{municipalityId}/technical-log?partyId=&createdBefore=` | Raderar rader i den tekniska loggen. Minst ett av filtren krävs, och båda kan kombineras (§8.2). | 204, 400 |
-| `GET /{municipalityId}/contact-person-roles` | Kontaktpersonsroller per källa | 200 |
-| `PUT /{municipalityId}/contact-person-roles/{source}` | Ersätter källans roller (kropp: lista med roller). En okänd källa ger 400. | 204, 400 |
+|                                      Metod och sökväg                                      |                                                                                               Beskrivning                                                                                               |                   Svar                   |
+|--------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------|
+| `GET /{municipalityId}/{namespace}/customers/{partyId}`                                    | Kunden med de kontaktuppgifter och kontaktpersoner som syns för namespacet                                                                                                                              | 200, 404                                 |
+| `POST /{municipalityId}/{namespace}/customers/lookup`                                      | Slår upp en kund på personnummer eller organisationsnummer. Kropp: `legalId` och `partyType`. Numret mappas till partyId via Party (§7.1) och kastas sedan. Svaret är detsamma som för `GET` på kunden. | 200, 404                                 |
+| `GET /{municipalityId}/{namespace}/customers/search`                                       | Fritextsökning bland kunderna (§6.2)                                                                                                                                                                    | 200, 400, 503, 504                       |
+| `POST /search/reindex`                                                                     | Bygger om sökindexet från databasen, asynkront (§6.2)                                                                                                                                                   | 202, 409                                 |
+| `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements`                        | Engagemang. Filter `objectType` och `engagementNamespace`. Sorteras förvalt på `sourceModified,desc`.                                                                                                   | 200, 404                                 |
+| `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements/{engagementId}`         | Ett engagemang                                                                                                                                                                                          | 200, 404                                 |
+| `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements/{engagementId}/history` | Historik, förvalt `occurredAt,desc`                                                                                                                                                                     | 200, 404                                 |
+| `GET /{municipalityId}/{namespace}/customers/{partyId}/notes`                              | Namespacets noteringar, förvalt `created,desc`                                                                                                                                                          | 200, 404                                 |
+| `POST /{municipalityId}/{namespace}/customers/{partyId}/notes`                             | Skapar en notering och vid behov kunden (§7.2)                                                                                                                                                          | 201 med Location, 404 om parten är okänd |
+| `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                     | En notering                                                                                                                                                                                             | 200, 404                                 |
+| `PATCH /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                   | Ändrar `subject` eller `body`                                                                                                                                                                           | 200, 404                                 |
+| `DELETE /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                  | Raderar noteringen och dess historik                                                                                                                                                                    | 204, 404                                 |
+| `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}/history`             | Noteringens historik                                                                                                                                                                                    | 200, 404                                 |
+| `DELETE /{municipalityId}/customers/{partyId}`                                             | Raderar kunden med allt den äger och loggar `CUSTOMER_DELETED`                                                                                                                                          | 204, 404                                 |
+| `GET /{municipalityId}/customers/{partyId}/technical-log`                                  | Den tekniska loggen, förvalt `created,desc`. Fungerar även efter radering.                                                                                                                              | 200                                      |
+| `DELETE /{municipalityId}/technical-log?partyId=&createdBefore=`                           | Raderar rader i den tekniska loggen. Minst ett av filtren krävs, och båda kan kombineras (§8.2).                                                                                                        | 204, 400                                 |
+| `GET /{municipalityId}/contact-person-roles`                                               | Kontaktpersonsroller per källa                                                                                                                                                                          | 200                                      |
+| `PUT /{municipalityId}/contact-person-roles/{source}`                                      | Ersätter källans roller (kropp: lista med roller). En okänd källa ger 400.                                                                                                                              | 204, 400                                 |
 
 - En notering eller ett engagemang som inte tillhör kunden i sökvägen, eller en notering i ett annat namespace, ger 404.
 - `DELETE` på kund, den tekniska loggen och kontaktpersonsrollerna ligger utanför namespace-sökvägen, eftersom de gäller
@@ -822,17 +829,17 @@ kundens kontakter, engagemang och noteringar genom sessionen, deduplicerade och 
 projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion (§4.2). Grupperingen är en ren
 funktion som går att enhetstesta.
 
-| Fält | Mappning | Skyddad kund |
-|------|----------|--------------|
-| `municipalityId`, `partyType` | keyword, filter | med |
-| `protectionLevel` | keyword, projicerbar | med |
-| `name` | text (`text_sv`: standard, lowercase och light_swedish), plus `name_sort` som keyword | saknas, eftersom namnet inte lagras (§5.4) |
-| `careOf`, `street`, `postalCode`, `city` | text (`text_sv`) | utelämnas |
-| `contacts_global`, `contacts_ns_<namespace>` | text via fieldTemplate: kontaktpersoners namn och kanalvärden, högst 500 värden per fält | utelämnas |
-| `phones_global`, `phones_ns_<namespace>` | keyword med normalizern `phone` (`+46` och `0046` blir `0`, och allt utom siffror tas bort), bara kanaler av telefontyp | utelämnas |
-| `references` | keyword med `lowercase_normalizer`: engagemangens `reference` och `sourceId`, alla | **med** |
-| `engagements` | text (`text_sv`): engagemangens titel och kategori, de 1 000 senast ändrade | utelämnas |
-| `notes_ns_<namespace>` | text (`text_sv`) via fieldTemplate: noteringarnas ämne och text, de 200 senaste per namespace | utelämnas |
+|                     Fält                     |                                                        Mappning                                                         |                Skyddad kund                |
+|----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
+| `municipalityId`, `partyType`                | keyword, filter                                                                                                         | med                                        |
+| `protectionLevel`                            | keyword, projicerbar                                                                                                    | med                                        |
+| `name`                                       | text (`text_sv`: standard, lowercase och light_swedish), plus `name_sort` som keyword                                   | saknas, eftersom namnet inte lagras (§5.4) |
+| `careOf`, `street`, `postalCode`, `city`     | text (`text_sv`)                                                                                                        | utelämnas                                  |
+| `contacts_global`, `contacts_ns_<namespace>` | text via fieldTemplate: kontaktpersoners namn och kanalvärden, högst 500 värden per fält                                | utelämnas                                  |
+| `phones_global`, `phones_ns_<namespace>`     | keyword med normalizern `phone` (`+46` och `0046` blir `0`, och allt utom siffror tas bort), bara kanaler av telefontyp | utelämnas                                  |
+| `references`                                 | keyword med `lowercase_normalizer`: engagemangens `reference` och `sourceId`, alla                                      | **med**                                    |
+| `engagements`                                | text (`text_sv`): engagemangens titel och kategori, de 1 000 senast ändrade                                             | utelämnas                                  |
+| `notes_ns_<namespace>`                       | text (`text_sv`) via fieldTemplate: noteringarnas ämne och text, de 200 senaste per namespace                           | utelämnas                                  |
 
 - Namespace i fältnamnet skrivs med gemener. Det är säkert, eftersom `@ValidNamespace` bara tillåter `[\w-]{2,32}`.
 - Engagemang är sökbara för alla verksamheter, precis som de syns för alla (§5.1). Noteringar är bara sökbara inom det
@@ -845,14 +852,17 @@ funktion som går att enhetstesta.
 
 1. *Markering:* kunden markeras i samma transaktion som ändringen med
    `insert into search_index_queue … on duplicate key update version = version + 1, attempts = 0`. Det sker:
+
    - varje gång en rad skrivs till den tekniska loggen för kunden, utom `IGNORED_STALE`. Det täcker meddelanden, REST
      och den nattliga skyddskontrollen.
    - när en notering skapas, ändras eller raderas.
 
    Kundraden är redan låst, så ingen ny låsordning tillkommer. Primärnyckeln gör att det högst finns en rad per kund,
    även när OpenSearch ligger nere.
+
 2. *Relay:* `SearchIndexRelay` körs direkt efter varje commit som har markerat kunder, och dessutom var 10:e sekund som
    skyddsnät (beslut 40).
+
    - Körningen efter commit görs asynkront via `@TransactionalEventListener(AFTER_COMMIT)` och hoppas över om relayn
      redan kör. Den schemalagda körningen tar då hand om resten.
    - Båda körningarna tar samma ShedLock-lås.
@@ -860,12 +870,14 @@ funktion som går att enhetstesta.
 
    Varje körning hämtar högst `search.relay.batch-size` (förval 500) av de äldsta raderna med `attempts < 5`.
    - I en read-only `TransactionTemplate` med `writeSync`-strategi får kunder som finns `addOrUpdate`, och kunder som
-     saknas får `purge`.
+   saknas får `purge`.
    - Efter lyckad skrivning körs `delete … where customer_id = ? and version = ?`. En markering som kom in under tiden
-     ligger alltså kvar.
+   ligger alltså kvar.
    - Om en batch misslyckas körs raderna en och en. En rad som misslyckas ensam får `attempts + 1`.
+
 3. *Larm:* `OpenSearchHealthIndicator`, kopierad från SM, blir `DOWN` när OpenSearch inte svarar eller när någon rad i
    kön har `attempts ≥ 5`. Spring Boot Admin larmar då som i §12.1. Indikatorn ingår inte i `readiness`.
+
 4. *Radering direkt i databasen:* når inte kön (beslut 25a). Träffen filtreras bort när den laddas från databasen, och
    dokumentet försvinner vid nästa reindexering. README beskriver att reindexering ska köras efter en sådan radering.
 
@@ -920,11 +932,11 @@ kund är `name` och `address` tomma.
 
 ### 7.1 Party (api-service-party)
 
-| Användning | Endpoint |
-|------------|----------|
-| Personnummer → partyId (meddelanden och uppslag) | `POST /{municipalityId}/PRIVATE/partyIds` (batch, inget personnummer i URL:en) |
+|                       Användning                        |                                                                 Endpoint                                                                  |
+|---------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| Personnummer → partyId (meddelanden och uppslag)        | `POST /{municipalityId}/PRIVATE/partyIds` (batch, inget personnummer i URL:en)                                                            |
 | Organisationsnummer → partyId (meddelanden och uppslag) | `GET /{municipalityId}/ENTERPRISE/{legalId}/partyId`. Det finns ingen batch, så numret hamnar i URL:en, vilket är accepterat (beslut 32). |
-| Partytyp för ett partyId | `GET /{municipalityId}/PRIVATE/{partyId}/legalId`, och vid 404 samma anrop med `ENTERPRISE`. Svaret används bara för att avgöra typen. |
+| Partytyp för ett partyId                                | `GET /{municipalityId}/PRIVATE/{partyId}/legalId`, och vid 404 samma anrop med `ENTERPRISE`. Svaret används bara för att avgöra typen.    |
 
 - Feign med `dismiss404` → `Optional`, `@CircuitBreaker` och OAuth2.
 - Förebilden är `api-service-party-assets`: `integration/party/PartyClient.java`, `PartyConfiguration.java` och
@@ -938,10 +950,10 @@ Citizen används på tre ställen. Klienten genereras från den version som är 
 specifikationen för v3 i `api-service-messaging/src/main/resources/integrations/citizen-v3.yml`. Alla anrop görs med
 `ShowClassified=true`, vilket kräver behörighet i Metakatalogen (§5.4), och svaret tolkas enligt §5.4.
 
-| Användning | Endpoint |
-|------------|----------|
-| Skyddsstatus för nya privatkunder i ett meddelande (§3.3, steg 5) | `POST /{municipalityId}/batch` |
-| Nattlig kontroll av skyddsstatus (§5.4) | `POST /{municipalityId}/batch` |
+|                             Användning                             |              Endpoint              |
+|--------------------------------------------------------------------|------------------------------------|
+| Skyddsstatus för nya privatkunder i ett meddelande (§3.3, steg 5)  | `POST /{municipalityId}/batch`     |
+| Nattlig kontroll av skyddsstatus (§5.4)                            | `POST /{municipalityId}/batch`     |
 | Namn, adress och skyddsstatus när en notering skapar en privatkund | `GET /{municipalityId}/{personId}` |
 
 LegalEntity v2 (`GET /{municipalityId}/{legalEntityId}`) används bara när en notering skapar en företagskund.
@@ -979,16 +991,16 @@ Förebilder:
 
 Ett meddelande kan ge flera rader per kund, t.ex. `ENGAGEMENT_REMOVED` följt av `CUSTOMER_DELETED`.
 
-| Utfall | När |
-|--------|-----|
-| `CUSTOMER_CREATED` | Kunden skapades, via meddelande eller notering |
-| `CUSTOMER_UPDATED` | Ett `CUSTOMER UPDATE` tillämpades |
-| `CUSTOMER_DELETED` | Kunden raderades (§3.6) |
-| `ENGAGEMENT_CREATED` | Kunden fick ett nytt engagemang |
+|        Utfall        |                                          När                                           |
+|----------------------|----------------------------------------------------------------------------------------|
+| `CUSTOMER_CREATED`   | Kunden skapades, via meddelande eller notering                                         |
+| `CUSTOMER_UPDATED`   | Ett `CUSTOMER UPDATE` tillämpades                                                      |
+| `CUSTOMER_DELETED`   | Kunden raderades (§3.6)                                                                |
+| `ENGAGEMENT_CREATED` | Kunden fick ett nytt engagemang                                                        |
 | `ENGAGEMENT_UPDATED` | Ett befintligt engagemang uppdaterades. Det gäller även en rättning med samma version. |
-| `ENGAGEMENT_REMOVED` | Objektet raderades, eller kunden är inte längre part i det |
-| `IGNORED_STALE` | Meddelandet var äldre än det lagrade och ändrade ingenting |
-| `PROTECTION_CHANGED` | Kundens effektiva skyddsnivå ändrades (§5.4). Den nya nivån står i raden. |
+| `ENGAGEMENT_REMOVED` | Objektet raderades, eller kunden är inte längre part i det                             |
+| `IGNORED_STALE`      | Meddelandet var äldre än det lagrade och ändrade ingenting                             |
+| `PROTECTION_CHANGED` | Kundens effektiva skyddsnivå ändrades (§5.4). Den nya nivån står i raden.              |
 
 Vid `UPDATE` skrivs `IGNORED_STALE` för meddelandets kundparter. En `DELETE` saknar parter, så där skrivs det för de
 kunder som har engagemang i objektet.
@@ -1054,20 +1066,20 @@ se.sundsvall.partyoverview
 **Regel:** IT-tester täcker bara happy case, men för alla vägar. Felfall testas i JUnit- och resource-tester, och varje
 felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
 
-| Nivå | Vad den täcker |
-|------|----------------|
-| **Entitetstester** | `@PrePersist`/`@PreUpdate`, `RolesConverter`, `equals`/`hashCode`/`toString`. |
-| **`SchemaVerificationTest`** | `schema.sql` stämmer med entiteterna, inklusive `on delete cascade`. |
-| **Repository-tester** (`@DataJpaTest`, junit-profil) | Att IODKU är idempotent, `FOR UPDATE`, synlighetsfrågorna, sortering och paginering, raderingen av "kunder som inte längre är parter", radering av teknisk logg med `LIMIT`, urvalet till den nattliga skyddskontrollen. Ett samtidighetstest där två trådar skapar samma kund (`NOT_SUPPORTED`, `TransactionTemplate` och latch) och resultatet blir en kund utan undantag. |
-| **Servicetester** (Mockito) | Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna och Citizens flaggor (§5.4), att namn, adress och egna kontaktuppgifter töms och inte sparas när kunden är skyddad, att de fylls i igen när skyddet upphör, och `PROTECTION_CHANGED`. Uppslag på personnummer. `DeadLetterHealthIndicator` (tom kö, kö med meddelanden, kö som saknas). Hela versionsmatrisen, tabelldrivet med alla celler i §3.4. Klassningen av parter (§5.3), "nyast vinner", historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden men inte när den har noteringar, legalId-mappning och 404, valideringsfel, notering som skapar kund (PRIVATE, ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall. |
-| **Integrationstester (enhet)** | `PartyIntegration`, `CitizenIntegration`, `LegalEntityIntegration`: mappning, `Optional.empty` vid 404, att undantag inte sväljs och att legalId inte finns i några meddelanden. `MessageListener`: källan slås upp från kön. |
-| **Resource-tester** (`@ResourceTest`, WebTestClient) | Happy path per endpoint. `*ResourceFailureTest`: alla valideringsfel och Problem-mappningar. |
-| **IT** (`AbstractAppTest`, WireMock) | En klass per resurs (happy case). `MessageIT`: en `RabbitMQContainer` som deklarerar köerna som topologin gör, och ett meddelande per väg: `UPDATE` och `DELETE` för varje objekttyp, `CUSTOMER UPDATE`/`DELETE`, legalId stubbat i WireMock och en kontaktperson. Allt ligger i en klass, eftersom `@DynamicPropertySource` ger en egen Spring-context. Mönster: party-assets `origin/publish-asset-events` `AssetEventsIT`. |
-| **`CascadeIT`** | `DELETE FROM customer` med `JdbcTemplate` raderar `engagement`, `engagement_history`, `contact`, `contact_channel`, `note` och `note_history`. `technical_log`, `source_object` och `search_index_queue` lämnas orörda. |
-| **`SchemaParityIT`** | Jämför index (namn, kolumner, unikhet) och FK (namn, `DELETE_RULE`) i `information_schema` mellan den Flyway-migrerade IT-databasen och ett schema som skapats från `schema.sql`. |
-| **`OpenApiSpecificationIT`** | `openapi.yaml` stämmer med koden. |
-| **Sök (enhet)** | `CustomerDocumentBinder`: deduplicering, gruppering per namespace, att en skyddad kund saknar adress och kontaktfält, telefonnormalisering och taket på 500 värden. `SearchIndexRelay`: kund som finns, kund som saknas, fel i batch, fel på enskild rad och `attempts`. `CustomerSearchService`: 503, gränsen för result window, sortering och att skyddade träffar släpps när indexet är inaktuellt. Fasaden mot Hibernate Search mockas, men DSL:en mockas inte. |
-| **Sök (IT)** | `CustomerSearchIT` med en OpenSearch-testcontainer, som startas av en `EnvironmentPostProcessor` som i SM. Happy case: sökning på namn, adress och telefon i ett annat format, kontakt i eget och i globalt namespace, ett meddelande som via relayn blir sökbart, och reindexering. |
+|                         Nivå                         |                                                                                                                                                                                                                                                                                                                                                                Vad den täcker                                                                                                                                                                                                                                                                                                                                                                 |
+|------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Entitetstester**                                   | `@PrePersist`/`@PreUpdate`, `RolesConverter`, `equals`/`hashCode`/`toString`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **`SchemaVerificationTest`**                         | `schema.sql` stämmer med entiteterna, inklusive `on delete cascade`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Repository-tester** (`@DataJpaTest`, junit-profil) | Att IODKU är idempotent, `FOR UPDATE`, synlighetsfrågorna, sortering och paginering, raderingen av "kunder som inte längre är parter", radering av teknisk logg med `LIMIT`, urvalet till den nattliga skyddskontrollen. Ett samtidighetstest där två trådar skapar samma kund (`NOT_SUPPORTED`, `TransactionTemplate` och latch) och resultatet blir en kund utan undantag.                                                                                                                                                                                                                                                                                                                                                                  |
+| **Servicetester** (Mockito)                          | Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna och Citizens flaggor (§5.4), att namn, adress och egna kontaktuppgifter töms och inte sparas när kunden är skyddad, att de fylls i igen när skyddet upphör, och `PROTECTION_CHANGED`. Uppslag på personnummer. `DeadLetterHealthIndicator` (tom kö, kö med meddelanden, kö som saknas). Hela versionsmatrisen, tabelldrivet med alla celler i §3.4. Klassningen av parter (§5.3), "nyast vinner", historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden men inte när den har noteringar, legalId-mappning och 404, valideringsfel, notering som skapar kund (PRIVATE, ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall. |
+| **Integrationstester (enhet)**                       | `PartyIntegration`, `CitizenIntegration`, `LegalEntityIntegration`: mappning, `Optional.empty` vid 404, att undantag inte sväljs och att legalId inte finns i några meddelanden. `MessageListener`: källan slås upp från kön.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Resource-tester** (`@ResourceTest`, WebTestClient) | Happy path per endpoint. `*ResourceFailureTest`: alla valideringsfel och Problem-mappningar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **IT** (`AbstractAppTest`, WireMock)                 | En klass per resurs (happy case). `MessageIT`: en `RabbitMQContainer` som deklarerar köerna som topologin gör, och ett meddelande per väg: `UPDATE` och `DELETE` för varje objekttyp, `CUSTOMER UPDATE`/`DELETE`, legalId stubbat i WireMock och en kontaktperson. Allt ligger i en klass, eftersom `@DynamicPropertySource` ger en egen Spring-context. Mönster: party-assets `origin/publish-asset-events` `AssetEventsIT`.                                                                                                                                                                                                                                                                                                                 |
+| **`CascadeIT`**                                      | `DELETE FROM customer` med `JdbcTemplate` raderar `engagement`, `engagement_history`, `contact`, `contact_channel`, `note` och `note_history`. `technical_log`, `source_object` och `search_index_queue` lämnas orörda.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **`SchemaParityIT`**                                 | Jämför index (namn, kolumner, unikhet) och FK (namn, `DELETE_RULE`) i `information_schema` mellan den Flyway-migrerade IT-databasen och ett schema som skapats från `schema.sql`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **`OpenApiSpecificationIT`**                         | `openapi.yaml` stämmer med koden.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Sök (enhet)**                                      | `CustomerDocumentBinder`: deduplicering, gruppering per namespace, att en skyddad kund saknar adress och kontaktfält, telefonnormalisering och taket på 500 värden. `SearchIndexRelay`: kund som finns, kund som saknas, fel i batch, fel på enskild rad och `attempts`. `CustomerSearchService`: 503, gränsen för result window, sortering och att skyddade träffar släpps när indexet är inaktuellt. Fasaden mot Hibernate Search mockas, men DSL:en mockas inte.                                                                                                                                                                                                                                                                           |
+| **Sök (IT)**                                         | `CustomerSearchIT` med en OpenSearch-testcontainer, som startas av en `EnvironmentPostProcessor` som i SM. Happy case: sökning på namn, adress och telefon i ett annat format, kontakt i eget och i globalt namespace, ett meddelande som via relayn blir sökbart, och reindexering.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 Topologins argument (single-active-consumer, delivery-limit och DLX) testas inte automatiskt. De granskas i PR:en mot
 rabbitmq-topology.
@@ -1108,43 +1120,43 @@ rabbitmq-topology.
 
 ### 11.2 SupportManagement (`ERRAND`)
 
-| Område | Ändring |
-|--------|---------|
-| Opt-in | En ny egenskap i `namespace_config` slår på publiceringen per namespace. Namespaces utan den publicerar inget. |
+|       Område        |                                                                                                                                                                                              Ändring                                                                                                                                                                                               |
+|---------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Opt-in              | En ny egenskap i `namespace_config` slår på publiceringen per namespace. Namespaces utan den publicerar inget.                                                                                                                                                                                                                                                                                     |
 | Publiceringspunkter | Samma ställen som `publishToProcess` i `service/EventService.java` (`createErrandEvent`, `createErrandEventWithoutNotification` och `publishDeletionToProcess`). Det täcker även ändringar från `EmailReaderWorker` och `MessageExchangeSyncService`. Ett anrop ger flera events, men det blir en outbox-rad per ärende och transaktion. Mönster: `ProcessEventPublisher` och `ProcessEventRelay`. |
-| Radering | Soft delete publiceras som `DELETE`. Restore publiceras som `UPDATE` med högre version, vilket väcker objektet till liv (§3.4). Hård radering och purge publiceras som `DELETE`. |
-| Version | `ErrandEntity.version`. Det måste verifieras att en ändring som bara rör stakeholders ökar versionen. Gör den inte det tvingas en ökning fram (`OPTIMISTIC_FORCE_INCREMENT`). |
-| Envelope | `reference` = `errandNumber`, `title`, `category` = classification category/type, `status`, `sourceCreated`/`sourceModified` = `created`/`modified`, `namespace`. |
-| Parter | Stakeholders: `externalId` som partyId om det är ett UUID, och `externalIdType` som partytyp. `role`, namn, adress och `contactChannels` följer med. Stakeholders utan partyId skickas med, eftersom de kan vara kontaktpersoner. `parameters` skickas aldrig. |
-| Utkast | Ärenden med `lifecycle = DRAFT` publiceras inte (beslut 26). När ett utkast skickas in publiceras det som `UPDATE`. |
-| Skyddad identitet | Om SM vet att en stakeholder har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adress eller kontaktkanaler (§3.1). |
-| Grundladdning | En ny `JobType` som går igenom ärendena per namespace med keyset, som `ErrandPurgeRunner.findIdsAfter`, och med ShedLock per namespace. |
+| Radering            | Soft delete publiceras som `DELETE`. Restore publiceras som `UPDATE` med högre version, vilket väcker objektet till liv (§3.4). Hård radering och purge publiceras som `DELETE`.                                                                                                                                                                                                                   |
+| Version             | `ErrandEntity.version`. Det måste verifieras att en ändring som bara rör stakeholders ökar versionen. Gör den inte det tvingas en ökning fram (`OPTIMISTIC_FORCE_INCREMENT`).                                                                                                                                                                                                                      |
+| Envelope            | `reference` = `errandNumber`, `title`, `category` = classification category/type, `status`, `sourceCreated`/`sourceModified` = `created`/`modified`, `namespace`.                                                                                                                                                                                                                                  |
+| Parter              | Stakeholders: `externalId` som partyId om det är ett UUID, och `externalIdType` som partytyp. `role`, namn, adress och `contactChannels` följer med. Stakeholders utan partyId skickas med, eftersom de kan vara kontaktpersoner. `parameters` skickas aldrig.                                                                                                                                     |
+| Utkast              | Ärenden med `lifecycle = DRAFT` publiceras inte (beslut 26). När ett utkast skickas in publiceras det som `UPDATE`.                                                                                                                                                                                                                                                                                |
+| Skyddad identitet   | Om SM vet att en stakeholder har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adress eller kontaktkanaler (§3.1).                                                                                                                                                                                                                                                      |
+| Grundladdning       | En ny `JobType` som går igenom ärendena per namespace med keyset, som `ErrandPurgeRunner.findIdsAfter`, och med ShedLock per namespace.                                                                                                                                                                                                                                                            |
 
 ### 11.3 party-assets (`ASSET`)
 
 Grenen `publish-asset-events` publicerar redan events med en entity-listener och `@TransactionalEventListener` efter
 commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den byggs om enligt §11.1:
 
-| Område | Ändring |
-|--------|---------|
-| Outbox | `AssetEntityListener` lägger fram en Spring-händelse, och en `BEFORE_COMMIT`-lyssnare skriver outbox-raden. Det täcker `createAsset`, `updateAsset` (även originalet som blir `REPLACED`), `deleteAsset`, `AssetExpirationWorker` och `PR3Importer`, som sparar direkt i repositoryt. |
-| Version | `AssetEntity.version`, inte `revision`, som inte ökar för drafts och delete. |
-| Vem | `Identifier` sparas med typ, även vid delete. |
-| Envelope | `reference` = `assetId`, `title`, `category` = `type`, `status`, `validFrom` = `issued`, `validTo`, `sourceModified` = `updated`. Inget namespace, så engagemangen blir globala (beslut 23). |
-| Parter | Exakt ett: `partyId` och `partyType`, utan kontaktuppgifter. |
-| Grundladdning | `POST /{municipalityId}/asset-events/republish` skriver outbox-rader i batchar i stället för att publicera direkt. |
+|    Område     |                                                                                                                                        Ändring                                                                                                                                        |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Outbox        | `AssetEntityListener` lägger fram en Spring-händelse, och en `BEFORE_COMMIT`-lyssnare skriver outbox-raden. Det täcker `createAsset`, `updateAsset` (även originalet som blir `REPLACED`), `deleteAsset`, `AssetExpirationWorker` och `PR3Importer`, som sparar direkt i repositoryt. |
+| Version       | `AssetEntity.version`, inte `revision`, som inte ökar för drafts och delete.                                                                                                                                                                                                          |
+| Vem           | `Identifier` sparas med typ, även vid delete.                                                                                                                                                                                                                                         |
+| Envelope      | `reference` = `assetId`, `title`, `category` = `type`, `status`, `validFrom` = `issued`, `validTo`, `sourceModified` = `updated`. Inget namespace, så engagemangen blir globala (beslut 23).                                                                                          |
+| Parter        | Exakt ett: `partyId` och `partyType`, utan kontaktuppgifter.                                                                                                                                                                                                                          |
+| Grundladdning | `POST /{municipalityId}/asset-events/republish` skriver outbox-rader i batchar i stället för att publicera direkt.                                                                                                                                                                    |
 
 ### 11.4 contract (`CONTRACT`)
 
-| Område | Ändring |
-|--------|---------|
-| Tidsstämplar | Nya kolumner `created` och `modified` på kontraktet. Det är en additiv migrering, och befintliga rader får `modified = created = now()`. |
-| Vem | `Identifier` fångas vid varje skrivning. Klienterna måste skicka `X-Sent-By`. |
-| Outbox | En egen CRM-outbox. Den befintliga är byggd för billing, har ett enda mål och tar bort raden. Publiceringspunkter: `ContractService` (create, patch, update, delete), `ContractTerminationWorker` och `ContractAutoExtensionWorker`, även vid vanlig periodförlängning, som saknar outbox-rad idag. |
-| Version | `lockVersion`. |
-| Envelope | `reference` = `contractId`, `category` = `type`, `status`, `validFrom`/`validTo` = `startDate`/`endDate`. Ingen titel. Inget namespace, så engagemangen blir globala (beslut 23). |
-| Parter | Stakeholders med `roles`, namn, adress, telefon och e-post. partyId om det finns, annars `organizationNumber` som legalId med `ENTERPRISE`. `CONTACT_PERSON` skickas som en vanlig part, och party-overview kopplar den till företagen (§5.3). |
-| Grundladdning | Sidvis intern genomgång utan bilagor, som skriver outbox-rader. |
+|    Område     |                                                                                                                                               Ändring                                                                                                                                               |
+|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Tidsstämplar  | Nya kolumner `created` och `modified` på kontraktet. Det är en additiv migrering, och befintliga rader får `modified = created = now()`.                                                                                                                                                            |
+| Vem           | `Identifier` fångas vid varje skrivning. Klienterna måste skicka `X-Sent-By`.                                                                                                                                                                                                                       |
+| Outbox        | En egen CRM-outbox. Den befintliga är byggd för billing, har ett enda mål och tar bort raden. Publiceringspunkter: `ContractService` (create, patch, update, delete), `ContractTerminationWorker` och `ContractAutoExtensionWorker`, även vid vanlig periodförlängning, som saknar outbox-rad idag. |
+| Version       | `lockVersion`.                                                                                                                                                                                                                                                                                      |
+| Envelope      | `reference` = `contractId`, `category` = `type`, `status`, `validFrom`/`validTo` = `startDate`/`endDate`. Ingen titel. Inget namespace, så engagemangen blir globala (beslut 23).                                                                                                                   |
+| Parter        | Stakeholders med `roles`, namn, adress, telefon och e-post. partyId om det finns, annars `organizationNumber` som legalId med `ENTERPRISE`. `CONTACT_PERSON` skickas som en vanlig part, och party-overview kopplar den till företagen (§5.3).                                                      |
+| Grundladdning | Sidvis intern genomgång utan bilagor, som skriver outbox-rader.                                                                                                                                                                                                                                     |
 
 ### 11.5 Casedata (`ERRAND`, källan `CASE_DATA`)
 
@@ -1152,18 +1164,18 @@ Casedata har ungefär 5 000 ärenden. Det finns ingen outbox och ingen RabbitMQ 
 från dept44 8.0.12 till den version där dept44-starter-rabbitmq är släppt. Analysen är gjord på `origin/main`
 (2026-10-19).
 
-| Område | Ändring |
-|--------|---------|
-| Opt-in | Egenskapen `integration.party-overview.namespaces` i `application.yml`, eftersom Casedata saknar `namespace_config`. Namespaces utan opt-in skriver inga outbox-rader. Bara `SBK_MEX` slås på tills vidare (beslut 37, §13.1). |
-| Sekretess | Ett ärende med `confidential = true` publiceras som `DELETE`. När flaggan tas bort publiceras `UPDATE` med högre version, och ärendet kommer tillbaka (§3.4). |
-| Publiceringspunkter | `ErrandService` (`create`, `update`, `delete`), `StatusService.addToErrand` och `StakeholderService` (`update`, båda `replaceOnErrand`, `addToErrand`, `delete`). Servicemetoderna skickar en egen Spring-händelse. Den befintliga `ErrandEntity`-händelsen, som triggar Camunda, ska inte återanvändas, eftersom den saknas på flera ställen och Camundas anrop inte får ändras. Camunda skriver via REST-API:t och täcks därför. Schedulers, noteringar, beslut, fastigheter och bilagor publiceras inte. |
-| Vem | `Identifier`: `AD_ACCOUNT` eller `PARTY_ID`. Annars `SYSTEM`. |
-| Radering | Bara hård radering finns, och den publiceras som `DELETE`. Ärendet finns inte kvar när relayn körs, så versionen sparas på outbox-raden (§11.1). Det finns ingen restore. |
-| Version | `ErrandEntity.version` (`@Version int`, skickas som long). Publiceringspunkten sätter `updated` på ärendet, så att både versionen och `sourceModified` ändras även när bara en part ändras. Det verifieras med ett IT. |
-| Envelope | `reference` = `errandNumber`, `title` = `case_type.display_name` följt av `caseTitleAddition`, `category` = `caseType`, `status` = `status.statusType`, `sourceCreated` = `created`, `sourceModified` = `updated` (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas inte. |
-| Parter | `errand.stakeholders`, där `PERSON` blir `PRIVATE` och `ORGANIZATION` blir `ENTERPRISE`. `personId` skickas som partyId bara om det är ett UUID, och aldrig annars. `organizationNumber` skickas som legalId bara när partyId saknas. `roles`, namn, adress (`POSTAL`, annars `VISITING_ADDRESS`) och `contactChannels` följer med, där `CELLPHONE` och `PHONE` blir `PHONE`. Parter med rollen `ADMINISTRATOR` eller med `adAccount`, alltså handläggare, skickas inte. Parter utan id skickas med, eftersom de kan vara kontaktpersoner. `extraParameters` och `authorizedSignatory` skickas aldrig. |
-| Loggning | `StakeholderEntity.toString` skriver ut personId och organisationsnummer, och `ErrandEntity` är `@Data`. Publiceraren får aldrig logga entiteter. |
-| Grundladdning | En admin-endpoint startar ett asynkront jobb med ShedLock, enligt mönstret i `MessageExchangeScheduler`. Jobbet går igenom ärendena per namespace med opt-in, med keyset på `id`. Det läser bara id:n, 500 per batch med en transaktion per batch, och skriver outbox-rader utan aktiviteter. |
+|       Område        |                                                                                                                                                                                                                                                                                                Ändring                                                                                                                                                                                                                                                                                                 |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Opt-in              | Egenskapen `integration.party-overview.namespaces` i `application.yml`, eftersom Casedata saknar `namespace_config`. Namespaces utan opt-in skriver inga outbox-rader. Bara `SBK_MEX` slås på tills vidare (beslut 37, §13.1).                                                                                                                                                                                                                                                                                                                                                                         |
+| Sekretess           | Ett ärende med `confidential = true` publiceras som `DELETE`. När flaggan tas bort publiceras `UPDATE` med högre version, och ärendet kommer tillbaka (§3.4).                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Publiceringspunkter | `ErrandService` (`create`, `update`, `delete`), `StatusService.addToErrand` och `StakeholderService` (`update`, båda `replaceOnErrand`, `addToErrand`, `delete`). Servicemetoderna skickar en egen Spring-händelse. Den befintliga `ErrandEntity`-händelsen, som triggar Camunda, ska inte återanvändas, eftersom den saknas på flera ställen och Camundas anrop inte får ändras. Camunda skriver via REST-API:t och täcks därför. Schedulers, noteringar, beslut, fastigheter och bilagor publiceras inte.                                                                                            |
+| Vem                 | `Identifier`: `AD_ACCOUNT` eller `PARTY_ID`. Annars `SYSTEM`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Radering            | Bara hård radering finns, och den publiceras som `DELETE`. Ärendet finns inte kvar när relayn körs, så versionen sparas på outbox-raden (§11.1). Det finns ingen restore.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Version             | `ErrandEntity.version` (`@Version int`, skickas som long). Publiceringspunkten sätter `updated` på ärendet, så att både versionen och `sourceModified` ändras även när bara en part ändras. Det verifieras med ett IT.                                                                                                                                                                                                                                                                                                                                                                                 |
+| Envelope            | `reference` = `errandNumber`, `title` = `case_type.display_name` följt av `caseTitleAddition`, `category` = `caseType`, `status` = `status.statusType`, `sourceCreated` = `created`, `sourceModified` = `updated` (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas inte.                                                                                                                                                                                                                                                                                           |
+| Parter              | `errand.stakeholders`, där `PERSON` blir `PRIVATE` och `ORGANIZATION` blir `ENTERPRISE`. `personId` skickas som partyId bara om det är ett UUID, och aldrig annars. `organizationNumber` skickas som legalId bara när partyId saknas. `roles`, namn, adress (`POSTAL`, annars `VISITING_ADDRESS`) och `contactChannels` följer med, där `CELLPHONE` och `PHONE` blir `PHONE`. Parter med rollen `ADMINISTRATOR` eller med `adAccount`, alltså handläggare, skickas inte. Parter utan id skickas med, eftersom de kan vara kontaktpersoner. `extraParameters` och `authorizedSignatory` skickas aldrig. |
+| Loggning            | `StakeholderEntity.toString` skriver ut personId och organisationsnummer, och `ErrandEntity` är `@Data`. Publiceraren får aldrig logga entiteter.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Grundladdning       | En admin-endpoint startar ett asynkront jobb med ShedLock, enligt mönstret i `MessageExchangeScheduler`. Jobbet går igenom ärendena per namespace med opt-in, med keyset på `id`. Det läser bara id:n, 500 per batch med en transaktion per batch, och skriver outbox-rader utan aktiviteter.                                                                                                                                                                                                                                                                                                          |
 
 ---
 
@@ -1244,48 +1256,48 @@ spring:
 
 ### 13.1 Öppna frågor
 
-| # | Fråga | Förslag tills den är besvarad |
-|---|-------|-------------------------------|
-| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare. | §3.1 är kravlistan. C5 och C11 kan inte avslutas innan formatet är klart. |
-| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat (beslut 37). |
+| # |                                                                                                  Fråga                                                                                                  |                       Förslag tills den är besvarad                       |
+|---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                         | §3.1 är kravlistan. C5 och C11 kan inte avslutas innan formatet är klart. |
+| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat (beslut 37).                |
 
 ### 13.2 Förutsättningar före driftsättning
 
-| Förutsättning | Behövs för |
-|---------------|------------|
+|                                                      Förutsättning                                                      |                                                                Behövs för                                                                |
+|-------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
 | party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell (§5.4). | Meddelandeflödet (C11), noteringar som skapar kunder (C8) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
-| En egen OpenSearch-container per miljö (T2). | Sökningen (C12, C13) |
-| Köer och exchanges i rabbitmq-topology (T1). | Meddelandeflödet (C11) |
-| dept44-starter-rabbitmq är släppt. | C11 och alla publicerare |
-| Kontaktpersonsrollerna är satta via REST (§12). | Kontaktpersoner på företag |
+| En egen OpenSearch-container per miljö (T2).                                                                            | Sökningen (C12, C13)                                                                                                                     |
+| Köer och exchanges i rabbitmq-topology (T1).                                                                            | Meddelandeflödet (C11)                                                                                                                   |
+| dept44-starter-rabbitmq är släppt.                                                                                      | C11 och alla publicerare                                                                                                                 |
+| Kontaktpersonsrollerna är satta via REST (§12).                                                                         | Kontaktpersoner på företag                                                                                                               |
 
 ### 13.3 Risker
 
-| Risk | Hantering |
-|------|-----------|
-| Behörigheten för `ShowClassified=true` saknas eller försvinner. Då svarar Citizen 401, och alla meddelanden som skapar nya privatkunder dead-letteras. | Behörigheten kontrolleras före driftsättningen (§13.2). Larmet för dead letters gör att felet syns direkt. Meddelandena flyttas tillbaka när behörigheten finns (§7.2). |
-| OpenSearch-containern har inte samma drift och backup som ett riktigt kluster. | Indexet byggs alltid om från databasen med `POST /search/reindex`, så att förlora det kostar bara en reindexering. |
-| Stora företagskunder ger stora sökdokument, eftersom alla engagemangsreferenser indexeras. Det tar tid att bygga om dem. | Titlar och noteringar har tak (§6.2). Kön slår ihop ändringar per kund, så dokumentet byggs om högst en gång per relaykörning. |
-| dept44-starter-rabbitmq är inte släppt (8.2.0-SNAPSHOT på `hydran-3527-rabbitmq-starter`). | C11 och publicerarnas uppgifter väntar på releasen. Casedata måste dessutom uppgraderas från dept44 8.0.12. C1–C10, C12 och C13 kan byggas och driftsättas utan lyssnare. |
-| Dead letter-köerna innehåller personuppgifter (legalId och namn) och har ingen TTL. | Publicerarna skickar partyId när de kan. Bara drift och utvecklare har åtkomst. Larmet (§12.1) gör att köerna töms snabbt. |
-| Grundladdningen av SupportManagement (cirka 800 000 ärenden) går via en enda konsument. | Prefetch 1 och 10–20 ms per meddelande ger 50–100 meddelanden/s, alltså 2–5 timmar. Det blir långsammare när nya privatkunder kräver ett Citizen-anrop. Grundladdningen körs utanför kontorstid, och tiden mäts i test först. Casedata (cirka 5 000) tar några minuter. |
-| Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder delat med 100 anrop per natt. | `refresh-age` och `batch-size` är konfigurerbara. Belastningen stäms av med den som förvaltar Citizen. |
-| Om Citizen inte svarar stannar meddelanden som skapar nya privatkunder. De retryas och läggs sedan tillbaka i kön. | Avsiktligt: ingen privatkund skapas utan känd skyddsstatus. Övriga meddelanden påverkas inte. |
-| Envelope-data (t.ex. en ärendetitel) eller en notering kan innehålla skyddsvärda uppgifter om en skyddad kund. | Det ansvaret ligger hos källsystemen och verksamheterna. Kunden visas som skyddad i varje vy, så den som läser vet att uppgifterna är känsliga. |
-| Den tekniska loggen växer utan gräns. | Indexen klarar stora volymer. Rader kan raderas med `DELETE /{municipalityId}/technical-log` (§8.2). |
-| Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först vid nästa nattliga kontroll. Fram till dess kan ett meddelande hinna spara namn och adress. | Fönstret är högst ett dygn och kan kortas med `refresh-age`. Källornas `protection` gäller direkt. |
-| När opt-in stängs av för ett namespace i SM eller Casedata ligger dess engagemang kvar i party-overview. | Publiceraren kör grundladdningsjobbet för namespacet med `DELETE` i stället för `UPDATE`. Det görs bara vid behov och har ingen egen uppgift. |
-| Datakvaliteten i Casedata: `personId` som inte är UUID, och ärenden utan `updated`. | Räknas i produktion innan CD2 körs. Sådana parter skickas utan partyId (§11.5). |
-| OpenSearch innehåller personuppgifter: namn, adress, kontaktuppgifter och noteringar. | Åtkomsten till klustret och dess snapshots begränsas som för databasen. En raderad kund tas bort ur indexet via kön. Loggar innehåller bara antal och `customer.id`. |
-| Sökningen är tom medan reindexering pågår. | Det tar några minuter och sker sällan, på begäran. |
-| Under grundladdningen hinner relayn inte med, trots att den körs efter varje commit. Kön växer men slås ihop per kund. | `search.relay.batch-size` är konfigurerbar. Efter grundladdningen körs reindexering, och då hämtar relayn in resten. |
-| Det är inte verifierat att Hibernate Search kastar ett fel när en explicit indexeringsplan misslyckas med `writeSync`. Gör den inte det tas köraden bort trots att indexeringen misslyckades. | En spike i C12 verifierar det innan relayn byggs vidare. |
-| Det tar lång tid att radera en stor företagskund, eftersom alla rader försvinner i en transaktion. | Accepteras. Kaskaden görs av databasen och låser bara kundens rader. |
-| Namn och adress kan skilja sig mellan källor. | "Nyast vinner" på `sourceModified` ger ett deterministiskt resultat. Källorna bör vårda sina uppgifter. |
-| Ett meddelande som är äldre än lagrad version tappar sina aktiviteter. | Single-active-consumer och outbox per objekt ger ordning. Det kan bara hända om ett meddelande läggs tillbaka efter ett fel. |
-| Index i Flyway och entiteter glider isär. | `SchemaParityIT`. |
-| En kund som raderats väcks till liv av ett nytt engagemang. | Avsiktligt, eftersom källan är master. Vid radering enligt GDPR måste även källorna radera. |
-| Det tar tid innan en ändring av kontaktpersonsrollerna slår igenom. | Dokumenterat (§5.3). En grundladdning från källan räknar om allt. |
+|                                                                                             Risk                                                                                              |                                                                                                                                Hantering                                                                                                                                |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Behörigheten för `ShowClassified=true` saknas eller försvinner. Då svarar Citizen 401, och alla meddelanden som skapar nya privatkunder dead-letteras.                                        | Behörigheten kontrolleras före driftsättningen (§13.2). Larmet för dead letters gör att felet syns direkt. Meddelandena flyttas tillbaka när behörigheten finns (§7.2).                                                                                                 |
+| OpenSearch-containern har inte samma drift och backup som ett riktigt kluster.                                                                                                                | Indexet byggs alltid om från databasen med `POST /search/reindex`, så att förlora det kostar bara en reindexering.                                                                                                                                                      |
+| Stora företagskunder ger stora sökdokument, eftersom alla engagemangsreferenser indexeras. Det tar tid att bygga om dem.                                                                      | Titlar och noteringar har tak (§6.2). Kön slår ihop ändringar per kund, så dokumentet byggs om högst en gång per relaykörning.                                                                                                                                          |
+| dept44-starter-rabbitmq är inte släppt (8.2.0-SNAPSHOT på `hydran-3527-rabbitmq-starter`).                                                                                                    | C11 och publicerarnas uppgifter väntar på releasen. Casedata måste dessutom uppgraderas från dept44 8.0.12. C1–C10, C12 och C13 kan byggas och driftsättas utan lyssnare.                                                                                               |
+| Dead letter-köerna innehåller personuppgifter (legalId och namn) och har ingen TTL.                                                                                                           | Publicerarna skickar partyId när de kan. Bara drift och utvecklare har åtkomst. Larmet (§12.1) gör att köerna töms snabbt.                                                                                                                                              |
+| Grundladdningen av SupportManagement (cirka 800 000 ärenden) går via en enda konsument.                                                                                                       | Prefetch 1 och 10–20 ms per meddelande ger 50–100 meddelanden/s, alltså 2–5 timmar. Det blir långsammare när nya privatkunder kräver ett Citizen-anrop. Grundladdningen körs utanför kontorstid, och tiden mäts i test först. Casedata (cirka 5 000) tar några minuter. |
+| Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder delat med 100 anrop per natt.                                                                                            | `refresh-age` och `batch-size` är konfigurerbara. Belastningen stäms av med den som förvaltar Citizen.                                                                                                                                                                  |
+| Om Citizen inte svarar stannar meddelanden som skapar nya privatkunder. De retryas och läggs sedan tillbaka i kön.                                                                            | Avsiktligt: ingen privatkund skapas utan känd skyddsstatus. Övriga meddelanden påverkas inte.                                                                                                                                                                           |
+| Envelope-data (t.ex. en ärendetitel) eller en notering kan innehålla skyddsvärda uppgifter om en skyddad kund.                                                                                | Det ansvaret ligger hos källsystemen och verksamheterna. Kunden visas som skyddad i varje vy, så den som läser vet att uppgifterna är känsliga.                                                                                                                         |
+| Den tekniska loggen växer utan gräns.                                                                                                                                                         | Indexen klarar stora volymer. Rader kan raderas med `DELETE /{municipalityId}/technical-log` (§8.2).                                                                                                                                                                    |
+| Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först vid nästa nattliga kontroll. Fram till dess kan ett meddelande hinna spara namn och adress.       | Fönstret är högst ett dygn och kan kortas med `refresh-age`. Källornas `protection` gäller direkt.                                                                                                                                                                      |
+| När opt-in stängs av för ett namespace i SM eller Casedata ligger dess engagemang kvar i party-overview.                                                                                      | Publiceraren kör grundladdningsjobbet för namespacet med `DELETE` i stället för `UPDATE`. Det görs bara vid behov och har ingen egen uppgift.                                                                                                                           |
+| Datakvaliteten i Casedata: `personId` som inte är UUID, och ärenden utan `updated`.                                                                                                           | Räknas i produktion innan CD2 körs. Sådana parter skickas utan partyId (§11.5).                                                                                                                                                                                         |
+| OpenSearch innehåller personuppgifter: namn, adress, kontaktuppgifter och noteringar.                                                                                                         | Åtkomsten till klustret och dess snapshots begränsas som för databasen. En raderad kund tas bort ur indexet via kön. Loggar innehåller bara antal och `customer.id`.                                                                                                    |
+| Sökningen är tom medan reindexering pågår.                                                                                                                                                    | Det tar några minuter och sker sällan, på begäran.                                                                                                                                                                                                                      |
+| Under grundladdningen hinner relayn inte med, trots att den körs efter varje commit. Kön växer men slås ihop per kund.                                                                        | `search.relay.batch-size` är konfigurerbar. Efter grundladdningen körs reindexering, och då hämtar relayn in resten.                                                                                                                                                    |
+| Det är inte verifierat att Hibernate Search kastar ett fel när en explicit indexeringsplan misslyckas med `writeSync`. Gör den inte det tas köraden bort trots att indexeringen misslyckades. | En spike i C12 verifierar det innan relayn byggs vidare.                                                                                                                                                                                                                |
+| Det tar lång tid att radera en stor företagskund, eftersom alla rader försvinner i en transaktion.                                                                                            | Accepteras. Kaskaden görs av databasen och låser bara kundens rader.                                                                                                                                                                                                    |
+| Namn och adress kan skilja sig mellan källor.                                                                                                                                                 | "Nyast vinner" på `sourceModified` ger ett deterministiskt resultat. Källorna bör vårda sina uppgifter.                                                                                                                                                                 |
+| Ett meddelande som är äldre än lagrad version tappar sina aktiviteter.                                                                                                                        | Single-active-consumer och outbox per objekt ger ordning. Det kan bara hända om ett meddelande läggs tillbaka efter ett fel.                                                                                                                                            |
+| Index i Flyway och entiteter glider isär.                                                                                                                                                     | `SchemaParityIT`.                                                                                                                                                                                                                                                       |
+| En kund som raderats väcks till liv av ett nytt engagemang.                                                                                                                                   | Avsiktligt, eftersom källan är master. Vid radering enligt GDPR måste även källorna radera.                                                                                                                                                                             |
+| Det tar tid innan en ändring av kontaktpersonsrollerna slår igenom.                                                                                                                           | Dokumenterat (§5.3). En grundladdning från källan räknar om allt.                                                                                                                                                                                                       |
 
 ---
 
@@ -1303,32 +1315,32 @@ beställaren och definieras senare.
 - Inga TODO:s.
 - README är uppdaterad när konfiguration eller drift påverkas.
 
-| Steg | Id | Uppgift | Beror på |
-|------|----|---------|----------|
-| 1 | C1 | Projektgrund: skrota POC:en, beroenden, konfiguration | — |
-| 2 | C2 | Datamodell, Flyway och schemaverifiering | C1 |
-| 3 | C3 | Integrationer mot Party, Citizen och LegalEntity | C1 |
-| 4 | C4 | Kontaktpersonsroller via REST | C2 |
-| 5 | C5 | Meddelandekärnan, inklusive skyddad identitet | C2, C3, C4, F1 |
-| 6 | C6 | Kundmeddelanden (`CUSTOMER`) | C5 |
-| 7 | C7 | Läs-API och uppslag för kund, kontakter, engagemang och historik | C2, C3 |
-| 8 | C8 | Noteringar | C2, C3 |
-| 9 | C9 | Kundradering via REST och API för teknisk logg | C2 |
-| 10 | C10 | Skyddad identitet: nattlig kontroll | C3, C5 |
-| 11 | T2 | Egen OpenSearch-container per miljö | — |
-| 12 | C12 | Sökindex: Hibernate Search, kö och relay | C2, T2 |
-| 13 | C13 | Sök-endpoint | C12 |
-| 14 | T1 | Köer och exchanges i rabbitmq-topology | F1 |
-| 15 | C11 | RabbitMQ-lyssnare, larm för dead letters och `MessageIT` | C5, C6, T1, release av startern, behörighet i Metakatalogen |
-| 16 | SM1 | SM: outbox, relay och publicering | F1, release av startern |
-| 17 | SM2 | SM: grundladdning | SM1 |
-| 18 | CD1 | Casedata: outbox, relay och publicering | F1, release av startern |
-| 19 | CD2 | Casedata: grundladdning | CD1 |
-| 20 | PA1 | party-assets: outbox, relay och publicering | F1, release av startern |
-| 21 | PA2 | party-assets: grundladdning via outbox | PA1 |
-| 22 | CT1 | contract: tidsstämplar och vem | — |
-| 23 | CT2 | contract: outbox, relay och publicering | CT1, F1, release av startern |
-| 24 | CT3 | contract: grundladdning | CT2 |
+| Steg | Id  |                             Uppgift                              |                          Beror på                           |
+|------|-----|------------------------------------------------------------------|-------------------------------------------------------------|
+| 1    | C1  | Projektgrund: skrota POC:en, beroenden, konfiguration            | —                                                           |
+| 2    | C2  | Datamodell, Flyway och schemaverifiering                         | C1                                                          |
+| 3    | C3  | Integrationer mot Party, Citizen och LegalEntity                 | C1                                                          |
+| 4    | C4  | Kontaktpersonsroller via REST                                    | C2                                                          |
+| 5    | C5  | Meddelandekärnan, inklusive skyddad identitet                    | C2, C3, C4, F1                                              |
+| 6    | C6  | Kundmeddelanden (`CUSTOMER`)                                     | C5                                                          |
+| 7    | C7  | Läs-API och uppslag för kund, kontakter, engagemang och historik | C2, C3                                                      |
+| 8    | C8  | Noteringar                                                       | C2, C3                                                      |
+| 9    | C9  | Kundradering via REST och API för teknisk logg                   | C2                                                          |
+| 10   | C10 | Skyddad identitet: nattlig kontroll                              | C3, C5                                                      |
+| 11   | T2  | Egen OpenSearch-container per miljö                              | —                                                           |
+| 12   | C12 | Sökindex: Hibernate Search, kö och relay                         | C2, T2                                                      |
+| 13   | C13 | Sök-endpoint                                                     | C12                                                         |
+| 14   | T1  | Köer och exchanges i rabbitmq-topology                           | F1                                                          |
+| 15   | C11 | RabbitMQ-lyssnare, larm för dead letters och `MessageIT`         | C5, C6, T1, release av startern, behörighet i Metakatalogen |
+| 16   | SM1 | SM: outbox, relay och publicering                                | F1, release av startern                                     |
+| 17   | SM2 | SM: grundladdning                                                | SM1                                                         |
+| 18   | CD1 | Casedata: outbox, relay och publicering                          | F1, release av startern                                     |
+| 19   | CD2 | Casedata: grundladdning                                          | CD1                                                         |
+| 20   | PA1 | party-assets: outbox, relay och publicering                      | F1, release av startern                                     |
+| 21   | PA2 | party-assets: grundladdning via outbox                           | PA1                                                         |
+| 22   | CT1 | contract: tidsstämplar och vem                                   | —                                                           |
+| 23   | CT2 | contract: outbox, relay och publicering                          | CT1, F1, release av startern                                |
+| 24   | CT3 | contract: grundladdning                                          | CT2                                                         |
 
 ### C1 — Projektgrund
 
@@ -1490,7 +1502,9 @@ beställaren och definieras senare.
   - utan namn och adress när Citizen inte har någon post
 
   Kunden loggas som `CUSTOMER_CREATED` med kanalen `REST`.
+
 - Okänd part ger 404, och ingen kund skapas.
+
 - Om ett meddelande skapar kunden samtidigt blir det en kund och inget fel.
 
 ### C9 — Kundradering via REST och API för teknisk logg
@@ -1565,17 +1579,23 @@ beställaren och definieras senare.
 **Acceptans:**
 
 - Sökningen träffar på:
+
   - namn och adress
   - kontaktuppgifter och kontaktpersoner i eget namespace och globalt
   - engagemangens referens, titel och kategori
   - noteringar i eget namespace
 
   Den träffar aldrig på kontaktuppgifter eller noteringar i andra namespaces.
+
 - En skyddad kund hittas på ett ärendenummer, men inte på titel eller notering.
+
 - Ett telefonnummer hittas oavsett format.
+
 - En skyddad kund hittas inte på namn, adress, kontaktuppgifter, titel eller notering. En skyddad kund vars dokument är
   inaktuellt släpps ur träfflistan.
+
 - Följande ger 400:
+
   - en `query` som är tom eller längre än 255 tecken
   - `size` över 100
   - en sida bortom 10 000 träffar
@@ -1738,3 +1758,4 @@ beställaren och definieras senare.
 
 - Alla kontrakt i kommunen publiceras utan aktiviteter.
 - Inga bilagor läses.
+
