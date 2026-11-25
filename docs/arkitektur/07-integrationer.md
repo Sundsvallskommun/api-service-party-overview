@@ -74,7 +74,8 @@ När en notering skapar en kund ([beslut 6]) sker följande:
      `postalCode` och `city` följer med.
 
    Delar som saknas utelämnas ur `street`. LegalEntity kan ha hela gatuadressen i `addressArea`, t.ex.
-   "SKEPPARPLATSEN 1", och en postadress med bara postnummer och ort, som för ett företagspostnummer.
+   "SKEPPARPLATSEN 1", och en postadress med bara postnummer och ort, som för ett företagspostnummer. Arbetsställenas
+   adresser i `workplaces[]` mappas på samma sätt ([§5.5]).
 
    Är `organizationNumber` i svaret ett personnummer, alltså en enskild firma, får kunden ägarens skydd från
    folkbokföringen som i [§5.4], och är ägaren skyddad sparas varken namn, adresser eller profil. Annars sparas

@@ -12,7 +12,9 @@ erDiagram
     customer ||--o{ note : "äger"
     customer ||--o{ asserted_protection : "har"
     customer ||--o| enterprise_profile : "har"
-    enterprise_profile ||--o{ enterprise_sni_code : "har"
+    enterprise_profile ||--o{ enterprise_workplace : "har"
+    enterprise_workplace ||--o{ enterprise_workplace_address : "har"
+    enterprise_workplace ||--o{ enterprise_workplace_sni_code : "har"
     enterprise_profile ||--o{ enterprise_proceeding : "har"
     engagement ||--o{ engagement_history : "har"
     engagement ||--o{ contact : "härleds från"
@@ -46,9 +48,9 @@ erDiagram
   Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn. `contact` nås också på `party_id` när en
   persons kontaktrader raderas, och då avgörs kommunen via `contact.customer_id` ([§5.3]).
 - `namespace varchar(32)` finns på `engagement`, `contact` och `note` ([§5.1]).
-- En adress har samma kolumner i `customer_address` och `contact`: `address_type varchar(32)`, `care_of`, `street`,
-  `city` och `country varchar(255)` samt `postal_code varchar(16)`. Båda entiteterna använder samma `@Embeddable`
-  ([§5.2]).
+- En adress har samma kolumner i `customer_address`, `contact` och `enterprise_workplace_address`:
+  `address_type varchar(32)`, `care_of`, `street`, `city` och `country varchar(255)` samt `postal_code varchar(16)`.
+  Alla tre entiteterna använder samma `@Embeddable` ([§5.2]).
 - Kolumner som slutar på `_id` men inte är FK och inte pekar på någon tabell i party-overview:
   - `municipality_id`
   - `party_id`: partens partyId, som är Citizens `personId` för en person och LegalEntitys id för ett företag
@@ -93,7 +95,8 @@ erDiagram
 Index:
 
 - `uq_customer_municipality_id_party_id (municipality_id, party_id)`
-- `idx_customer_party_id`: ändringskön, som hittar ett företag i alla kommuner ([§5.5])
+- `idx_customer_party_id`: ändringskön, som hittar en part i alla kommuner ([§5.5])
+- `idx_customer_registry_party_id`: ändringskön, som hittar de enskilda firmor som en person äger ([§5.5])
 
 Den nattliga kontrollen går i primärnyckelns ordning och har inget eget index ([§5.4]).
 
@@ -143,17 +146,43 @@ skyddad kund har ingen. Raden och dess barn ersätts som helhet.
 | `fetched`                                                               | datetime(6)                  | nej    | När anropet till LegalEntity startade. Bara en senare hämtning skriver över.         |
 | `created`, `modified`                                                   | datetime(6)                  | nej/ja |                                                                                      |
 
-**`enterprise_sni_code`**: företagets SNI-koder, med huvudnäringen på plats 1 ([§5.5]).
+**`enterprise_workplace`**: företagets arbetsställen ([§5.5]).
 
-|    Kolumn     |     Typ      | Null |                                 Anmärkning                                 |
-|---------------|--------------|------|----------------------------------------------------------------------------|
-| `id`          | varchar(36)  | nej  | PK                                                                         |
-| `customer_id` | varchar(36)  | nej  | FK `fk_enterprise_sni_code_customer_id` till `enterprise_profile`, cascade |
-| `ordinal`     | int          | nej  | 1 är huvudnäringen                                                         |
-| `sni_code`    | varchar(16)  | nej  |                                                                            |
-| `name`        | varchar(255) | ja   |                                                                            |
+|                 Kolumn                 |           Typ           | Null |                                 Anmärkning                                  |
+|----------------------------------------|-------------------------|------|-----------------------------------------------------------------------------|
+| `id`                                   | varchar(36)             | nej  | PK                                                                          |
+| `customer_id`                          | varchar(36)             | nej  | FK `fk_enterprise_workplace_customer_id` till `enterprise_profile`, cascade |
+| `cfar_number`                          | varchar(16)             | ja   | SCB:s nummer för arbetsstället                                              |
+| `name`                                 | varchar(255)            | ja   |                                                                             |
+| `main_workplace`                       | bit                     | nej  |                                                                             |
+| `employee_size_class`, `employee_size` | varchar(8), varchar(64) | ja   |                                                                             |
+| `phone_number`                         | varchar(255)            | ja   |                                                                             |
 
-Index: `uq_enterprise_sni_code_customer_id_ordinal (customer_id, ordinal)`.
+Index: `idx_enterprise_workplace_customer_id`.
+
+**`enterprise_workplace_address`**: arbetsställets postadress och besöksadress, med kolumnerna i [§4.2].
+
+|     Kolumn     |     Typ     | Null |                                 Anmärkning                                  |
+|----------------|-------------|------|-----------------------------------------------------------------------------|
+| `id`           | varchar(36) | nej  | PK                                                                          |
+| `workplace_id` | varchar(36) | nej  | FK `fk_enterprise_workplace_address_workplace_id`, cascade                  |
+| adressfälten   | [§4.2]      | ja   | `address_type` är `POSTAL_ADDRESS` eller `VISITING_ADDRESS` och aldrig null |
+
+Index: `idx_enterprise_workplace_address_workplace_id`.
+
+**`enterprise_workplace_sni_code`**: arbetsställets SNI-koder, i LegalEntitys ordning ([§5.5]).
+
+|     Kolumn     |     Typ      | Null |                         Anmärkning                          |
+|----------------|--------------|------|-------------------------------------------------------------|
+| `id`           | varchar(36)  | nej  | PK                                                          |
+| `workplace_id` | varchar(36)  | nej  | FK `fk_enterprise_workplace_sni_code_workplace_id`, cascade |
+| `ordinal`      | int          | nej  | 1 är arbetsställets första kod                              |
+| `sni_code`     | varchar(16)  | nej  |                                                             |
+| `name`         | varchar(255) | ja   |                                                             |
+
+Index: `uq_enterprise_workplace_sni_code_workplace_id_ordinal (workplace_id, ordinal)`.
+
+Företagets SNI-koder lagras inte. De räknas fram ur arbetsställenas när profilen läses och indexeras ([§5.5]).
 
 **`enterprise_proceeding`**: pågående likvidation, konkurs eller rekonstruktion ([§5.5]).
 
@@ -238,15 +267,16 @@ Index: `idx_contact_customer_id_namespace`, `idx_contact_engagement_id` och `idx
 
 **`note`**
 
-|          Kolumn           |            Typ            | Null |            Anmärkning             |
-|---------------------------|---------------------------|------|-----------------------------------|
-| `id`                      | varchar(36)               | nej  | PK                                |
-| `customer_id`             | varchar(36)               | nej  | FK `fk_note_customer_id`, cascade |
-| `namespace`               | varchar(32)               | nej  |                                   |
-| `subject`                 | varchar(255)              | ja   | Högst 255 tecken (`@Size`)        |
-| `body`                    | text                      | nej  | Högst 10 000 tecken (`@Size`)     |
-| `created`, `created_by`   | datetime(6), varchar(255) | nej  | `created_by` från `X-Sent-By`     |
-| `modified`, `modified_by` | datetime(6), varchar(255) | ja   | `modified_by` från `X-Sent-By`    |
+|          Kolumn           |            Typ            | Null |                     Anmärkning                     |
+|---------------------------|---------------------------|------|----------------------------------------------------|
+| `id`                      | varchar(36)               | nej  | PK                                                 |
+| `customer_id`             | varchar(36)               | nej  | FK `fk_note_customer_id`, cascade                  |
+| `namespace`               | varchar(32)               | nej  |                                                    |
+| `subject`                 | varchar(255)              | ja   | Högst 255 tecken (`@Size`)                         |
+| `body`                    | text                      | nej  | Högst 10 000 tecken (`@Size`)                      |
+| `created`, `created_by`   | datetime(6), varchar(255) | nej  | `created_by` från `X-Sent-By`                      |
+| `modified`, `modified_by` | datetime(6), varchar(255) | ja   | `modified_by` från `X-Sent-By`                     |
+| `version`                 | bigint                    | nej  | `@Version`, och ETag i API:t ([§6.1], [beslut 61]) |
 
 Index: `idx_note_customer_id_namespace_created`.
 
@@ -299,8 +329,8 @@ ett objekt, t.ex. en kunds rader för `CUSTOMER`, med nyckelns början.
 | `protection_level` | varchar(32)  | ja   | Den nya nivån vid `PROTECTION_CHANGED`                            |
 | `created`          | datetime(6)  | nej  |                                                                   |
 
-Index: `idx_technical_log_municipality_id_party_id_created` och `idx_technical_log_created`, som används vid manuell
-radering på datum ([§8.2]).
+Index: `idx_technical_log_municipality_id_party_id_created` och `idx_technical_log_created`, som används vid gallring
+och manuell radering på datum ([§8.2]). radering på datum ([§8.2]).
 
 **`contact_person_role`**: konfiguration ([beslut 15]).
 
@@ -364,4 +394,6 @@ Index: `idx_search_index_queue_queued`.
 [beslut 57]: 00-beslutslogg.md#beslut-57-en-kund-kan-ha-flera-adresser-och-en-kontaktperson-har-en
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
+[§6.1]: 06-rest-api.md#61-endpoints
+[beslut 61]: 00-beslutslogg.md#beslut-61-noteringar-ändras-med-optimistisk-låsning
 

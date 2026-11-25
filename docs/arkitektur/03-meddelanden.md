@@ -16,6 +16,17 @@ inte i ett giltigt meddelande, och ett meddelande som bryter mot kraven dead-let
 | `x-request-id` | Sätts av dept44-starter-rabbitmq och lagras i den tekniska loggen.                    |
 | Routing key    | `<objektTyp>.<operation>` med gemener, t.ex. `errand.update` eller `customer.delete`. |
 
+Kuvertet följer CloudEvents 1.0 i AMQP-bindningens binära läge ([beslut 62]), med applikationsegenskaperna:
+
+- `cloudEvents:specversion`: `1.0`
+- `cloudEvents:id`: samma som `message-id`
+- `cloudEvents:source`: källan
+- `cloudEvents:type`: routing key
+- `cloudEvents:time`: `sourceModified`, när det finns
+- `cloudEvents:subject`: `objectId`, när det finns
+
+party-overview läser bara fälten i tabellerna här.
+
 **Kropp**
 
 |                                     Fält                                      |                             Typ                             |                                  Krav                                  |                                                                         Beskrivning                                                                         |
@@ -302,9 +313,9 @@ alltså att någon källa har skickat ett `CUSTOMER UPDATE` för den. Raden bär
 - Raderingen görs sist i transaktionen, efter `source_object` och all omräkning. `clearAutomatically` kopplar loss alla
   laddade entiteter, så en ändring som görs på en entitet efter raderingen skrivs aldrig.
 - Den tekniska loggraden `CUSTOMER_DELETED` skrivs i samma transaktion som raderingen.
-- Vid ett `CUSTOMER DELETE` och en radering via REST raderas också personens kontaktrader hos företag i kommunen
-  (`contact.party_id`, [§5.3]). Vid en automatisk radering ligger de kvar, eftersom källorna fortfarande anger personen
-  som kontaktperson.
+- Vid varje radering, också en automatisk, raderas personens kontaktrader hos företag i kommunen (`contact.party_id`,
+  [§5.3]). Varje berört företag loggas som `CONTACT_REMOVED` ([§8.1]). Anger källan fortfarande personen som
+  kontaktperson kommer raden tillbaka nästa gång objektet ändras i källan ([beslut 52]).
 - Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
   partyId. Ett senare, äldre `CUSTOMER UPDATE` kan då skapa kunden igen.
 - Ett senare meddelande som nämner kunden skapar den på nytt. Det är avsiktligt, eftersom källsystemet är master.
@@ -362,4 +373,7 @@ omförsök står bara den källans kö still.
 [§3.7]: #37-felhantering
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
+[§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
+[beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
+[beslut 62]: 00-beslutslogg.md#beslut-62-meddelandeformaten-följer-cloudevents
 

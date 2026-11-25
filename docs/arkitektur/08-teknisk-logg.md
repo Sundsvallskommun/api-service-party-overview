@@ -27,16 +27,20 @@ ingen rad, eftersom loggen förs per kund.
 
 ## 8.2 Radering av den tekniska loggen
 
-Inget gallras automatiskt ([beslut 11] och [beslut 12]):
+Den tekniska loggen gallras efter en lagringstid ([beslut 60]). Den raderas inte med kunden ([beslut 11]).
 
-- Den tekniska loggen sparas tills den raderas med `DELETE /{municipalityId}/technical-log`, filtrerad på `partyId`,
-  `createdBefore` eller båda. Det används t.ex. för en enskild persons begäran enligt GDPR, eller för att rensa gamla
-  rader.
-- Raderingen görs i batchar (`LIMIT`) med en transaktion per batch, så att låsen hålls korta.
+- `TechnicalLogRetentionScheduler` (`@Dept44Scheduled` med ShedLock) körs varje natt och raderar rader vars `created`
+  är äldre än `technical-log.retention` (förval `P5Y`) via `idx_technical_log_created`.
+- Rader kan också raderas med `DELETE /{municipalityId}/technical-log`, filtrerad på `partyId`, `createdBefore` eller
+  båda. Det används t.ex. för en enskild persons begäran enligt GDPR.
+- Båda raderar i batchar (`LIMIT`) med en transaktion per batch, så att låsen hålls korta.
+
+Inget annat gallras automatiskt:
+
 - Historik och kontakter följer sina engagemang och sin kund. Undantaget är en kontaktpersons rader, som också raderas
-  när personen raderas via REST eller ett `CUSTOMER DELETE`, eller får skydd ([§5.3]).
-- Tombstones i `source_object` sparas för alltid. Rader för `CUSTOMER`, som innehåller partyId, blir aldrig tombstones
-  och raderas med kunden ([§3.6]).
+  när personen raderas, också automatiskt, eller får skydd ([§5.3]).
+- Tombstones i `source_object` sparas för alltid ([beslut 12]). Rader för `CUSTOMER`, som innehåller partyId, blir
+  aldrig tombstones och raderas med kunden ([§3.6]).
 
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§3.7]: 03-meddelanden.md#37-felhantering
@@ -45,4 +49,5 @@ Inget gallras automatiskt ([beslut 11] och [beslut 12]):
 [beslut 12]: 00-beslutslogg.md#beslut-12-versionsvakt-i-ett-register-per-källobjekt
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[beslut 60]: 00-beslutslogg.md#beslut-60-den-tekniska-loggen-gallras-efter-en-lagringstid
 

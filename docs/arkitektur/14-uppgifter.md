@@ -43,6 +43,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 24   | CT3 | contract: grundladdning                              | CT2                            |
 | 25   | T3  | Ändringskön i rabbitmq-topology                      | F2                             |
 | 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2            |
+| 27   | C15 | Skyddskontroll från ändringskön                      | C10, C14, F2                   |
 
 ## C1 — Projektgrund
 
@@ -88,7 +89,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `SchemaParityIT` röd. Det ska provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `customer_address`, `engagement`,
   `engagement_history`, `contact`, `contact_channel`, `note`, `note_history`, `asserted_protection`,
-  `enterprise_profile`, `enterprise_sni_code` och `enterprise_proceeding` för kunden. Raderna i `technical_log`,
+  `enterprise_profile`, `enterprise_workplace`, `enterprise_workplace_address`, `enterprise_workplace_sni_code` och
+  `enterprise_proceeding` för kunden. Raderna i `technical_log`,
   `source_object` och `search_index_queue` finns kvar, och likaså kundens kontaktrader hos andra kunder
   (`contact.party_id`).
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
@@ -159,7 +161,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Företagsprofilen mappas enligt [§5.5]. Testet använder svaret för SCA Forest Products (organisationsnummer
   5563793586) som stub och kontrollerar:
 
-  - SNI-koderna 70100, 72190, 86212 och 91012, i den ordningen, utan de tomma elementen
+  - tio arbetsställen, där huvudarbetsstället har CFAR-nummer 31107162, och arbetsställenas SNI-koder utan de tomma
+    elementen
   - storleksklassen `8` "200–499 anställda", juridisk form `49` och kommunen för företagets säte `2281`
   - besöksadressen "SKEPPARPLATSEN 1" och en postadress med bara postnummer och ort
   - att tomma strängar blir null
@@ -216,8 +219,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   kontaktpersonen blir skyddad i en annan transaktion medan ett meddelande om företaget tillämpas. Efter båda finns
   ingen kontaktrad för personen, oavsett vilken transaktion som får låset först ([§3.3]).
 - När en kund skapas med, eller får, en skyddsnivå som inte är `NONE` raderas personens kontaktrader hos företag, och
-  varje företag loggas som `CONTACT_REMOVED` och markeras för omindexering. En automatisk radering av kunden lämnar
-  kontaktraderna kvar ([§5.3]).
+  varje företag loggas som `CONTACT_REMOVED` och markeras för omindexering. En automatisk radering av kunden raderar
+  också personens kontaktrader, med samma loggning ([§3.6]). När objektet sedan ändras i källan och fortfarande
+  anger personen som kontaktperson kommer raden tillbaka.
 - En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer, med 10 eller 12 siffror, får ägarens partyId
   som `registry_party_id` och ägarens skydd från Citizen. Firman och ägaren blir två olika kunder. Ett vanligt
   organisationsnummer ger `registry_party_id = null` ([§5.4]).
@@ -299,6 +303,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Bygg:**
 
 - `CustomerResource` (GET och lookup) och `EngagementResource` med service och API-modeller, enligt [§5.1] och [§6.1].
+- Endpointen för ett företags arbetsställen ([§6.1]).
 
 **Acceptans:**
 
@@ -307,6 +312,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Kunden returneras med alla sina adresser, i ordningen i [§5.2], och varje kontaktperson med sin adress.
 - En företagskund returneras med `enterpriseProfile` och SNI-koderna i ordning. En privatkund, en skyddad kund och ett
   företag utan profil returneras utan den ([§6.1]).
+- Företagets SNI-koder räknas fram ur arbetsställenas enligt [§5.5]. Med stubben för SCA Forest Products från C3 blir
+  de 70100, 72190, 86212 och 91012, i den ordningen.
+- Arbetsställena returneras sidvis, med huvudarbetsstället först och sedan efter namn, var och en med sina adresser och
+  SNI-koder. En privatkund, en skyddad kund och ett företag utan profil ger en tom sida, och en okänd kund ger 404.
 - En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adresser och kontaktkanaler.
 - `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
   hanteras som skyddad ([§5.4]).
@@ -334,6 +343,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `POST` sätter `created_by` till värdet i `X-Sent-By`, och `PATCH` sätter `modified_by` men ändrar aldrig
   `created_by`. Båda returneras som `createdBy` och `modifiedBy` ([§4.3]).
 - `CREATED` och `UPDATED` skrivs till historiken med `performed_by` och `performed_by_type` från `X-Sent-By`.
+- `GET`, `POST` och `PATCH` returnerar noteringens version som `ETag`. `PATCH` och `DELETE` utan `If-Match` ger 428,
+  och med en annan version än den sparade 412, utan att något ändras ([beslut 61]). Samtidighetstest: två `PATCH` med
+  samma version ger en lyckad ändring och en 412.
 - `POST`, `PATCH` och `DELETE` utan `X-Sent-By`, med en header utan `type=` och med ett värde över 255 tecken ger 400,
   och ingenting sparas ([§6]).
 - En notering på en okänd kund skapar kunden:
@@ -358,7 +370,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `PATCH` och `DELETE` på en notering vars kund har raderats ger 404 och skapar inte kunden ([§3.6]).
 
 - När den sista noteringen raderas och kunden saknar engagemang och `CUSTOMER`-data raderas kunden, och
-  `CUSTOMER_DELETED` loggas med kanalen `REST` ([§3.6]).
+  `CUSTOMER_DELETED` loggas med kanalen `REST` ([§3.6]). Personens kontaktrader hos företag raderas också.
 
 - En notering som skapar en kund med en skyddsnivå som inte är `NONE` raderar personens kontaktrader hos företag
   ([§5.3]).
@@ -372,6 +384,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 - `DELETE /{municipalityId}/customers/{partyId}`.
 - `TechnicalLogResource`: `GET` per kund och `DELETE` med filtren `partyId` och `createdBefore` ([§8.2]).
+- `TechnicalLogRetentionScheduler`, som gallrar loggen efter `technical-log.retention` ([§8.2], [§12]).
 
 **Acceptans:**
 
@@ -388,6 +401,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `DELETE` på den tekniska loggen utan något filter ger 400. Med `partyId`, med `createdBefore` och med båda raderas
   exakt de rader som matchar.
 - Raderingen görs i batchar med `LIMIT`, med en transaktion per batch. Det testas med fler rader än en batch.
+- Gallringen raderar rader vars `created` är äldre än lagringstiden och lämnar yngre rader orörda. Förvalet är `P5Y`,
+  och ett annat värde i konfigurationen gäller. Gallringen använder `idx_technical_log_created`, vilket verifieras med
+  `EXPLAIN`, och ShedLock förhindrar att två körningar pågår samtidigt.
 
 ## C10 — Skyddad identitet: nattlig kontroll
 
@@ -445,7 +461,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Hibernate Searchs automatiska lyssnare är avstängda (`indexing.listeners.enabled: false`).
 - En skyddad kunds dokument, också en kund med `UNKNOWN`, innehåller bara `references` av de sökbara fälten. Namn,
   adresser, kontakt- och telefonfält saknas.
-- Kontakter hamnar i `contacts_ns_<namespace>` respektive `contacts_global`.
+- Kontakter, med kontaktpersonernas namn, adresser och kanaler, hamnar i `contacts_ns_<namespace>` respektive
+  `contacts_global`.
+- Arbetsställenas namn och adresser hamnar i `workplaces`, med högst 500 värden, och telefonnumren i `phones_global`.
 - Företagsprofilens SNI-namn och verksamhetsbeskrivning hamnar i `business`. En skyddad kund och en kund utan profil
   har inget `business`.
 - Telefonnummer i formaten `+46 70-123 45 67`, `0046701234567` och `070-1234567` ger samma värde.
@@ -478,10 +496,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Sökningen träffar på:
 
   - namn och var och en av kundens adresser
-  - kontaktuppgifter och kontaktpersoner i eget namespace och globalt
+  - kontaktuppgifter och kontaktpersoner, med kontaktpersonens adress, i eget namespace och globalt
   - engagemangens referens, titel och kategori
   - noteringar i eget namespace
   - företagets bransch och verksamhetsbeskrivning, t.ex. "skogsbruk" för SCA Forest Products
+  - arbetsställenas namn och adresser, t.ex. "Bollsta sågverk" för SCA Forest Products
 
   Den träffar aldrig på kontaktuppgifter eller noteringar i andra namespaces.
 
@@ -760,7 +779,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Bygg:**
 
 - `RegistryChangeListener` med en egen listener-container för `integration.registry-changes.queue` ([§9], [§12]).
-- Mappningen från köns format (F2) till partyId och partytyp.
+- Mappningen från köns format (F2) till partyId, partens typ och händelsetyp ([§5.5]).
 - Ändringskön i `DeadLetterHealthIndicator`.
 
 **Acceptans:**
@@ -774,10 +793,32 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - 404 från LegalEntity lämnar profilen orörd och loggar WARN med partyId:t. När LegalEntity inte svarar, eller svarar
   5xx, 429 eller 408, görs meddelandet om, och efter `x-delivery-limit` hamnar det i dead letter-kön. 429 och 408 görs
   om till ett avbrott, som när partyId slås upp ([§3.7]).
-- Ett meddelande om en person ändrar ingenting och ger inget anrop.
+- Ett meddelande om en person ger inget anrop till LegalEntity (C15 kontrollerar personen).
 - `DeadLetterHealthIndicator` blir `DOWN` när ändringsköns dead letter-kö inte är tom.
 - `MessageIT` ([§10]) får ett fall med LegalEntity stubbad med svaret för SCA Forest Products: ett meddelande om
   företaget ger profilen enligt C3, och kunden markeras för omindexering.
+
+## C15 — Skyddskontroll från ändringskön
+
+**Bygg:**
+
+- Hanteringen av meddelanden om personer i `RegistryChangeListener` enligt [§5.5], med samma kontroll per kund som
+  `ProtectionRefreshScheduler` ([§5.4]).
+
+**Acceptans:**
+
+- Ett meddelande om en person som varken är kund, äger en enskild firma som är kund eller är kontaktperson ger inget
+  anrop till Citizen.
+- En privatkund som har fått skyddad folkbokföring får `PROTECTION_CHANGED` med kanalen `MESSAGE`. Namn, adresser och
+  egna kontaktuppgifter töms, personens kontaktrader hos företag raderas, och de berörda kunderna markeras för
+  omindexering.
+- En enskild firma vars ägare har fått skydd får ägarens nivå och förlorar sin företagsprofil.
+- En kontaktperson som inte är kund och har fått skydd får sina kontaktrader raderade, och företagen loggas som
+  `CONTACT_REMOVED` ([§5.3]).
+- En person som är kund i två kommuner ger ett anrop till Citizen och en kontroll per kommun, i en transaktion per
+  kund.
+- När Citizen inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om och hamnar till sist i dead letter-kön.
+  401 dead-letteras direkt, som i [§3.7].
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
@@ -820,4 +861,5 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
+[beslut 61]: 00-beslutslogg.md#beslut-61-noteringar-ändras-med-optimistisk-låsning
 

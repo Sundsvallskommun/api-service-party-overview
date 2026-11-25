@@ -4,11 +4,13 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 13.1 Öppna frågor
 
-| # |                                                                                                                                                 Fråga                                                                                                                                                 |                                                                            Förslag tills den är besvarad                                                                             |
-|---|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. Uppgifterna som beror på F1 (C5, SM1, CD1, PA1 och CT2), och de som bygger på C5, kan inte avslutas innan formatet är klart.                                   |
-| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras, och party-assets parkeringstillstånd för rörelsehindrade (`PARKINGPERMIT`, `PARKING_PERMIT`)? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37], [beslut 50]).                                                                                                            |
-| 3 | Ändringskön för företag och personer ([§5.5]): vad heter exchangen, vem förvaltar den, och har varje meddelande partyId:t och om parten är ett företag eller en person? Kommer ändringar för alla företag, eller bara för dem som någon bevakar?                                                      | party-overview behöver bara partyId:t och partens typ. C14 och T3 kan inte avslutas innan det är klart. Tills dess skrivs profilen när kunden skapas och av den nattliga kontrollen. |
+| # |                                                                                                                                                 Fråga                                                                                                                                                 |                                                                                                            Förslag tills den är besvarad                                                                                                             |
+|---|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. Uppgifterna som beror på F1 (C5, SM1, CD1, PA1 och CT2), och de som bygger på C5, kan inte avslutas innan formatet är klart.                                                                                                   |
+| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras, och party-assets parkeringstillstånd för rörelsehindrade (`PARKINGPERMIT`, `PARKING_PERMIT`)? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37], [beslut 50]).                                                                                                                                                                            |
+| 3 | Ändringskön för företag och personer finns inte ännu, och dess meddelandemodell är inte fastställd ([§5.5]). Vem förvaltar den, och vad heter exchangen?                                                                                                                                              | Kraven i [§5.5]: partyId, partens typ, vad som har hänt och ett id per meddelande, enligt CloudEvents ([beslut 62]). C14, C15 och T3 kan inte avslutas innan kön finns. Tills dess skrivs profilen när kunden skapas och av den nattliga kontrollen. |
+| 4 | Hur länge ska den tekniska loggen sparas ([beslut 60])?                                                                                                                                                                                                                                               | Fem år, tills arkivfunktionen och dataskyddsombudet har svarat.                                                                                                                                                                                      |
+| 5 | Kan LegalEntity ge företagets egna SNI-koder, rangordnade som i SCB:s företagsregister?                                                                                                                                                                                                               | Fråga LegalEntitys förvaltare. Tills dess räknas koderna fram ur arbetsställenas ([§5.5]).                                                                                                                                                           |
 
 ## 13.2 Förutsättningar före driftsättning
 
@@ -17,7 +19,7 @@ Del av [arkitekturen för party-overview](README.md).
 | party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar som skapar kunder (C8) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
 | En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                     |
 | Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                   |
-| Ändringskön i rabbitmq-topology (T3).                                                                                     | Företagsprofilen från ändringskön (C14)                                                                                                  |
+| Ändringskön i rabbitmq-topology (T3).                                                                                     | Ändringskön (C14, C15)                                                                                                                   |
 | Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                |
 
 ## 13.3 Risker
@@ -181,11 +183,20 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras. En ägare som är 100 år eller äldre får fel århundrade, och då hittas ingen ägare, så att
   kunden får `UNKNOWN`, eller i värsta fall en annan person med samma nummer i ett annat århundrade.
 
-- En företagsprofil är inaktuell om ett meddelande i ändringskön har dead-letterats, eller om kön inte skickar
-  ändringar för alla företag ([§5.5]).
+- En företagsprofil är inaktuell om ett meddelande i ändringskön har dead-letterats, och tills kön finns ([§5.5]).
 
   **Hantering:** Dead letter-kön larmar ([§12.1]), och meddelandet kan flyttas tillbaka när LegalEntity svarar igen.
   `fetched` visar hur gammal profilen är.
+
+- Ändringskön innehåller alla företag och personer, och det mesta berör inte party-overview.
+
+  **Hantering:** Ett meddelande som inte berör någon kund eller kontaktrad kastas efter en indexuppslagning, utan anrop
+  till LegalEntity eller Citizen ([§5.5]).
+
+- En kontaktperson som källan fortfarande anger försvinner från företaget när personen raderas automatiskt som kund, och
+  kommer tillbaka först när objektet ändras i källan ([§3.6]).
+
+  **Hantering:** Accepteras ([beslut 52]). Uppgifter sparas inte längre än de behövs.
 
 - Företagets SNI-koder räknas fram ur arbetsställenas, eftersom LegalEntity inte ger företagets egna. För ett företag
   med flera arbetsställen kan ordningen skilja sig från SCB:s, som bygger på andelar av omsättningen ([beslut 58]).
@@ -219,4 +230,8 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 21]: 00-beslutslogg.md#beslut-21-namn-och-adress-nyast-vinner
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
+[beslut 60]: 00-beslutslogg.md#beslut-60-den-tekniska-loggen-gallras-efter-en-lagringstid
+[beslut 62]: 00-beslutslogg.md#beslut-62-meddelandeformaten-följer-cloudevents
+[§3.6]: 03-meddelanden.md#36-kundradering
+[beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
 

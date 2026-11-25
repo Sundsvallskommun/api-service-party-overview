@@ -16,7 +16,7 @@ integration:
     CONTRACT: api-fabriken.party-overview.contract
     CASE_DATA: api-fabriken.party-overview.case-data
   registry-changes:
-    queue: …                     # ändringskön för företag och personer (§5.5), namnet bestäms med förvaltaren
+    queue: …                     # ändringskön för företag och personer (§5.5), som inte finns ännu
   dead-letter-suffix: .dlq       # DLQ = kö + suffix, används av health-indikatorn
   citizen:
     url: …
@@ -25,6 +25,8 @@ integration:
 logbook:
   excluded:
     paths: "**/guid"             # LegalEntitys uppslag med organisationsnumret i URL:en (§7.1)
+technical-log:
+  retention: P5Y                 # gallring (§8.2), bestäms med arkivfunktionen och dataskyddsombudet
 protection:
   batch-size: 100
 search:
@@ -39,6 +41,10 @@ scheduler:
     cron: "0 0 2 * * *"
     shedlock-lock-at-most-for: PT3H
     maximum-execution-time: PT3H # förvalet i @Dept44Scheduled är PT2M
+  technical-log-retention:
+    cron: "0 0 3 * * *"
+    shedlock-lock-at-most-for: PT1H
+    maximum-execution-time: PT1H
   search-index-relay:
     cron: "*/10 * * * * *"
     shedlock-lock-at-most-for: PT5M

@@ -6,8 +6,8 @@ Del av [arkitekturen för party-overview](README.md).
 se.sundsvall.partyoverview
 ├─ api/                         CustomerResource, CustomerSearchResource, EngagementResource,
 │  │                            NoteResource, TechnicalLogResource, ContactPersonRoleResource,
-│  │                            SearchIndexResource
-│  └─ model/                    Customer, Engagement, HistoryEntry, Note, TechnicalLogEntry, …
+│  │                            SearchIndexResource, WorkplaceResource
+│  └─ model/                    Customer, EnterpriseProfile, Workplace, Engagement, HistoryEntry, Note, …
 ├─ service/                     CustomerService, EngagementService, NoteService,
 │  │                            TechnicalLogService, ContactPersonRoleService
 │  ├─ message/                  MessageService (ingen tx), MessageWriter (@Transactional)
@@ -25,7 +25,8 @@ se.sundsvall.partyoverview
 │  │                            DeadLetterHealthIndicator
 │  ├─ citizen/                  CitizenClient, CitizenIntegration, configuration/
 │  └─ legalentity/              LegalEntityClient, LegalEntityIntegration, configuration/
-└─ scheduler/                   ProtectionRefreshScheduler, SearchIndexRelayScheduler
+└─ scheduler/                   ProtectionRefreshScheduler, SearchIndexRelayScheduler,
+                                TechnicalLogRetentionScheduler
 ```
 
 - **Beroenden:** `dept44-starter-jpa`, `dept44-starter-feign`, `dept44-starter-rabbitmq`, `dept44-starter-scheduler`,

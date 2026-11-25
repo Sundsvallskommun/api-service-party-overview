@@ -97,12 +97,12 @@ Historiken ligger i en tabell per förälder, `engagement_history` och `note_his
 
 ## Beslut 11: Den tekniska loggen har ingen FK till kunden
 
-Den tekniska loggen har ingen FK till kunden. Den finns kvar efter en kundradering och sparas tills den raderas manuellt
-via REST ([§8.2]).
+Den tekniska loggen har ingen FK till kunden. Den finns kvar efter en kundradering, tills den gallras efter sin
+lagringstid ([beslut 60]) eller raderas manuellt via REST ([§8.2]).
 
-**Valdes bort:** Mjukradering, att loggen kaskadraderas med kunden, eller automatisk gallring.
+**Valdes bort:** Mjukradering, eller att loggen kaskadraderas med kunden.
 
-**Skäl:** Loggen ska kunna visa att kunden raderades. Beställaren vill behålla loggen tills någon aktivt raderar den.
+**Skäl:** Loggen ska kunna visa att kunden raderades, också efter raderingen.
 
 ## Beslut 12: Versionsvakt i ett register per källobjekt
 
@@ -243,10 +243,14 @@ sköter mappning, schema, fråge-DSL och MassIndexer, men dess automatiska lyssn
 kunder för indexering i tabellen `search_index_queue` i samma transaktion som ändringen, och en relay skriver till
 indexet.
 
-**Valdes bort:** SM:s asynkrona lyssnare med nattlig reindexering, eller opensearch-java utan Hibernate Search.
+**Valdes bort:**
+
+- SM:s asynkrona lyssnare med nattlig reindexering, eller opensearch-java utan Hibernate Search.
+- Att bygga om indexet bakom ett alias, så att sökningen fungerar under en reindexering.
 
 **Skäl:** Lyssnarna ser varken IODKU, bulk-delete eller databasens kaskad. Asynkron indexering utan kö kan tappa
-ändringar. Kön ger leveransgaranti och slår ihop ändringar per kund, vilket behövs vid grundladdning.
+ändringar. Kön ger leveransgaranti och slår ihop ändringar per kund, vilket behövs vid grundladdning. En reindexering
+sker sällan och tar några minuter, så att sökningen är tom under tiden är godtagbart.
 
 ## Beslut 25a: Ingen databastrigger för raderingar i sökindexet
 
@@ -304,8 +308,8 @@ En fast ålder skulle missa kunder som skapades eller kontrollerades under dagen
 
 ## Beslut 29: Den tekniska loggen raderas inte automatiskt vid GDPR-radering
 
-Den tekniska loggen raderas inte automatiskt när en kund raderas på begäran enligt GDPR. Den kan raderas manuellt
-([§8.2]).
+Den tekniska loggen raderas inte automatiskt när en kund raderas på begäran enligt GDPR. Den gallras efter sin
+lagringstid ([beslut 60]) och kan raderas manuellt ([§8.2]).
 
 **Valdes bort:** Att radera loggen direkt.
 
@@ -396,7 +400,8 @@ Indexnamnet `customer` behöver därför inget miljöprefix.
 
 ## Beslut 39: Vad som är sökbart
 
-I princip allt om kunden är sökbart: namn, adress, kontaktuppgifter och kontaktpersoner, engagemangens referens, titel
+I princip allt om kunden är sökbart: namn, adresser, kontaktuppgifter och kontaktpersoner med deras adresser,
+företagsprofilen och arbetsställena, engagemangens referens, titel
 och kategori, samt det egna namespacets noteringar. För en skyddad kund är bara engagemangens referenser sökbara
 ([§6.2]).
 
@@ -533,14 +538,17 @@ visar engagemang för hela kommunen och kan inte återskapa den kontrollen.
 ## Beslut 52: Kontaktpersoner kontrolleras mot skyddad identitet
 
 En kontaktperson med partyId kontrolleras mot sin skyddsnivå och sparas inte om den inte är `NONE`. Kontaktpersonens
-partyId sparas, så att raderna kan tas bort när personen raderas via REST eller ett `CUSTOMER DELETE`, eller får skydd
-([§5.3]). En automatisk radering av personen som kund lämnar raderna kvar, eftersom källorna fortfarande anger
-personen som kontaktperson.
+partyId sparas, så att raderna kan tas bort när personen raderas, också automatiskt, eller får skydd ([§5.3]).
+Anger källan fortfarande personen som kontaktperson kommer raden tillbaka nästa gång objektet ändras i källan.
 
-**Valdes bort:** Att skyddet bara gäller kunden och inte kontaktpersonen.
+**Valdes bort:**
+
+- Att skyddet bara gäller kunden och inte kontaktpersonen.
+- Att raderna ligger kvar när personen raderas automatiskt som kund.
 
 **Skäl:** Vägledningen räknar arbetsgivare som en skyddsvärd uppgift, och en kontaktperson visar just kopplingen till
-ett företag. Utan partyId på raden skulle en radering enligt GDPR inte nå personens kontaktrader.
+ett företag. Utan partyId på raden skulle en radering enligt GDPR inte nå personens kontaktrader. Uppgifter sparas
+inte längre än de behövs, och källan anger personen igen när objektet ändras.
 
 ## Beslut 53: Skyddet från `CUSTOMER`-meddelanden lagras per källa
 
@@ -604,16 +612,17 @@ kontaktperson behöver bara en adress för att gå att nå, och färre adresser 
 
 ## Beslut 58: Företagsuppgifter lagras i en egen profil
 
-Uppgifterna om ett företag från LegalEntity, som SNI-koder, storleksklass för anställda och omsättning, juridisk form
-och pågående konkurs, lagras i `enterprise_profile`, en rad per företagskund, med typade kolumner. SNI-koderna och de
-pågående förfarandena ligger i egna tabeller under profilen ([§5.5]). SNI-koderna hör till företaget och räknas fram ur
-arbetsställenas koder, med huvudarbetsställets först.
+Uppgifterna om ett företag från LegalEntity, som storleksklass för anställda och omsättning, juridisk form, pågående
+konkurs och arbetsställen, lagras i `enterprise_profile`, en rad per företagskund, med typade kolumner. Arbetsställena,
+med sina adresser och SNI-koder, och de pågående förfarandena ligger i egna tabeller under profilen ([§5.5]).
+Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med huvudarbetsställets först.
 
 **Valdes bort:**
 
 - Kolumner direkt på `customer`.
 - En JSON-kolumn eller en tabell med nyckel och värde.
-- Arbetsställena som egna rader, med adresser och SNI-koder per arbetsställe.
+- Att spara företagets framräknade SNI-koder.
+- Arbetsställets adresser som kolumner på arbetsställets rad.
 - En egen tabell med SCB:s SNI-klassifikation.
 - Funktionärer och firmateckning (`officers`, `fullSignatureDescription`).
 - Organisationsnumret.
@@ -621,24 +630,72 @@ arbetsställenas koder, med huvudarbetsställets först.
 **Skäl:** Kundraden låses i varje meddelande och ska vara smal, och kolumnerna gäller inte privatkunder. Profilen
 hämtas i en egen takt och raderas som en helhet när kunden blir skyddad. Med typade kolumner ser schemakontrollen
 fälten, och SNI-koderna går att fråga på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger
-bara arbetsställenas koder, utan andelar. Arbetsställena behövs inte för kundbilden, och LegalEntity ger kodernas namn,
-så ingen klassifikation behöver underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna anges med namn
-och personnummer. Kunden identifieras med partyId:t, och ett organisationsnummer mappas alltid till det ([beslut 54]).
+bara arbetsställenas koder, utan andelar. Företagets koder följer av arbetsställenas, så att spara dem vore att spara
+samma uppgift två gånger. Arbetsställets adresser har samma form som kundens och kontaktpersonens. LegalEntity ger
+kodernas namn, så ingen klassifikation behöver underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna
+anges med namn och personnummer. Kunden identifieras med partyId:t, och ett organisationsnummer mappas alltid till det
+([beslut 54]).
 
-## Beslut 59: Företagsprofilen uppdateras från en ändringskö genom att LegalEntity hämtas
+## Beslut 59: Ändringskön uppdaterar företagsprofilen och kontrollerar personers skydd
 
-party-overview lyssnar på en kö med ändringar av företag och personer. Ett meddelande om ett företag som är kund får
-party-overview att hämta företaget från LegalEntity och skriva profilen ([§5.5]). Den senaste hämtningen vinner.
-Meddelanden om personer ignoreras tills vidare.
+party-overview lyssnar på en kö med ändringar av alla företag och personer. Ett meddelande om ett företag som är kund
+får party-overview att hämta företaget från LegalEntity och skriva profilen. Den senaste hämtningen vinner. Ett
+meddelande om en person som är kund, äger en enskild firma som är kund eller är kontaktperson startar kontrollen av
+skyddad identitet direkt ([§5.5]). Övriga meddelanden kastas.
 
 **Valdes bort:**
 
 - Att läsa profilen ur meddelandet.
 - Att hämta alla profiler med ett schemalagt jobb.
+- Att bara låta den nattliga kontrollen fånga ändrat skydd för personer.
 
-**Skäl:** När LegalEntitys svar avgör spelar meddelandenas ordning och dubbletter ingen roll, och party-overview
-behöver inte känna till mer av köns format än partyId:t. Ett schemalagt jobb skulle anropa LegalEntity för varje
-företag, också de som inte har ändrats, och ändå visa en ändring först efter nästa körning.
+**Skäl:** När LegalEntitys och Citizens svar avgör spelar meddelandenas ordning och dubbletter ingen roll, och
+party-overview behöver bara partyId:t, partens typ och vad som har hänt. Ett schemalagt jobb skulle anropa LegalEntity
+för varje företag, också de som inte har ändrats, och ändå visa en ändring först efter nästa körning. Ett nytt skydd
+slår igenom inom minuter i stället för nästa natt.
+
+## Beslut 60: Den tekniska loggen gallras efter en lagringstid
+
+Rader i den tekniska loggen som är äldre än `technical-log.retention` raderas av ett schemalagt jobb varje natt
+([§8.2]). Förvalet är fem år. Lagringstiden bestäms med arkivfunktionen och dataskyddsombudet ([§13.1]).
+
+**Valdes bort:** Att loggen bara raderas manuellt.
+
+**Skäl:** GDPR:s krav på lagringsbegränsning. Loggen innehåller partyId och vem som gjorde vad, och den behövs för
+spårbarhet en längre tid men inte för alltid.
+
+## Beslut 61: Noteringar ändras med optimistisk låsning
+
+En notering har en version, som API:t returnerar som `ETag`. `PATCH` och `DELETE` kräver `If-Match` med den versionen
+([§6.1]). `POST` har ingen idempotensnyckel.
+
+**Valdes bort:**
+
+- Att den som sparar sist vinner.
+- En `Idempotency-Key` på `POST`.
+
+**Skäl:** Utan versionen skriver den som sparar sist över en annans ändring utan att någon märker det. `If-Match` med
+`ETag` är HTTP:s standard för det (RFC 9110). En notering som skapas två gånger syns och kan raderas, så en
+idempotensnyckel är inte värd sin komplexitet.
+
+## Beslut 62: Meddelandeformaten följer CloudEvents
+
+Det gemensamma formatet (F1) och ändringskön (F2) följer CloudEvents, med AMQP-bindningen: `id` är meddelandets id,
+`source` källan, `type` vad som har hänt, `time` när det hände och `subject` objektets eller partens id ([§3.1],
+[§5.5]).
+
+**Valdes bort:** Egna fältnamn för kuvertet.
+
+**Skäl:** CloudEvents är branschstandarden för händelsekuvert, och AsyncAPI och de flesta verktyg stödjer den.
+
+## Beslut 63: Primärnycklar är slumpmässiga UUID
+
+Primärnycklarna är UUID version 4 från `@UuidGenerator`, som i organisationens andra tjänster ([§4.2]).
+
+**Valdes bort:** Tidsordnade UUID (version 7).
+
+**Skäl:** Tidsordnade nycklar ger InnoDB färre siddelningar, men volymerna är måttliga, och samma konvention som i
+övriga tjänster gör förvaltningen enklare.
 
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
@@ -674,4 +731,7 @@ företag, också de som inte har ändrats, och ändå visa en ändring först ef
 [beslut 58]: #beslut-58-företagsuppgifter-lagras-i-en-egen-profil
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [beslut 54]: #beslut-54-enskilda-firmor-kontrolleras-mot-folkbokföringen
+[beslut 60]: #beslut-60-den-tekniska-loggen-gallras-efter-en-lagringstid
+[§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
+[§6.1]: 06-rest-api.md#61-endpoints
 

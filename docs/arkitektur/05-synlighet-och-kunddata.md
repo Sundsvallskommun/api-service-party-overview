@@ -78,8 +78,8 @@ kontaktperson, eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är
   ny företagskund ([§5.4]): en enskild firma får ägarens nivå, och ett annat företag har `NONE`. Är nivån något annat
   än `NONE`, `UNKNOWN` inräknat, sparas inte kontaktpersonen alls. Nivån avgörs efter kundlåsen ([§3.3]).
 - Kontaktpersonens partyId sparas på raden (`contact.party_id`). Personens kontaktrader hos alla företag i kommunen
-  raderas när personen raderas via REST eller ett `CUSTOMER DELETE` ([§3.6]), och när en kund skapas med, eller får,
-  en skyddsnivå som inte är `NONE`. Vid en automatisk radering ligger de kvar.
+  raderas när personen raderas, på vilket av sätten i [§3.6] som helst, och när en kund skapas med, eller får,
+  en skyddsnivå som inte är `NONE`.
 - Raderna hittas på `contact.party_id`, och kommunen avgörs via `contact.customer_id`. Varje berört företag loggas som
   `CONTACT_REMOVED` och markeras för omindexering ([§8.1]).
 - Den nattliga kontrollen gör samma radering för varje kund i batchen vars nivå inte är `NONE` ([§5.4]). En kontaktrad
@@ -240,48 +240,53 @@ nästa tillämpade meddelande från källan, eller vid en grundladdning.
   meddelandeflödet, och nivån räknas om. De ändrade kunderna markeras för omindexering ([§6.2]), och kontaktrader
   raderas enligt [§5.3]. En batch som faller på deadlock görs om ([§3.6]).
 - Kontrollen tar också med oskyddade företagskunder som saknar företagsprofil, och hämtar profilen ([§5.5]).
+- Ändringskön startar samma kontroll direkt för en person som har ändrats ([§5.5]).
 
 ## 5.5 Företagsuppgifter
 
 En företagskund har en profil med uppgifter från LegalEntity, som i sin tur hämtar dem från Bolagsverket och SCB:s
 företagsregister ([beslut 58]). Profilen syns för alla namespaces, som kundens namn ([§5.1]).
 
-|                                                        Uppgift                                                        |                               Från LegalEntity                               |                                   Kolumn ([§4.3])                                   |
-|-----------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| Juridisk form enligt SCB, t.ex. `49` "Övriga aktiebolag"                                                              | `legalForm`                                                                  | `legal_form_code`, `legal_form`                                                     |
-| Företagsform enligt Bolagsverket, t.ex. "Aktiebolag"                                                                  | `form`                                                                       | `company_form`                                                                      |
-| Kommunen där företaget har sitt säte, t.ex. `2281` "Sundsvall kommun". Kan skilja sig från kundens `municipality_id`. | `countyMunicipalityCode`, `municipality`                                     | `registered_office_municipality_code`, `registered_office_municipality`             |
-| Registrering och avregistrering, med orsak                                                                            | `registerDate`, `unRegisterDate`, `unRegisterReasonCode`, `unRegisterReason` | `registered`, `deregistered`, `deregistration_reason_code`, `deregistration_reason` |
-| Pågående likvidation, konkurs eller rekonstruktion                                                                    | `liquidationOrRestructuring[]`                                               | `enterprise_proceeding`                                                             |
-| Antal anställda, som storleksklass                                                                                    | `employeeSize`                                                               | `employee_size_class`, `employee_size`                                              |
-| Omsättning, som storleksklass, och året den gäller                                                                    | `annualRevenue`, `revenueYear`                                               | `revenue_size_class`, `revenue_size`, `revenue_year`                                |
-| Antal arbetsställen                                                                                                   | `totalWorkplaces`                                                            | `workplace_count`                                                                   |
-| Verksamhetsbeskrivning                                                                                                | `businessDescription`                                                        | `business_description`                                                              |
-| Registrerad e-post och telefon                                                                                        | `eMail`, `phoneNumber`                                                       | `email`, `phone_number`                                                             |
-| SNI-koder, med huvudnäringen först                                                                                    | `workplaces[].sniCodes`                                                      | `enterprise_sni_code`                                                               |
+|                                                                     Uppgift                                                                     |                               Från LegalEntity                               |                                     Kolumn ([§4.3])                                     |
+|-------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| Juridisk form enligt SCB, t.ex. `49` "Övriga aktiebolag"                                                                                        | `legalForm`                                                                  | `legal_form_code`, `legal_form`                                                         |
+| Företagsform enligt Bolagsverket, t.ex. "Aktiebolag"                                                                                            | `form`                                                                       | `company_form`                                                                          |
+| Kommunen där företaget har sitt säte, t.ex. `2281` "Sundsvall kommun". Kan skilja sig från kundens `municipality_id`.                           | `countyMunicipalityCode`, `municipality`                                     | `registered_office_municipality_code`, `registered_office_municipality`                 |
+| Registrering och avregistrering, med orsak                                                                                                      | `registerDate`, `unRegisterDate`, `unRegisterReasonCode`, `unRegisterReason` | `registered`, `deregistered`, `deregistration_reason_code`, `deregistration_reason`     |
+| Pågående likvidation, konkurs eller rekonstruktion                                                                                              | `liquidationOrRestructuring[]`                                               | `enterprise_proceeding`                                                                 |
+| Antal anställda, som storleksklass                                                                                                              | `employeeSize`                                                               | `employee_size_class`, `employee_size`                                                  |
+| Omsättning, som storleksklass, och året den gäller                                                                                              | `annualRevenue`, `revenueYear`                                               | `revenue_size_class`, `revenue_size`, `revenue_year`                                    |
+| Antal arbetsställen                                                                                                                             | `totalWorkplaces`                                                            | `workplace_count`                                                                       |
+| Verksamhetsbeskrivning                                                                                                                          | `businessDescription`                                                        | `business_description`                                                                  |
+| Registrerad e-post och telefon                                                                                                                  | `eMail`, `phoneNumber`                                                       | `email`, `phone_number`                                                                 |
+| Arbetsställen: CFAR-nummer, namn, om det är huvudarbetsstället, postadress och besöksadress, telefon, storleksklass för anställda och SNI-koder | `workplaces[]`                                                               | `enterprise_workplace`, `enterprise_workplace_address`, `enterprise_workplace_sni_code` |
 
 Antalet anställda finns bara som storleksklass, t.ex. "200–499 anställda", eftersom SCB sekretesskyddar det exakta
 antalet.
 
 **SNI-koder.** SCB registrerar SNI-koder både för företaget och för vart och ett av dess arbetsställen, och företagets
-koder räknas fram ur arbetsställenas. LegalEntity ger bara arbetsställenas koder, så party-overview räknar fram
-företagets:
+koder räknas fram ur arbetsställenas. LegalEntity ger bara arbetsställenas koder. party-overview sparar dem per
+arbetsställe och räknar fram företagets när profilen läses och indexeras:
 
-- En kod med tomt `sniId` tas bort. LegalEntity ger ett sådant element först för varje arbetsställe.
+- En kod med tomt `sniId` sparas inte. LegalEntity ger ett sådant element först för varje arbetsställe.
 - Varje kod tas med en gång. Huvudarbetsställets koder (`mainWorkplace = true`) kommer först, i LegalEntitys ordning.
-  Sedan kommer övriga koder, ordnade efter storleksklassen hos det största arbetsställe som har koden och därefter
+  Sedan kommer övriga koder, ordnade efter storleksklassen, som tal, hos det största arbetsställe som har koden och
+  därefter
   efter kod.
 - Koden på plats 1 är företagets huvudnäring, och dess namn är företagets bransch.
 
 För SCA Forest Products, med tio arbetsställen, ger det 70100, 72190, 86212 och 91012, och branschen "Verksamheter som
 utövas av huvudkontor".
 
+Arbetsställenas adresser mappas som företagets ([§7.2]). Arbetsställena läses sidvis med en egen endpoint, med
+huvudarbetsstället först ([§6.1]).
+
 **Det som inte sparas:**
 
 - `officers` och `fullSignatureDescription`, eftersom de innehåller namn och personnummer på styrelseledamöter,
   firmatecknare och revisorer
-- arbetsställena, utöver antalet och SNI-koderna
 - aktiekapital, antal aktier, valuta och räkenskapsår
+- kommun och län i adresserna, utöver orten
 - `organizationNumber`, eftersom kunden identifieras med partyId:t ([§5.4])
 - namn och adresser, som följer [§5.2]
 
@@ -306,19 +311,39 @@ profil som skrivs av ändringskön eller den nattliga kontrollen loggas som `PRO
 profil är uppgifter om ägaren. Profilen raderas i samma transaktion som kunden får en sådan nivå. När skyddet upphör
 hämtar den nattliga kontrollen profilen igen.
 
-**Ändringskön** ([beslut 59]). party-overview lyssnar på en kö med ändringar av företag och personer. Formatet ägs av
-köns förvaltare ([§13.1]). party-overview behöver partyId:t för den part som ändrats och om det är ett företag eller
-en person.
+**Ändringskön** ([beslut 59]). Kön finns inte ännu, och dess meddelandemodell är inte fastställd ([§13.1]). Den ska
+innehålla ändringar av alla företag och personer, med lättviktig information: vad som har hänt, med vilken part och
+lite metadata. party-overview kräver följande av ett meddelande:
 
-- `RegistryChangeListener` hittar kunderna med partyId:t via `idx_customer_party_id`. Ett företag som inte är kund i
-  någon kommun ignoreras utan anrop.
-- För ett företag som är kund anropas LegalEntity `GET /{municipalityId}/{legalEntityId}` en gång, utanför
-  transaktionen. Profilen skrivs sedan för kunden i varje kommun, i en transaktion per kund.
+|              Uppgift              |                                                  Krav                                                  |
+|-----------------------------------|--------------------------------------------------------------------------------------------------------|
+| Partens partyId                   | **krav**. Aldrig personnummer eller organisationsnummer, så att kön inte innehåller dem.               |
+| Partens typ, företag eller person | **krav**                                                                                               |
+| Vad som har hänt                  | **krav**. Används för att kasta händelser som inte berör party-overview, när händelsetyperna är kända. |
+| Ett unikt id per meddelande       | **krav**, för spårbarhet. Det sparas i den tekniska loggen som `message_id` ([§4.3]).                  |
+
+Det mesta i kön berör inte party-overview. `RegistryChangeListener` slår därför först upp partyId:t i index: kunderna
+med partyId:t (`idx_customer_party_id`), de enskilda firmor som personen äger (`idx_customer_registry_party_id`) och
+personens kontaktrader (`idx_contact_party_id`). Ett meddelande som inte berör något av dem kastas utan anrop.
+
+Ett meddelande om ett **företag** som är kund uppdaterar profilen:
+
+- LegalEntity `GET /{municipalityId}/{legalEntityId}` anropas en gång, utanför transaktionen. Profilen skrivs sedan
+  för kunden i varje kommun, i en transaktion per kund.
 - Det är LegalEntitys svar och inte meddelandet som avgör profilen. Därför spelar meddelandenas ordning och dubbletter
   ingen roll, och kön behöver ingen single-active-consumer.
-- 404 från LegalEntity lämnar profilen orörd och loggas på WARN med partyId:t. När LegalEntity inte svarar, eller
-  svarar 5xx, 429 eller 408, görs meddelandet om, och till sist dead-letteras det och larmet går ([§12.1]).
-- Meddelanden om personer ignoreras tills vidare.
+- 404 från LegalEntity lämnar profilen orörd och loggas på WARN med partyId:t.
+
+Ett meddelande om en **person** startar kontrollen av skyddad identitet direkt, i stället för nästa natt ([§5.4]):
+
+- Citizen `POST /{municipalityId}/batch?ShowClassified=true` anropas en gång för personen, utanför transaktionen.
+- Personen som kund, och varje enskild firma som personen äger, kontrolleras sedan som i den nattliga kontrollen, i en
+  transaktion per kund. Nivån räknas om, och blir kunden skyddad töms dess uppgifter och personens kontaktrader raderas.
+- Är personen kontaktperson utan att vara kund, och är nivån något annat än `NONE`, raderas personens kontaktrader
+  ([§5.3]).
+
+När LegalEntity eller Citizen inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om, och till sist
+dead-letteras det och larmet går ([§12.1]). Den nattliga kontrollen finns kvar som skyddsnät.
 
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [§5.4]: #54-skyddad-identitet
@@ -342,7 +367,8 @@ en person.
 [§5.1]: #51-synlighet-per-namespace
 [§4.3]: 04-datamodell.md#43-tabellerna
 [beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
-[beslut 59]: 00-beslutslogg.md#beslut-59-företagsprofilen-uppdateras-från-en-ändringskö-genom-att-legalentity-hämtas
+[beslut 59]: 00-beslutslogg.md#beslut-59-ändringskön-uppdaterar-företagsprofilen-och-kontrollerar-personers-skydd
 [§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
+[§6.1]: 06-rest-api.md#61-endpoints
 
