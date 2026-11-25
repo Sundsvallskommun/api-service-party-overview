@@ -52,9 +52,14 @@ enligt [§5.4].
 | Nattlig kontroll av skyddsstatus ([§5.4])                                         | `POST /{municipalityId}/batch`      |
 | Partytyp, namn, adress och skyddsstatus när en notering skapar kunden             | `GET /{municipalityId}/{personId}`  |
 
-LegalEntity v2 ger namn, adress och organisationsnummer med `GET /{municipalityId}/{legalEntityId}`. Det anropet görs
-när en notering skapar en kund och när ett meddelande skapar en företagskund, så att en enskild firma känns igen
-([§5.4]). Organisationsnummer slås upp med `GET /{municipalityId}/{organizationNumber}/guid` ([§7.1]).
+LegalEntity v2 ger namn, adresser, organisationsnummer och företagsprofilen med
+`GET /{municipalityId}/{legalEntityId}`. Det anropet görs när en notering skapar en kund och när ett meddelande skapar
+en företagskund, så att en enskild firma känns igen ([§5.4]) och profilen sparas ([§5.5]). Det görs också när
+ändringskön säger att ett företag har ändrats, och när den nattliga kontrollen hämtar en profil som saknas.
+Organisationsnummer slås upp med `GET /{municipalityId}/{organizationNumber}/guid` ([§7.1]).
+
+Svaret innehåller personnummer och namn på företagets funktionärer (`officers`, `fullSignatureDescription`). De mappas
+aldrig, och ingenting ur svaret loggas. Tomma strängar och värden med bara blanksteg blir null.
 
 När en notering skapar en kund ([beslut 6]) sker följande:
 
@@ -68,8 +73,12 @@ När en notering skapar en kund ([beslut 6]) sker följande:
    - `address` som `VISITING_ADDRESS`: `addressArea` och `adressNumber` blir `street` med mellanslag emellan, och
      `postalCode` och `city` följer med.
 
+   Delar som saknas utelämnas ur `street`. LegalEntity kan ha hela gatuadressen i `addressArea`, t.ex.
+   "SKEPPARPLATSEN 1", och en postadress med bara postnummer och ort, som för ett företagspostnummer.
+
    Är `organizationNumber` i svaret ett personnummer, alltså en enskild firma, får kunden ägarens skydd från
-   folkbokföringen som i [§5.4], och är ägaren skyddad sparas varken namn eller adresser.
+   folkbokföringen som i [§5.4], och är ägaren skyddad sparas varken namn, adresser eller profil. Annars sparas
+   profilen ([§5.5]).
 
 3. Känner varken Citizen eller LegalEntity partyId:t blir svaret 404, och ingen notering skapas. Svarar Citizen eller
    LegalEntity inte, eller med 5xx, blir svaret 503, och ingen notering skapas. Ett tillfälligt fel blir aldrig 404.
@@ -120,4 +129,5 @@ Förebilder:
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 

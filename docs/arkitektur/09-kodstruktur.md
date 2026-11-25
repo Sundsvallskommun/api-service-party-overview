@@ -12,6 +12,7 @@ se.sundsvall.partyoverview
 │  │                            TechnicalLogService, ContactPersonRoleService
 │  ├─ message/                  MessageService (ingen tx), MessageWriter (@Transactional)
 │  ├─ protection/               ProtectionService (räknar om skyddsnivån, tömmer skyddade uppgifter)
+│  ├─ enterprise/               EnterpriseProfileService (skriver profilen), EnterpriseProfileMapper (SNI-koderna)
 │  ├─ search/                   CustomerSearchService, SearchIndexMarker, SearchIndexRelay,
 │  │                            SearchReindexService, SearchAvailability, SearchSchemaInitializer
 │  ├─ mapper/
@@ -20,7 +21,8 @@ se.sundsvall.partyoverview
 │  ├─ db/                       repositories
 │  │  ├─ model/                 entiteter, AbstractHistoryEntity, enums, RolesConverter
 │  │  └─ search/                CustomerDocumentBinder, SearchAnalysisConfigurer, OpenSearchHealthIndicator
-│  ├─ rabbitmq/                 MessageListener, SourceProperties (källa → kö), DeadLetterHealthIndicator
+│  ├─ rabbitmq/                 MessageListener, RegistryChangeListener, SourceProperties (källa → kö),
+│  │                            DeadLetterHealthIndicator
 │  ├─ citizen/                  CitizenClient, CitizenIntegration, configuration/
 │  └─ legalentity/              LegalEntityClient, LegalEntityIntegration, configuration/
 └─ scheduler/                   ProtectionRefreshScheduler, SearchIndexRelayScheduler
@@ -41,6 +43,7 @@ se.sundsvall.partyoverview
   dept44-starterns loggning och request-id. Med en enda `@RabbitListener` för alla köer delar köerna en konsumenttråd,
   och ett omförsök på en källa stoppar alla ([§3.7]). Ingen `@ConditionalOnProperty` på lyssnaren, eftersom startern
   inte startar lyssnare när RabbitMQ är avstängt. Ingen `@EnableRabbit`, och ingen `MessageConverter` av egen.
+  Ändringskön har ett annat format och en egen klass, `RegistryChangeListener`, med en egen container ([§5.5]).
 - **`DeadLetterHealthIndicator`:** villkorad med `@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, samma
   tolkning som startern. `@ConditionalOnBean(ConnectionFactory.class)` fungerar inte på en komponent som tjänsten själv
   skannar in, eftersom villkoret utvärderas innan auto-konfigurationens `ConnectionFactory` finns. Då skulle
@@ -50,4 +53,5 @@ se.sundsvall.partyoverview
 - **Inga TODO:s** och ingen bortkommenterad kod.
 
 [§3.7]: 03-meddelanden.md#37-felhantering
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 

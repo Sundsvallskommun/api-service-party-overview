@@ -8,7 +8,7 @@ Dokumentationen beskriver lösningen i party-overview och de ändringar som publ
 contract och Casedata) behöver göra. All utveckling ska utgå från den. [§14] delar upp arbetet i uppgifter med
 acceptanskriterier som kan klistras in i Jira.
 
-**Status:** fastställd design, version 1.4 (2026-11-25). Det gemensamma meddelandeformatet definieras senare. [§3.1]
+**Status:** fastställd design, version 1.5 (2026-11-25). Det gemensamma meddelandeformatet definieras senare. [§3.1]
 listar de krav party-overview ställer på det.
 
 ## Innehåll
@@ -20,7 +20,7 @@ listar de krav party-overview ställer på det.
 | 2  | [Principer och regler](02-principer.md)                                 | Regler som gäller hela tjänsten                                                                         |
 | 3  | [Meddelanden](03-meddelanden.md)                                        | Krav på meddelandeformatet, topologi, flöde, versionsmatris, tillämpning, kundradering och felhantering |
 | 4  | [Datamodell](04-datamodell.md)                                          | Tabeller, index och Flyway                                                                              |
-| 5  | [Synlighet, kunddata och kontaktpersoner](05-synlighet-och-kunddata.md) | Synlighet per namespace, namn och adress, kontaktpersoner och skyddad identitet                         |
+| 5  | [Synlighet, kunddata och kontaktpersoner](05-synlighet-och-kunddata.md) | Synlighet per namespace, namn och adress, kontaktpersoner, skyddad identitet och företagsuppgifter      |
 | 6  | [REST-API](06-rest-api.md)                                              | Endpoints och kundsökningen i OpenSearch                                                                |
 | 7  | [Integrationer](07-integrationer.md)                                    | Uppslag av partyId, Citizen och LegalEntity                                                             |
 | 8  | [Teknisk logg och radering](08-teknisk-logg.md)                         | Utfall i den tekniska loggen och radering av den                                                        |

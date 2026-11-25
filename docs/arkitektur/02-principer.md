@@ -27,9 +27,9 @@ Del av [arkitekturen för party-overview](README.md).
 6. **Skyddad identitet går före allt annat.** För en kund med skyddade personuppgifter lagras inga namn, adresser
    eller egna kontaktuppgifter, och kunden går bara att hitta på referenser som ärendenummer. Skyddet visas på kunden i
    varje svar ([§5.4]).
-7. **Ingen över-engineering.** Det finns en lyssnarklass för alla köer (med en container per kö), en tabell för alla
-   engagemangstyper och inga generiska ramverk. Kod, kommentarer och javadoc beskriver vad koden gör, inte hur den kom
-   till.
+7. **Ingen över-engineering.** Det finns en lyssnarklass för källornas köer (med en container per kö) och en för
+   ändringskön, en tabell för alla engagemangstyper och inga generiska ramverk. Kod, kommentarer och javadoc beskriver
+   vad koden gör, inte hur den kom till.
 
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§4.3]: 04-datamodell.md#43-tabellerna

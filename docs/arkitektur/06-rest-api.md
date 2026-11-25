@@ -45,10 +45,13 @@ och kontaktpersonsroller och som `performed_by` i historiken och den tekniska lo
   finns i party-overview, blir svaret 404. Problem-detail innehåller aldrig numret.
 - Responsmodeller:
   - `Customer`: `partyId`, `partyType`, `protectionLevel`, `name`, `addresses[]`, `contactChannels[]` och
-    `contactPersons[]`
+    `contactPersons[]`, och för ett företag `enterpriseProfile`
   - `Address`: `type`, `careOf`, `street`, `postalCode`, `city` och `country` ([§5.2])
   - `ContactPerson`: `name`, `role`, `contactChannels[]` och `address` ([§5.3])
   - `Note`: `id`, `subject`, `body`, `created`, `createdBy`, `modified` och `modifiedBy`
+  - `EnterpriseProfile`: uppgifterna i [§5.5], där `sniCodes[]` har `code` och `name` i ordning och
+    `proceedings[]` har `code`, `name` och `fromDate`. Saknas för en privatkund, en skyddad kund och ett företag som
+    ännu inte har någon profil.
   - `CustomerSearchHit`, `Engagement`, `HistoryEntry`, `TechnicalLogEntry` och `ContactPersonRoles`
 
   `openapi.yaml` regenereras och verifieras av `OpenApiSpecificationIT`.
@@ -77,9 +80,9 @@ Lösningen följer SupportManagement, men med två skillnader: indexeringen går
 **Indexmodell**
 
 `@Indexed` sitter på `CustomerEntity`, och dokumentet byggs av en `CustomerDocumentBinder` (TypeBinder). Bindaren läser
-kundens adresser, kontakter, engagemang och noteringar genom sessionen, deduplicerade och grupperade per namespace. Det
-sker med projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion ([§4.2]). Grupperingen är
-en ren funktion som går att enhetstesta.
+kundens adresser, kontakter, engagemang, noteringar och företagsprofil genom sessionen, deduplicerade och grupperade per
+namespace. Det sker med projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion ([§4.2]).
+Grupperingen är en ren funktion som går att enhetstesta.
 
 |                     Fält                     |                                                          Mappning                                                          |                 Skyddad kund                 |
 |----------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
@@ -88,6 +91,7 @@ en ren funktion som går att enhetstesta.
 | `name`                                       | text (`text_sv`: standard, lowercase och light_swedish), plus `name_sort` som keyword                                      | saknas, eftersom namnet inte lagras ([§5.4]) |
 | `careOf`, `street`, `postalCode`, `city`     | text (`text_sv`), från alla kundens adresser                                                                               | utelämnas                                    |
 | `contacts_global`, `contacts_ns_<namespace>` | text via fieldTemplate: kontaktpersoners namn och kanalvärden, högst 500 värden per fält                                   | utelämnas                                    |
+| `business`                                   | text (`text_sv`): företagsprofilens SNI-namn och verksamhetsbeskrivning ([§5.5])                                           | utelämnas, eftersom kunden saknar profil     |
 | `phones_global`, `phones_ns_<namespace>`     | keyword med normalizern `phone` (`+46` och `0046` blir `0`, och allt utom siffror tas bort), bara kanaler av typen `PHONE` | utelämnas                                    |
 | `references`                                 | keyword med `lowercase_normalizer`: engagemangens `reference` och `objectId`, alla                                         | **med**                                      |
 | `engagements`                                | text (`text_sv`): engagemangens titel och kategori, de 1 000 senast ändrade                                                | utelämnas                                    |
@@ -180,7 +184,7 @@ payload-logg och i gatewayens loggar, medan en kropp bara loggas med de fält so
   valfria i OpenSearch, och då träffar varje sökning alla kunder i kommunen. SM gör likadant med
   `.filter(…).must(query)`.
   - `simpleQueryString` med AND, utan fuzzy, över namn, adress, `contacts_global`, `contacts_ns_{namespace}`,
-    `engagements` och `notes_ns_{namespace}`
+    `engagements`, `business` och `notes_ns_{namespace}`
   - `match` över `phones_global`, `phones_ns_{namespace}` och `references`
 - Andra namespaces fält ingår aldrig i frågan.
 - `failAfter(search.timeout)`.
@@ -221,4 +225,5 @@ skyddad kund är `name` och `addresses` tomma.
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 [§4.3]: 04-datamodell.md#43-tabellerna
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 

@@ -4,7 +4,8 @@ Del av [arkitekturen för party-overview](README.md).
 
 Varje uppgift går att slå ihop för sig. Acceptanskriterierna kan klistras in i en Jira-subtask. **C** är
 party-overview, **T** är infrastrukturen (RabbitMQ och OpenSearch) och **SM**, **PA**, **CT** och **CD** är
-publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
+publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Ändringskön för företag och personer
+(**F2**) ägs av sin förvaltare, och det som återstår att ta reda på står i [§13.1].
 
 **Gäller alla uppgifter (Definition of Done):**
 
@@ -40,6 +41,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 | 22   | CT1 | contract: tidsstämplar                               | —                              |
 | 23   | CT2 | contract: outbox, relay och publicering              | CT1, F1                        |
 | 24   | CT3 | contract: grundladdning                              | CT2                            |
+| 25   | T3  | Ändringskön i rabbitmq-topology                      | F2                             |
+| 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2            |
 
 ## C1 — Projektgrund
 
@@ -84,9 +87,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `SchemaVerificationTest` och `SchemaParityIT` är gröna. Om ett index tas bort i bara den ena källan blir
   `SchemaParityIT` röd. Det ska provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `customer_address`, `engagement`,
-  `engagement_history`, `contact`, `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden.
-  Raderna i `technical_log`, `source_object` och `search_index_queue` finns kvar, och likaså kundens kontaktrader hos
-  andra kunder (`contact.party_id`).
+  `engagement_history`, `contact`, `contact_channel`, `note`, `note_history`, `asserted_protection`,
+  `enterprise_profile`, `enterprise_sni_code` och `enterprise_proceeding` för kunden. Raderna i `technical_log`,
+  `source_object` och `search_index_queue` finns kvar, och likaså kundens kontaktrader hos andra kunder
+  (`contact.party_id`).
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
@@ -103,7 +107,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `LegalEntityClient`/`LegalEntityIntegration` med:
   - `getPartyId` (`GET /{municipalityId}/{organizationNumber}/guid`) för organisationsnummer → partyId ([§7.1])
   - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, postadress, besöksadress och
-    organisationsnummer ([§7.2])
+    organisationsnummer, och företagsprofilen, där `EnterpriseProfileMapper` räknar fram SNI-koderna ([§5.5], [§7.2])
 - Partytypen för ett partyId avgörs med `getCitizen` och `getLegalEntity` ([§7.2]). En enskild firma känns igen på att
   organisationsnumret är ett personnummer ([§5.4]). Numret sparas aldrig.
 - legalId valideras mot formatet i [§3.1], per partytyp och med kontrollsiffran, innan det skickas ([§7.1]).
@@ -152,11 +156,18 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   tas inte med. LegalEntitys `postAddress` och `address` blir `POSTAL_ADDRESS` och `VISITING_ADDRESS` enligt [§7.2].
   En adress där alla fält är tomma tas inte med.
 
+- Företagsprofilen mappas enligt [§5.5]. Testet använder svaret för SCA Forest Products (organisationsnummer
+  5563793586) som stub och kontrollerar:
+
+  - SNI-koderna 70100, 72190, 86212 och 91012, i den ordningen, utan de tomma elementen
+  - storleksklassen `8` "200–499 anställda", juridisk form `49` och sätets kommun `2281`
+  - besöksadressen "SKEPPARPLATSEN 1" och en postadress med bara postnummer och ort
+  - att tomma strängar blir null
+- `officers` och `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar
+  loggas. Ett organisationsnummer som är ett personnummer ger ingen `organizationNumber` i profilen.
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
   och en testperson med skyddad folkbokföring. Resultatet dokumenteras i README.
-
 - 401 från Citizen ger en `ClientProblem` vars detail säger att behörigheten i Metakatalogen saknas.
-
 - Ingenting ur Citizens svar loggas.
 
 ## C4 — Kontaktpersonsroller via REST
@@ -181,6 +192,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `TechnicalLogService`, som markerar kunden i `search_index_queue` för varje rad utom `IGNORED_STALE` ([§6.2]).
 - `MessageService` utan transaktion och `MessageWriter` med `@Transactional`, enligt [§3.3]–[§3.6] för `ERRAND`, `ASSET`
   och `CONTRACT`.
+- `EnterpriseProfileService`, som skriver och raderar företagsprofilen under kundens lås ([§5.5]).
 - Klassningen av parter och kontaktuppgifterna ([§5.3]), "nyast vinner" ([§5.2]) och skrivningen av den tekniska loggen
   ([§8.1]).
 - Ännu ingen lyssnare.
@@ -211,6 +223,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   organisationsnummer ger `registry_party_id = null` ([§5.4]).
 - Svarar LegalEntity eller Citizen inte när en ny företagskunds organisationsnummer eller ägare hämtas, får kunden
   `UNKNOWN` utan `registry_party_id`, och meddelandet tillämpas utan omförsök ([§3.7]).
+- En ny, oskyddad företagskund får sin profil från LegalEntity, också när organisationsnumret finns i meddelandet.
+  Svarar LegalEntity inte skapas kunden utan profil, och organisationsnumret från meddelandet avgör ändå om det är en
+  enskild firma. En skyddad företagskund får ingen profil, och en kund som blir skyddad förlorar sin ([§5.5]).
+- En profil vars `fetched` är äldre än den sparade skriver inte över den. Det testas med två hämtningar som skrivs i
+  omvänd ordning.
 - En part med legalId mappas och tillämpas. Finns legalId inte hos Citizen eller LegalEntity, eller har det fel format,
   hoppas parten över medan övriga parter tillämpas, och engagemang raderas ändå för kunder som inte längre är parter
   ([beslut 16]). legalId finns inte i någon entitet.
@@ -288,6 +305,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Kontakter visas för det egna namespacet och de globala, aldrig för andra namespaces. Dubbletter slås ihop, men två
   kontaktpersoner som bara skiljer sig i adress visas båda.
 - Kunden returneras med alla sina adresser, i ordningen i [§5.2], och varje kontaktperson med sin adress.
+- En företagskund returneras med `enterpriseProfile` och SNI-koderna i ordning. En privatkund, en skyddad kund och ett
+  företag utan profil returneras utan den ([§6.1]).
 - En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adresser och kontaktkanaler.
 - `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
   hanteras som skyddad ([§5.4]).
@@ -320,8 +339,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - En notering på en okänd kund skapar kunden:
   - en `PRIVATE`-kund när Citizen känner partyId:t, med skyddsstatus från Citizen, och med namn och folkbokföringsadress
     bara om personen är oskyddad
-  - en `ENTERPRISE`-kund när bara LegalEntity känner det, med namn, postadress och besöksadress från LegalEntity, och
-    för en enskild firma med ägarens skydd från Citizen, utan namn och adresser om ägaren är skyddad
+  - en `ENTERPRISE`-kund när bara LegalEntity känner det, med namn, postadress, besöksadress och företagsprofil från
+    LegalEntity, och för en enskild firma med ägarens skydd från Citizen, utan namn, adresser och profil om ägaren är
+    skyddad
 
   Kunden loggas som `CUSTOMER_CREATED` med kanalen `REST`.
 
@@ -390,7 +410,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   folkbokföringsadress från svaret, men en enskild firma får aldrig ägarens namn eller adress. Svarar Citizen inte
   förblir kunden `UNKNOWN` och tas med nästa natt.
 - Ett företag med `UNKNOWN` utan `registry_party_id` slås upp i LegalEntity igen. En enskild firma får ägaren som
-  `registry_party_id` och ägarens nivå, och ett annat företag får `registry_protection = null` och tas inte med igen.
+  `registry_party_id` och ägarens nivå, och ett annat företag får `registry_protection = null`, får sin profil från
+  samma svar och tas inte med igen.
+- En oskyddad företagskund utan profil tas med och får sin profil, loggad som `PROFILE_UPDATED`. En enskild firma vars
+  ägare inte längre är skyddad får sin profil natten efter ([§5.5]).
+- När en företagskund blir skyddad raderas profilen med SNI-koder och förfaranden i samma transaktion.
 - När en kund blir skyddad töms namn, adresser och egna kontaktuppgifter, och kunden markeras för omindexering.
   Personens kontaktrader hos företag raderas, och företagen loggas som `CONTACT_REMOVED` och markeras för
   omindexering ([§5.3]).
@@ -422,6 +446,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - En skyddad kunds dokument, också en kund med `UNKNOWN`, innehåller bara `references` av de sökbara fälten. Namn,
   adresser, kontakt- och telefonfält saknas.
 - Kontakter hamnar i `contacts_ns_<namespace>` respektive `contacts_global`.
+- Företagsprofilens SNI-namn och verksamhetsbeskrivning hamnar i `business`. En skyddad kund och en kund utan profil
+  har inget `business`.
 - Telefonnummer i formaten `+46 70-123 45 67`, `0046701234567` och `070-1234567` ger samma värde.
 - Engagemangens referens, titel och kategori indexeras. Noteringar hamnar i `notes_ns_<namespace>`.
 - Relayn:
@@ -455,6 +481,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   - kontaktuppgifter och kontaktpersoner i eget namespace och globalt
   - engagemangens referens, titel och kategori
   - noteringar i eget namespace
+  - företagets bransch och verksamhetsbeskrivning, t.ex. "skogsbruk" för SCA Forest Products
 
   Den träffar aldrig på kontaktuppgifter eller noteringar i andra namespaces.
 
@@ -714,6 +741,44 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Alla kontrakt i kommunen publiceras utan aktiviteter.
 - Inga bilagor läses.
 
+## T3 — Ändringskön i rabbitmq-topology
+
+**Bygg:**
+
+- party-overviews kö för ändringar av företag och personer, bunden till exchangen hos köns förvaltare ([§3.2], F2).
+  Kön har DLQ, `x-delivery-limit: 5`, `x-dead-letter-strategy: at-least-once` och `x-overflow: reject-publish`, men
+  ingen single-active-consumer.
+- party-overview får read på kön.
+
+**Acceptans:**
+
+- Kön skapas med alla argument från början och tar emot förvaltarens meddelanden i testmiljön.
+- Dead letter-kön har ingen TTL, och party-overviews AMQP-användare kan göra en passiv deklaration av den ([§12.1]).
+
+## C14 — Företagsprofilen från ändringskön
+
+**Bygg:**
+
+- `RegistryChangeListener` med en egen listener-container för `integration.registry-changes.queue` ([§9], [§12]).
+- Mappningen från köns format (F2) till partyId och partytyp.
+- Ändringskön i `DeadLetterHealthIndicator`.
+
+**Acceptans:**
+
+- Ett meddelande om ett företag som inte är kund i någon kommun ger inget anrop till LegalEntity.
+- Ett meddelande om ett företag som är kund i två kommuner ger ett anrop till LegalEntity och en profil per kommun,
+  skriven i en transaktion per kund och loggad som `PROFILE_UPDATED` med kanalen `MESSAGE` ([§5.5]).
+- Ett företag som är skyddat i en kommun får ingen profil där.
+- Två meddelanden om samma företag i omvänd ordning, och samma meddelande två gånger, ger samma profil som det
+  senaste anropet till LegalEntity.
+- 404 från LegalEntity lämnar profilen orörd och loggar WARN med partyId:t. När LegalEntity inte svarar, eller svarar
+  5xx, 429 eller 408, görs meddelandet om, och efter `x-delivery-limit` hamnar det i dead letter-kön. 429 och 408 görs
+  om till ett avbrott, som när partyId slås upp ([§3.7]).
+- Ett meddelande om en person ändrar ingenting och ger inget anrop.
+- `DeadLetterHealthIndicator` blir `DOWN` när ändringsköns dead letter-kö inte är tom.
+- `MessageIT` ([§10]) får ett fall med LegalEntity stubbad med svaret för SCA Forest Products: ett meddelande om
+  företaget ger profilen enligt C3, och kunden markeras för omindexering.
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
@@ -753,4 +818,6 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 [beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
 [beslut 16]: 00-beslutslogg.md#beslut-16-personnummer-och-organisationsnummer-mappas-till-partyid
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
 

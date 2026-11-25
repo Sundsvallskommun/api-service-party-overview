@@ -16,10 +16,11 @@ flowchart LR
     QPA --> PO
     QCT --> PO
     QCD --> PO
+    QREG[[ändringskö för företag och personer]] -->|företag som ändrats| PO
     PO --> DB[(MariaDB)]
     PO -->|sökindex via kö + relay| OS[(OpenSearch)]
     PO -->|personnummer → partyId; skyddsstatus; partytyp, namn/adress när en notering skapar kunden| CIT[Citizen]
-    PO -->|organisationsnummer → partyId; partytyp, namn/adress när en notering skapar kunden| LE[LegalEntity]
+    PO -->|organisationsnummer → partyId; företagsprofil; partytyp, namn/adress när en notering skapar kunden| LE[LegalEntity]
     FE[Kundvy, frontend] -->|REST| PO
     FE -->|detaljer om ett objekt| SM
     FE -->|detaljer om ett objekt| PA

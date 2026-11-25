@@ -8,6 +8,7 @@ Del av [arkitekturen för party-overview](README.md).
 |----------------------------------------|-------------------------------------------------------------------------|
 | Kund (namn, adresser, typ, skyddsnivå) | Allt. För en skyddad kund finns varken namn eller adresser ([§5.4]).    |
 | Engagemang och deras historik          | Alla i kommunen. Valfritt filter: `engagementNamespace`.                |
+| Företagsprofil ([§5.5])                | Allt. Saknas för en skyddad kund.                                       |
 | Kontaktuppgifter och kontaktpersoner   | `namespace = {namespace}` eller `namespace is null`                     |
 | Noteringar och deras historik          | `namespace = {namespace}`                                               |
 | Teknisk logg                           | Ingen namespace-filtrering. Exponeras utan namespace i sökvägen ([§6]). |
@@ -142,8 +143,9 @@ meddelandet, eller från `organizationNumber` i LegalEntitys svar på `GET /{mun
   skiljetecknet i ett personnummer.
 - Ägarens partyId slås upp via Citizen (`POST /{municipalityId}/guid/batch`) och sparas som `registry_party_id`.
   Kunden får sedan folkbokföringens skydd precis som en privatkund, också i den nattliga kontrollen.
-- Numret sparas aldrig. För en privatkund är `registry_party_id` kundens eget partyId. För andra företag är den null,
-  och likaså för ett företag där det inte gick att avgöra om det är en enskild firma eller vem som äger den.
+- Ett personnummer sparas aldrig. Ett organisationsnummer som inte är ett personnummer sparas i företagsprofilen
+  ([§5.5]). För en privatkund är `registry_party_id` kundens eget partyId. För andra företag är den null, och likaså
+  för ett företag där det inte gick att avgöra om det är en enskild firma eller vem som äger den.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -209,8 +211,9 @@ nattliga kontrollen ersätter det.
 
 **Hantering när kunden är skyddad** (`protection_level ≠ NONE`):
 
-1. `name` och `profile_modified` töms, och kundens adresser och rader med `contact_type = CUSTOMER` raderas. Så länge
-   skyddet gäller sparas inga sådana uppgifter, varken från meddelanden, från Citizen eller från LegalEntity.
+1. `name` och `profile_modified` töms, och kundens adresser, rader med `contact_type = CUSTOMER` och företagsprofil
+   raderas ([§5.5]). Så länge skyddet gäller sparas inga sådana uppgifter, varken från meddelanden, från Citizen eller
+   från LegalEntity.
 2. Kunden indexeras i OpenSearch bara med engagemangens referenser, utan namn, adresser, kontaktuppgifter, titlar och
    noteringar. Den går därför bara att hitta på en referens, som ett ärendenummer, på partyId eller med uppslag på
    personnummer ([§6]).
@@ -236,6 +239,87 @@ nästa tillämpade meddelande från källan, eller vid en grundladdning.
 - Varje batch skrivs i en egen transaktion med READ COMMITTED ([§3.3]). Batchens kunder låses i partyId-ordning, som i
   meddelandeflödet, och nivån räknas om. De ändrade kunderna markeras för omindexering ([§6.2]), och kontaktrader
   raderas enligt [§5.3]. En batch som faller på deadlock görs om ([§3.6]).
+- Kontrollen tar också med oskyddade företagskunder som saknar företagsprofil, och hämtar profilen ([§5.5]).
+
+## 5.5 Företagsuppgifter
+
+En företagskund har en profil med uppgifter från LegalEntity, som i sin tur hämtar dem från Bolagsverket och SCB:s
+företagsregister ([beslut 58]). Profilen syns för alla namespaces, som kundens namn ([§5.1]).
+
+|                         Uppgift                          |                               Från LegalEntity                               |                                   Kolumn ([§4.3])                                   |
+|----------------------------------------------------------|------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| Organisationsnummer, när det inte är ett personnummer    | `organizationNumber`                                                         | `organization_number`                                                               |
+| Juridisk form enligt SCB, t.ex. `49` "Övriga aktiebolag" | `legalForm`                                                                  | `legal_form_code`, `legal_form`                                                     |
+| Företagsform enligt Bolagsverket, t.ex. "Aktiebolag"     | `form`                                                                       | `company_form`                                                                      |
+| Sätets kommun, t.ex. `2281` "Sundsvall kommun"           | `countyMunicipalityCode`, `municipality`                                     | `seat_municipality_code`, `seat_municipality`                                       |
+| Registrering och avregistrering, med orsak               | `registerDate`, `unRegisterDate`, `unRegisterReasonCode`, `unRegisterReason` | `registered`, `deregistered`, `deregistration_reason_code`, `deregistration_reason` |
+| Pågående likvidation, konkurs eller rekonstruktion       | `liquidationOrRestructuring[]`                                               | `enterprise_proceeding`                                                             |
+| Antal anställda, som storleksklass                       | `employeeSize`                                                               | `employee_size_class`, `employee_size`                                              |
+| Omsättning, som storleksklass, och året den gäller       | `annualRevenue`, `revenueYear`                                               | `revenue_size_class`, `revenue_size`, `revenue_year`                                |
+| Antal arbetsställen                                      | `totalWorkplaces`                                                            | `workplace_count`                                                                   |
+| Verksamhetsbeskrivning                                   | `businessDescription`                                                        | `business_description`                                                              |
+| Registrerad e-post och telefon                           | `eMail`, `phoneNumber`                                                       | `email`, `phone_number`                                                             |
+| SNI-koder, med huvudnäringen först                       | `workplaces[].sniCodes`                                                      | `enterprise_sni_code`                                                               |
+
+Antalet anställda finns bara som storleksklass, t.ex. "200–499 anställda", eftersom SCB sekretesskyddar det exakta
+antalet.
+
+**SNI-koder.** SCB registrerar SNI-koder både för företaget och för vart och ett av dess arbetsställen, och företagets
+koder räknas fram ur arbetsställenas. LegalEntity ger bara arbetsställenas koder, så party-overview räknar fram
+företagets:
+
+- En kod med tomt `sniId` tas bort. LegalEntity ger ett sådant element först för varje arbetsställe.
+- Varje kod tas med en gång. Huvudarbetsställets koder (`mainWorkplace = true`) kommer först, i LegalEntitys ordning.
+  Sedan kommer övriga koder, ordnade efter storleksklassen hos det största arbetsställe som har koden och därefter
+  efter kod.
+- Koden på plats 1 är företagets huvudnäring, och dess namn är företagets bransch.
+
+För SCA Forest Products, med tio arbetsställen, ger det 70100, 72190, 86212 och 91012, och branschen "Verksamheter som
+utövas av huvudkontor".
+
+**Det som inte sparas:**
+
+- `officers` och `fullSignatureDescription`, eftersom de innehåller namn och personnummer på styrelseledamöter,
+  firmatecknare och revisorer
+- arbetsställena, utöver antalet och SNI-koderna
+- aktiekapital, antal aktier, valuta och räkenskapsår
+- namn och adresser, som följer [§5.2]
+
+Ingenting ur LegalEntitys svar loggas. Tomma strängar och värden med bara blanksteg blir null, övriga värden trimmas,
+och ett värde som är längre än kolumnen kortas. Organisationsnumret sparas bara om det har 10 siffror och tredje siffran
+är 2–9.
+
+**När profilen skrivs:**
+
+- när en företagskund skapas, av ett meddelande eller en notering, från samma anrop till LegalEntity som avgör om
+  kunden är en enskild firma ([§3.3], [§7.2]). Anropet görs därför även när organisationsnumret finns i meddelandet.
+  Svarar LegalEntity inte får kunden ingen profil, men ett organisationsnummer från meddelandet räcker ändå för att
+  känna igen en enskild firma.
+- när ändringskön säger att företaget har ändrats (se nedan)
+- i den nattliga kontrollen, för en oskyddad företagskund som saknar profil ([§5.4])
+
+Profilen ersätts som helhet under kundens lås, och bara om kunden är oskyddad efter låset. `fetched` är tidpunkten då
+anropet till LegalEntity startade, och en profil skrivs bara om den är nyare än den sparade. Anropen görs utanför
+transaktionen, så två flöden kan skriva i omvänd ordning mot den de hämtade i. Då vinner den senaste hämtningen. En
+profil som skrivs av ändringskön eller den nattliga kontrollen loggas som `PROFILE_UPDATED` ([§8.1]).
+
+**Skyddad identitet.** En företagskund med en nivå som inte är `NONE` har ingen profil, eftersom en enskild firmas
+profil är uppgifter om ägaren. Profilen raderas i samma transaktion som kunden får en sådan nivå. När skyddet upphör
+hämtar den nattliga kontrollen profilen igen.
+
+**Ändringskön** ([beslut 59]). party-overview lyssnar på en kö med ändringar av företag och personer. Formatet ägs av
+köns förvaltare ([§13.1]). party-overview behöver partyId:t för den part som ändrats och om det är ett företag eller
+en person.
+
+- `RegistryChangeListener` hittar kunderna med partyId:t via `idx_customer_party_id`. Ett företag som inte är kund i
+  någon kommun ignoreras utan anrop.
+- För ett företag som är kund anropas LegalEntity `GET /{municipalityId}/{legalEntityId}` en gång, utanför
+  transaktionen. Profilen skrivs sedan för kunden i varje kommun, i en transaktion per kund.
+- Det är LegalEntitys svar och inte meddelandet som avgör profilen. Därför spelar meddelandenas ordning och dubbletter
+  ingen roll, och kön behöver ingen single-active-consumer.
+- 404 från LegalEntity lämnar profilen orörd och loggas på WARN med partyId:t. När LegalEntity inte svarar, eller
+  svarar 5xx, 429 eller 408, görs meddelandet om, och till sist dead-letteras det och larmet går ([§12.1]).
+- Meddelanden om personer ignoreras tills vidare.
 
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [§5.4]: #54-skyddad-identitet
@@ -255,4 +339,11 @@ nästa tillämpade meddelande från källan, eller vid en grundladdning.
 [§5.3]: #53-kunder-kontaktpersoner-och-kontaktuppgifter
 [beslut 57]: 00-beslutslogg.md#beslut-57-en-kund-kan-ha-flera-adresser-och-en-kontaktperson-har-en
 [§5.2]: #52-namn-och-adress
+[§5.5]: #55-företagsuppgifter
+[§5.1]: #51-synlighet-per-namespace
+[§4.3]: 04-datamodell.md#43-tabellerna
+[beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
+[beslut 59]: 00-beslutslogg.md#beslut-59-företagsprofilen-uppdateras-från-en-ändringskö-genom-att-legalentity-hämtas
+[§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
+[§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 

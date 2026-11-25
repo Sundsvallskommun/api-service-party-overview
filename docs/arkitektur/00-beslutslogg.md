@@ -31,7 +31,7 @@ Källsystemen är master för engagemang och kunddata. party-overview lagrar env
 
 Kunddata (namn, adresser, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST.
 Undantaget är namn och adress från Citizen och LegalEntity när en notering skapar kunden ([beslut 6]), och när den
-nattliga kontrollen fyller i dem för en privatkund ([§5.4]).
+nattliga kontrollen fyller i dem för en privatkund ([§5.4]). Företagsprofilen kommer från LegalEntity ([beslut 58]).
 
 **Valdes bort:** Att party-overview är master för kunddata.
 
@@ -557,7 +557,8 @@ och då skulle namn och adress sparas för en skyddad person.
 För en enskild firma, där organisationsnumret är ägarens personnummer, hämtas ägarens skydd från folkbokföringen på
 samma sätt som för en privatkund, också i den nattliga kontrollen ([§5.4]). Ett legalId för `ENTERPRISE` får därför
 vara ett personnummer med 10 eller 12 siffror, och det slås alltid upp mot LegalEntity ([§3.1]). Ett tiosiffrigt
-nummer får det århundrade som gör ägaren yngre än 100 år.
+nummer får det århundrade som gör ägaren yngre än 100 år. Ett personnummer sparas aldrig, men ett organisationsnummer
+som inte är ett personnummer sparas i företagsprofilen ([beslut 58]).
 
 **Valdes bort:** Att bara kontrollera privatkunder. Att slå upp numret mot Citizen när det är ett personnummer.
 
@@ -602,6 +603,44 @@ efter typ ([§5.3]). Formatet har en lista med adresser per part, och publicerar
 **Skäl:** Casedata har flera adresser per part, och contract och LegalEntity skiljer på postadress och besöksadress. En
 kontaktperson behöver bara en adress för att gå att nå, och färre adresser är färre personuppgifter.
 
+## Beslut 58: Företagsuppgifter lagras i en egen profil
+
+Uppgifterna om ett företag från LegalEntity, som SNI-koder, storleksklass för anställda och omsättning, juridisk form
+och pågående konkurs, lagras i `enterprise_profile`, en rad per företagskund, med typade kolumner. SNI-koderna och de
+pågående förfarandena ligger i egna tabeller under profilen ([§5.5]). SNI-koderna hör till företaget och räknas fram ur
+arbetsställenas koder, med huvudarbetsställets först. Ett organisationsnummer som inte är ett personnummer sparas i
+profilen.
+
+**Valdes bort:**
+
+- Kolumner direkt på `customer`.
+- En JSON-kolumn eller en tabell med nyckel och värde.
+- Arbetsställena som egna rader, med adresser och SNI-koder per arbetsställe.
+- En egen tabell med SCB:s SNI-klassifikation.
+- Funktionärer och firmateckning (`officers`, `fullSignatureDescription`).
+
+**Skäl:** Kundraden låses i varje meddelande och ska vara smal, och kolumnerna gäller inte privatkunder. Profilen
+hämtas i en egen takt och raderas som en helhet när kunden blir skyddad. Med typade kolumner ser schemakontrollen
+fälten, och SNI-koderna går att fråga på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger
+bara arbetsställenas koder, utan andelar. Arbetsställena behövs inte för kundbilden, och LegalEntity ger kodernas namn,
+så ingen klassifikation behöver underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna anges med namn
+och personnummer.
+
+## Beslut 59: Företagsprofilen uppdateras från en ändringskö genom att LegalEntity hämtas
+
+party-overview lyssnar på en kö med ändringar av företag och personer. Ett meddelande om ett företag som är kund får
+party-overview att hämta företaget från LegalEntity och skriva profilen ([§5.5]). Den senaste hämtningen vinner.
+Meddelanden om personer ignoreras tills vidare.
+
+**Valdes bort:**
+
+- Att läsa profilen ur meddelandet.
+- Att hämta alla profiler med ett schemalagt jobb.
+
+**Skäl:** När LegalEntitys svar avgör spelar meddelandenas ordning och dubbletter ingen roll, och party-overview
+behöver inte känna till mer av köns format än partyId:t. Ett schemalagt jobb skulle anropa LegalEntity för varje
+företag, också de som inte har ändrats, och ändå visa en ändring först efter nästa körning.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -633,4 +672,6 @@ kontaktperson behöver bara en adress för att gå att nå, och färre adresser 
 [§3.7]: 03-meddelanden.md#37-felhantering
 [§12]: 12-drift.md
 [§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
+[beslut 58]: #beslut-58-företagsuppgifter-lagras-i-en-egen-profil
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 

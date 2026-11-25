@@ -17,6 +17,7 @@ Ett meddelande kan ge flera rader per kund, t.ex. `ENGAGEMENT_REMOVED` följt av
 | `IGNORED_STALE`      | Meddelandet var äldre än det lagrade och ändrade ingenting                                                                                             |
 | `PROTECTION_CHANGED` | Kundens effektiva skyddsnivå ändrades ([§5.4]). Den nya nivån står i raden.                                                                            |
 | `CONTACT_REMOVED`    | En kontaktpersons rader hos kunden raderades, eftersom personen raderades eller fick skydd ([§5.3]). Raden har kundens partyId, inte kontaktpersonens. |
+| `PROFILE_UPDATED`    | Företagsprofilen skrevs av ändringskön eller den nattliga kontrollen ([§5.5])                                                                          |
 
 Vid `UPDATE` skrivs `IGNORED_STALE` för meddelandets kundparter. En `DELETE` för `ERRAND`, `ASSET` och `CONTRACT` saknar
 parter, så där skrivs det för de kunder som har engagemang i objektet. Ett `CUSTOMER DELETE` har kunden som enda part.
@@ -43,4 +44,5 @@ Inget gallras automatiskt ([beslut 11] och [beslut 12]):
 [beslut 11]: 00-beslutslogg.md#beslut-11-den-tekniska-loggen-har-ingen-fk-till-kunden
 [beslut 12]: 00-beslutslogg.md#beslut-12-versionsvakt-i-ett-register-per-källobjekt
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 

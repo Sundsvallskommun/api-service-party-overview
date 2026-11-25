@@ -15,6 +15,8 @@ integration:
     PARTY_ASSETS: api-fabriken.party-overview.party-assets
     CONTRACT: api-fabriken.party-overview.contract
     CASE_DATA: api-fabriken.party-overview.case-data
+  registry-changes:
+    queue: …                     # ändringskön för företag och personer (§5.5), namnet bestäms med förvaltaren
   dead-letter-suffix: .dlq       # DLQ = kö + suffix, används av health-indikatorn
   citizen:
     url: …
@@ -83,7 +85,8 @@ spring:
 
 ## 12.1 Larm för dead letter-köer
 
-- `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas dead letter-kö och
+- `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas och ändringsköns dead
+  letter-kö och
   läser antalet meddelanden.
 - Indikatorn finns bara när RabbitMQ är påslaget (`@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, [§9]).
   Med `dept44.rabbitmq.enabled=false` finns ingen `ConnectionFactory`, och tjänsten ska ändå starta (C1).

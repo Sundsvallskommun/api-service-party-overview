@@ -26,9 +26,9 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   valideringsfel och Problem-mappningar.
 - **IT** (`AbstractAppTest`, WireMock): En klass per resurs (happy case). `MessageIT`: en `RabbitMQContainer` som
   deklarerar köerna som topologin gör, och ett meddelande per väg: `UPDATE` och `DELETE` för varje objekttyp,
-  `CUSTOMER UPDATE`/`DELETE`, legalId stubbat i WireMock och en kontaktperson. Allt ligger i en klass, eftersom
-  `@DynamicPropertySource` ger en egen Spring-context. Mönster: party-assets `origin/publish-asset-events`
-  `AssetEventsIT`.
+  `CUSTOMER UPDATE`/`DELETE`, legalId stubbat i WireMock, en kontaktperson och ett meddelande i ändringskön ([§5.5]).
+  Allt ligger i en klass, eftersom `@DynamicPropertySource` ger en egen Spring-context. Mönster: party-assets
+  `origin/publish-asset-events` `AssetEventsIT`.
 - **`CascadeIT`**: `DELETE FROM customer` med `JdbcTemplate` raderar `customer_address`, `engagement`,
   `engagement_history`, `contact`, `contact_channel`, `note`, `note_history` och `asserted_protection`. `technical_log`,
   `source_object`, `search_index_queue` och personens kontaktrader hos andra kunder (`contact.party_id`) lämnas orörda.
@@ -50,4 +50,5 @@ rabbitmq-topology.
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 

@@ -11,6 +11,9 @@ erDiagram
     customer ||--o{ contact : "äger"
     customer ||--o{ note : "äger"
     customer ||--o{ asserted_protection : "har"
+    customer ||--o| enterprise_profile : "har"
+    enterprise_profile ||--o{ enterprise_sni_code : "har"
+    enterprise_profile ||--o{ enterprise_proceeding : "har"
     engagement ||--o{ engagement_history : "har"
     engagement ||--o{ contact : "härleds från"
     contact ||--o{ contact_channel : "har"
@@ -37,7 +40,7 @@ erDiagram
 ## 4.2 Gemensamt för alla tabeller
 
 - `id varchar(36)`, UUID från `@UuidGenerator`. Undantagen är kollektionstabellen `contact_channel`,
-  `search_index_queue`, som nycklas på `customer_id`, och `shedlock`.
+  `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, och `shedlock`.
 - `municipality_id varchar(8)` finns på `customer` och på de tabeller som läses utan att gå via en kund: `engagement`
   (uppslag per källobjekt, [§3.5]), `source_object`, `technical_log`, `contact_person_role` och `search_index_queue`.
   Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn. `contact` nås också på `party_id` när en
@@ -61,7 +64,8 @@ erDiagram
   `@ForeignKey(name = …)` och `@OnDelete(action = CASCADE)` på barnet, medan föräldern inte har någon kollektion. På
   `@ElementCollection` sitter `@OnDelete` på kollektionen. Om Hibernate inte genererar kaskaden för kollektionstabellen,
   vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne` och en egen
-  `id`-kolumn. Valet görs i C2, och tabellen i [§4.3] uppdateras då.
+  `id`-kolumn. Valet görs i C2, och tabellen i [§4.3] uppdateras då. `enterprise_profile` har `@OneToOne(fetch = LAZY)`
+  med `@MapsId`, så att kundens id också är profilens, och profilens barn har sina FK mot profilen.
 - Index, unika nycklar och FK har samma namn i `@Table`/`@ForeignKey` och i Flyway: `uq_<tabell>_<kolumner>`,
   `idx_<tabell>_<kolumner>` och `fk_<tabell>_<kolumn>`. Ett namn får vara högst 64 tecken, som är MariaDB:s gräns för
   identifierare. Den enda nyckel som skulle gå över gränsen, engagemangets unika nyckel, namnges därför efter vad den
@@ -89,6 +93,7 @@ erDiagram
 Index:
 
 - `uq_customer_municipality_id_party_id (municipality_id, party_id)`
+- `idx_customer_party_id`: ändringskön, som hittar ett företag i alla kommuner ([§5.5])
 
 Den nattliga kontrollen går i primärnyckelns ordning och har inget eget index ([§5.4]).
 
@@ -118,6 +123,50 @@ Index: `idx_customer_address_customer_id`.
 
 Index: `uq_asserted_protection_customer_id_source (customer_id, source)`. Ett `CUSTOMER UPDATE` utan `protection`
 tar bort källans rad.
+
+**`enterprise_profile`**: företagsuppgifter från LegalEntity, högst en rad per företagskund ([§5.5], [beslut 58]). En
+skyddad kund har ingen. Raden och dess barn ersätts som helhet.
+
+|                        Kolumn                         |             Typ              |  Null  |                                  Anmärkning                                  |
+|-------------------------------------------------------|------------------------------|--------|------------------------------------------------------------------------------|
+| `customer_id`                                         | varchar(36)                  | nej    | PK och FK `fk_enterprise_profile_customer_id`, cascade                       |
+| `organization_number`                                 | varchar(10)                  | ja     | Bara när numret inte är ett personnummer                                     |
+| `legal_form_code`, `legal_form`                       | varchar(8), varchar(255)     | ja     | SCB:s juridiska form                                                         |
+| `company_form`                                        | varchar(64)                  | ja     | Bolagsverkets företagsform                                                   |
+| `seat_municipality_code`, `seat_municipality`         | varchar(8), varchar(255)     | ja     |                                                                              |
+| `registered`, `deregistered`                          | date                         | ja     |                                                                              |
+| `deregistration_reason_code`, `deregistration_reason` | varchar(32), varchar(255)    | ja     |                                                                              |
+| `employee_size_class`, `employee_size`                | varchar(8), varchar(64)      | ja     | SCB:s storleksklass, t.ex. `8` och "200–499 anställda"                       |
+| `revenue_size_class`, `revenue_size`, `revenue_year`  | varchar(8), varchar(64), int | ja     |                                                                              |
+| `workplace_count`                                     | int                          | ja     |                                                                              |
+| `business_description`                                | text                         | ja     |                                                                              |
+| `email`, `phone_number`                               | varchar(255)                 | ja     |                                                                              |
+| `fetched`                                             | datetime(6)                  | nej    | När anropet till LegalEntity startade. Bara en senare hämtning skriver över. |
+| `created`, `modified`                                 | datetime(6)                  | nej/ja |                                                                              |
+
+**`enterprise_sni_code`**: företagets SNI-koder, med huvudnäringen på plats 1 ([§5.5]).
+
+|    Kolumn     |     Typ      | Null |                                 Anmärkning                                 |
+|---------------|--------------|------|----------------------------------------------------------------------------|
+| `id`          | varchar(36)  | nej  | PK                                                                         |
+| `customer_id` | varchar(36)  | nej  | FK `fk_enterprise_sni_code_customer_id` till `enterprise_profile`, cascade |
+| `ordinal`     | int          | nej  | 1 är huvudnäringen                                                         |
+| `sni_code`    | varchar(16)  | nej  |                                                                            |
+| `name`        | varchar(255) | ja   |                                                                            |
+
+Index: `uq_enterprise_sni_code_customer_id_ordinal (customer_id, ordinal)`.
+
+**`enterprise_proceeding`**: pågående likvidation, konkurs eller rekonstruktion ([§5.5]).
+
+|    Kolumn     |     Typ      | Null |                                  Anmärkning                                  |
+|---------------|--------------|------|------------------------------------------------------------------------------|
+| `id`          | varchar(36)  | nej  | PK                                                                           |
+| `customer_id` | varchar(36)  | nej  | FK `fk_enterprise_proceeding_customer_id` till `enterprise_profile`, cascade |
+| `code`        | varchar(32)  | ja   |                                                                              |
+| `name`        | varchar(255) | ja   |                                                                              |
+| `from_date`   | date         | ja   |                                                                              |
+
+Index: `idx_enterprise_proceeding_customer_id`.
 
 **`engagement`**: ett källobjekt sett från en kund ([beslut 8]).
 
@@ -314,4 +363,6 @@ Index: `idx_search_index_queue_queued`.
 [§12]: 12-drift.md
 [§6]: 06-rest-api.md
 [beslut 57]: 00-beslutslogg.md#beslut-57-en-kund-kan-ha-flera-adresser-och-en-kontaktperson-har-en
+[§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
 
