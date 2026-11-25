@@ -21,7 +21,6 @@ se.sundsvall.partyoverview
 │  │  ├─ model/                 entiteter, AbstractHistoryEntity, enums, RolesConverter
 │  │  └─ search/                CustomerDocumentBinder, SearchAnalysisConfigurer, OpenSearchHealthIndicator
 │  ├─ rabbitmq/                 MessageListener, SourceProperties (källa → kö), DeadLetterHealthIndicator
-│  ├─ party/                    PartyClient, PartyIntegration, configuration/
 │  ├─ citizen/                  CitizenClient, CitizenIntegration, configuration/
 │  └─ legalentity/              LegalEntityClient, LegalEntityIntegration, configuration/
 └─ scheduler/                   ProtectionRefreshScheduler, SearchIndexRelayScheduler
@@ -31,7 +30,7 @@ se.sundsvall.partyoverview
   `dept44-common-validators`, `hibernate-search-mapper-orm` och `hibernate-search-backend-elasticsearch`. För test:
   `dept44-starter-test`, `dept44-starter-jpa-test`, Testcontainers RabbitMQ och `opensearch-testcontainers`.
 - **Genererade modeller:**
-  - `party.yaml`, `citizen.yaml` och `legalentity.yaml` genereras med openapi-generator till
+  - `citizen.yaml` och `legalentity.yaml` genereras med openapi-generator till
     `generated.se.sundsvall.*`, som i POC:ens `pom.xml`.
   - `party-overview-messages.yaml` är ett AsyncAPI-dokument. openapi-generator kan inte läsa AsyncAPI, så modellerna
     genereras med ZenWave SDK (`zenwave-sdk-maven-plugin` med `asyncapi-jsonschema2pojo`, 2.8.1), som på grenen

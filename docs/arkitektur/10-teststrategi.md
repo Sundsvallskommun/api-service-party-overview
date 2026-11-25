@@ -12,13 +12,13 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   urvalet till den nattliga skyddskontrollen. Ett samtidighetstest där två trådar skapar samma kund (`NOT_SUPPORTED`,
   `TransactionTemplate` och latch) och resultatet blir en kund utan undantag.
 - **Servicetester** (Mockito): Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna, Citizens flaggor
-  och `UNKNOWN` ([§5.4]), att namn, adress och egna kontaktuppgifter töms och inte sparas när kunden är skyddad, att de fylls i igen
-  när skyddet upphör, och `PROTECTION_CHANGED`. Uppslag på personnummer. `DeadLetterHealthIndicator` (tom kö, kö med
-  meddelanden, kö som saknas). Hela versionsmatrisen, tabelldrivet med alla celler i [§3.4]. Klassningen av parter
-  ([§5.3]), "nyast vinner", historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden men inte
-  när den har noteringar, legalId-mappning och 404, valideringsfel, notering som skapar kund (PRIVATE, ENTERPRISE,
-  Citizen tom, okänd part), synlighetsregler och 404-fall.
-- **Integrationstester (enhet)**: `PartyIntegration`, `CitizenIntegration`, `LegalEntityIntegration`: mappning,
+  och `UNKNOWN` ([§5.4]), att namn, adress och egna kontaktuppgifter töms och inte sparas när kunden är skyddad, att de
+  fylls i igen när skyddet upphör, och `PROTECTION_CHANGED`. Uppslag på personnummer. `DeadLetterHealthIndicator` (tom
+  kö, kö med meddelanden, kö som saknas). Hela versionsmatrisen, tabelldrivet med alla celler i [§3.4]. Klassningen av
+  parter ([§5.3]), "nyast vinner", historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden
+  men inte när den har noteringar, legalId-mappning och 404, valideringsfel, notering som skapar kund (PRIVATE,
+  ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall.
+- **Integrationstester (enhet)**: `CitizenIntegration`, `LegalEntityIntegration`: mappning,
   `Optional.empty` vid 404, att undantag inte sväljs och att legalId inte finns i några meddelanden. `MessageListener`:
   källan slås upp från kön.
 - **Resource-tester** (`@ResourceTest`, WebTestClient): Happy path per endpoint. `*ResourceFailureTest`: alla
@@ -29,7 +29,8 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   `@DynamicPropertySource` ger en egen Spring-context. Mönster: party-assets `origin/publish-asset-events`
   `AssetEventsIT`.
 - **`CascadeIT`**: `DELETE FROM customer` med `JdbcTemplate` raderar `engagement`, `engagement_history`, `contact`,
-  `contact_channel`, `note`, `note_history` och `asserted_protection`. `technical_log`, `source_object` och `search_index_queue` lämnas orörda.
+  `contact_channel`, `note`, `note_history` och `asserted_protection`. `technical_log`, `source_object` och
+  `search_index_queue` lämnas orörda.
 - **`SchemaParityIT`**: Jämför index (namn, kolumner, unikhet) och FK (namn, `DELETE_RULE`) i `information_schema`
   mellan den Flyway-migrerade IT-databasen och ett schema som skapats från `schema.sql`.
 - **`OpenApiSpecificationIT`**: `openapi.yaml` stämmer med koden.

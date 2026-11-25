@@ -43,7 +43,7 @@ erDiagram
 - `namespace varchar(32)` finns på `engagement`, `contact` och `note` ([§5.1]).
 - Kolumner som slutar på `_id` men inte är FK och inte pekar på någon tabell i party-overview:
   - `municipality_id`
-  - `party_id`: partens id i Party
+  - `party_id`: partens partyId, som är Citizens `personId` för en person och LegalEntitys id för ett företag
   - `registry_party_id`: det partyId vars skydd hämtas från folkbokföringen ([§5.4])
   - `object_id`: objektets id i källsystemet, `objectId` i [§3.1]
   - `message_id`: AMQP-egenskapen `message-id` ([§3.1]). Den finns bara i den tekniska loggen och knyter en ändring
@@ -257,9 +257,10 @@ Index: `idx_search_index_queue_queued`.
 
 ## 4.4 Flyway
 
-- Allt hamnar i en ny `V1_0__create_tables.sql` som ersätter POC:ns. Kommande ändringar blir `V1_<n>__<beskrivning>.sql`.
-- FK skrivs med `on delete cascade` i Flyway och med `@OnDelete` i entiteterna. `src/test/resources/db/schema/schema.sql`
-  genereras från entiteterna.
+- Allt hamnar i en ny `V1_0__create_tables.sql` som ersätter POC:ns. Kommande ändringar blir
+  `V1_<n>__<beskrivning>.sql`.
+- FK skrivs med `on delete cascade` i Flyway och med `@OnDelete` i entiteterna.
+  `src/test/resources/db/schema/schema.sql` genereras från entiteterna.
 - IT-profilen kör Flyway och `schema-generation: validate`. Validate kontrollerar kolumner men inte index eller FK.
   Därför finns `SchemaParityIT` ([§10]).
 

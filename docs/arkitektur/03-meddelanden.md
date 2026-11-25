@@ -128,7 +128,8 @@ Varje kö deklareras i rabbitmq-topology som en quorum-kö med följande:
 - `x-delivery-limit: 5`
 - `x-dead-letter-strategy: at-least-once` och `x-overflow: reject-publish`. Utan dem är dead-letteringen i en
   quorum-kö at-most-once, och ett meddelande kan försvinna på vägen till dead letter-kön.
-- `x-single-active-consumer: true`. Argumentet går inte att lägga till på en befintlig quorum-kö, så det måste finnas när kön skapas.
+- `x-single-active-consumer: true`. Argumentet går inte att lägga till på en befintlig quorum-kö, så det måste finnas
+  när kön skapas.
 - bindning till publicerarens exchange med `#`. Kön tar emot alla objekttyper från källan.
 
 Dead letter-köerna har ingen TTL, och ett meddelande ligger kvar tills någon har tagit hand om det. Köerna kan
@@ -145,9 +146,11 @@ MessageListener (alla köer)                          ingen transaktion
        1. mappa till ObjectChange och validera (@Validated)  ─ ogiltigt → dead letter direkt
        2. läs kontaktpersonsroller för (kommun, källa)
        3. dela upp parterna i kunder och kontaktpersoner (§5.3)
-       4. legalId → partyId via PartyIntegration (batch), för kundparter och kontaktpersoner
+       4. legalId → partyId för kundparter och kontaktpersoner (§7.1): personnummer via Citizen
+          (batch), organisationsnummer via LegalEntity
                                                              ─ saknas i svaret → parten hoppas över (WARN utan PII)
-          för nya ENTERPRISE-kunder: ägarens partyId om organisationsnumret är ett personnummer (§5.4)
+          för nya ENTERPRISE-kunder: organisationsnumret från LegalEntity, och ägarens partyId om
+          numret är ett personnummer (§5.4)
        5. folkbokföringens skyddsstatus för nya kunder med registry_party_id, och för kontaktpersoner
           med partyId som inte finns som kunder (CitizenIntegration, batch, ShowClassified=true, §5.3, §5.4)
                                                              ─ svarar inte eller 5xx → UNKNOWN
@@ -163,7 +166,7 @@ MessageListener (alla köer)                          ingen transaktion
             f. radera kunder som saknar både engagemang och noteringar (§3.6)
 ```
 
-- Feign-anropen görs utanför transaktionen, så att en långsam Party inte håller lås i databasen.
+- Feign-anropen görs utanför transaktionen, så att en långsam Citizen eller LegalEntity inte håller lås i databasen.
 - Kunderna med engagemang i objektet läses efter att `source_object` har låsts. Låset hindrar andra meddelanden om
   samma objekt, men inte en kundradering via REST eller `CUSTOMER DELETE`, som tar bort engagemangen genom kaskaden.
   Därför låses de kunderna bara med `FOR UPDATE`, och en kund som har hunnit raderas hoppas över i stället för att
@@ -208,8 +211,9 @@ MessageListener (alla köer)                          ingen transaktion
 2. Gör upsert av engagemangsraden per kund, nycklad på `(municipality_id, object_type, source, object_id, customer_id)`:
    - envelope-fälten, roller, namespace och `party_protection` (partens `protection`)
    - `ENGAGEMENT_CREATED` om raden är ny, annars `ENGAGEMENT_UPDATED`
-3. Räkna om kundens skyddsnivå ([§5.4]). Om kunden är oskyddad uppdateras namn och adress enligt "nyast vinner" ([§5.2]).
-   Radens kontaktuppgifter ersätts ([§5.3]), men för en skyddad kund sparas ingen rad med kundens egna kontaktuppgifter.
+3. Räkna om kundens skyddsnivå ([§5.4]). Om kunden är oskyddad uppdateras namn och adress enligt "nyast vinner"
+   ([§5.2]). Radens kontaktuppgifter ersätts ([§5.3]), men för en skyddad kund sparas ingen rad med kundens egna
+   kontaktuppgifter.
 4. Skriv meddelandets `activities` som historik på raden, men bara om raden är ny eller om `v > s`.
 5. Radera engagemangsrader för kunder som inte längre är parter (`ENGAGEMENT_REMOVED`), och räkna om skyddsnivån för
    dem som har engagemang kvar. Steget hoppas över om något legalId i meddelandet inte kunde mappas ([§3.3]).
@@ -276,17 +280,17 @@ En kund raderas i följande fall:
 
 Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
 
-|                                               Fel                                               |                                                                        Följd                                                                         |
-|-------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Valideringsfel (`ConstraintViolationException`), okänd objekttyp eller kanaltyp, saknad version | Dead letter direkt                                                                                                                                   |
-| Ett legalId saknas i Party:s svar, eller har fel format och skickas därför aldrig till Party    | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `objectId`, men utan legalId.                                      |
-| 5xx från Party (`ServerProblem`)                                                                | Omförsök i cirka 8 minuter, sedan dead letter                                                                                                        |
-| 429 eller 408 från Party, eller öppen circuit breaker mot Party                                 | Avbrott: omförsök, sedan tillbaka till kön. `PartyIntegration` gör om svaret till ett avbrott, eftersom startern annars dead-letterar en 4xx direkt. |
-| Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker                 | Inget fel. Nya privatkunder får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                                                        |
-| Citizen svarar 401                                                                              | Dead letter direkt (`ClientProblem`), så att larmet går. Behörigheten i Metakatalogen saknas ([§7.2]).                                               |
-| Databasen svarar inte                                                                           | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                                                            |
-| Deadlock eller lock timeout (`TransientDataAccessException`)                                    | Omförsök                                                                                                                                             |
-| `DataIntegrityViolationException`                                                               | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                                                        |
+|                                                         Fel                                                         |                                                                      Följd                                                                      |
+|---------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| Valideringsfel (`ConstraintViolationException`), okänd objekttyp eller kanaltyp, saknad version                     | Dead letter direkt                                                                                                                              |
+| Ett legalId saknas i svaret från Citizen eller LegalEntity, eller har fel format och skickas därför aldrig ([§7.1]) | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `objectId`, men utan legalId.                                 |
+| 5xx från Citizen eller LegalEntity när partyId slås upp (`ServerProblem`)                                           | Omförsök i cirka 8 minuter, sedan dead letter. Utan partyId kan parten inte tillämpas.                                                          |
+| 429 eller 408, eller öppen circuit breaker, när partyId slås upp                                                    | Avbrott: omförsök, sedan tillbaka till kön. Integrationen gör om svaret till ett avbrott, eftersom startern annars dead-letterar en 4xx direkt. |
+| Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när skyddsstatusen hämtas           | Inget fel. Nya kunder får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                                                         |
+| Citizen svarar 401                                                                                                  | Dead letter direkt (`ClientProblem`), så att larmet går. Behörigheten i Metakatalogen saknas ([§7.2]).                                          |
+| Databasen svarar inte                                                                                               | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                                                       |
+| Deadlock eller lock timeout (`TransientDataAccessException`)                                                        | Omförsök                                                                                                                                        |
+| `DataIntegrityViolationException`                                                                                   | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                                                   |
 
 Ett meddelande som misslyckas rullas tillbaka helt och syns inte i den tekniska loggen. Det syns i starterns WARN-rad
 och i dead letter-kön.
@@ -308,4 +312,5 @@ en källa skulle stoppa alla.
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [§7.2]: 07-integrationer.md#72-citizen-och-legalentity
 [§9]: 09-kodstruktur.md
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 

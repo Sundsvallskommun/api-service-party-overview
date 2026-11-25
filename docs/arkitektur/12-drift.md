@@ -16,12 +16,13 @@ integration:
     CONTRACT: api-fabriken.party-overview.contract
     CASE_DATA: api-fabriken.party-overview.case-data
   dead-letter-suffix: .dlq       # DLQ = kö + suffix, används av health-indikatorn
-  party:
-    url: …
   citizen:
     url: …
   legalentity:
     url: …
+logbook:
+  excluded:
+    paths: "**/guid"             # LegalEntitys uppslag med organisationsnumret i URL:en (§7.1)
 protection:
   batch-size: 100
 search:

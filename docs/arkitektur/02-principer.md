@@ -6,9 +6,9 @@ Del av [arkitekturen för party-overview](README.md).
    källsystemet, referens, typ, titel, status, datum, namespace och parter. Allt annat hämtas från källan.
 2. **Inga personnummer eller organisationsnummer.** De lagras inte i någon tabell, skrivs inte till någon logg och
    hamnar inte i något undantagsmeddelande. Även partyId räknas som personuppgift i applikationsloggar, enligt
-   `dept44/docs/pii-logging-policy.md`. partyId står i sökvägar, både i API:t och mot Party och Citizen, och därför är
-   dept44:s PII-maskning påslagen med alla kategorier ([§12]). Den maskar också personnummer som står som nycklar i en
-   map, vilket payload-loggens allowlist inte gör.
+   `dept44/docs/pii-logging-policy.md`. partyId står i sökvägar, både i API:t och mot Citizen och LegalEntity, och
+   därför är dept44:s PII-maskning påslagen med alla kategorier ([§12]). Uppslaget av organisationsnummer mot
+   LegalEntity har numret i URL:en och undantas därför från payload-loggen ([§7.1]).
 3. **Källan är master.** Meddelanden innehåller alltid hela tillståndet, och party-overview gör upsert. Det enda
    party-overview själv äger är noteringarna och konfigurationen av kontaktpersonsroller.
 4. **Allt som hör till en kund raderas med kunden.** Det gäller både via JPA och via `DELETE FROM customer` direkt i
@@ -25,7 +25,8 @@ Del av [arkitekturen för party-overview](README.md).
    eller egna kontaktuppgifter, och kunden går bara att hitta på referenser som ärendenummer. Skyddet visas på kunden i
    varje svar ([§5.4]).
 7. **Ingen över-engineering.** Det finns en lyssnarklass för alla köer (med en container per kö), en tabell för alla
-   engagemangstyper och inga generiska ramverk. Kod, kommentarer och javadoc beskriver vad koden gör, inte hur den kom till.
+   engagemangstyper och inga generiska ramverk. Kod, kommentarer och javadoc beskriver vad koden gör, inte hur den kom
+   till.
 
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§4.3]: 04-datamodell.md#43-tabellerna
@@ -34,4 +35,5 @@ Del av [arkitekturen för party-overview](README.md).
 [§12]: 12-drift.md
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [beslut 47]: 00-beslutslogg.md#beslut-47-meddelandets-id-finns-bara-i-den-tekniska-loggen
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 

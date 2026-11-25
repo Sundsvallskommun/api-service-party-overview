@@ -22,7 +22,7 @@ listar de krav party-overview ställer på det.
 | 4  | [Datamodell](04-datamodell.md)                                          | Tabeller, index och Flyway                                                                              |
 | 5  | [Synlighet, kunddata och kontaktpersoner](05-synlighet-och-kunddata.md) | Synlighet per namespace, namn och adress, kontaktpersoner och skyddad identitet                         |
 | 6  | [REST-API](06-rest-api.md)                                              | Endpoints och kundsökningen i OpenSearch                                                                |
-| 7  | [Integrationer](07-integrationer.md)                                    | Party, Citizen och LegalEntity                                                                          |
+| 7  | [Integrationer](07-integrationer.md)                                    | Uppslag av partyId, Citizen och LegalEntity                                                             |
 | 8  | [Teknisk logg och radering](08-teknisk-logg.md)                         | Utfall i den tekniska loggen och radering av den                                                        |
 | 9  | [Kodstruktur och konventioner](09-kodstruktur.md)                       | Paketstruktur och kodkonventioner                                                                       |
 | 10 | [Teststrategi](10-teststrategi.md)                                      | Vad varje testnivå täcker                                                                               |

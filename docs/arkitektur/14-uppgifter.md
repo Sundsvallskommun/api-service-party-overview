@@ -3,8 +3,8 @@
 Del av [arkitekturen för party-overview](README.md).
 
 Varje uppgift går att slå ihop för sig. Acceptanskriterierna kan klistras in i en Jira-subtask. **C** är
-party-overview, **P** är api-service-party, **T** är infrastrukturen (RabbitMQ och OpenSearch) och **SM**, **PA**,
-**CT** och **CD** är publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
+party-overview, **T** är infrastrukturen (RabbitMQ och OpenSearch) och **SM**, **PA**, **CT** och **CD** är
+publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 **Gäller alla uppgifter (Definition of Done):**
 
@@ -14,39 +14,39 @@ party-overview, **P** är api-service-party, **T** är infrastrukturen (RabbitMQ
 - Inga TODO:s.
 - README är uppdaterad när konfiguration eller drift påverkas.
 
-| Steg | Id  |                       Uppgift                        |              Beror på              |
-|------|-----|------------------------------------------------------|------------------------------------|
-| 1    | C1  | Projektgrund                                         | —                                  |
-| 2    | C2  | Datamodell, Flyway och schemaverifiering             | C1                                 |
-| 3    | P1  | Party: partyId för organisationsnummer i batch       | —                                  |
-| 4    | C3  | Integrationer mot Party, Citizen och LegalEntity     | C1, P1, behörighet i Metakatalogen |
-| 5    | C4  | Kontaktpersonsroller via REST                        | C2                                 |
-| 6    | C5  | Meddelandekärnan                                     | C2, C3, C4, F1                     |
-| 7    | C6  | Kundmeddelanden (`CUSTOMER`)                         | C5                                 |
-| 8    | C7  | Läs-API för kund, kontakter, engagemang och historik | C2, C3                             |
-| 9    | C8  | Noteringar                                           | C3, C5                             |
-| 10   | C9  | Kundradering via REST och API för teknisk logg       | C5                                 |
-| 11   | C10 | Skyddad identitet: nattlig kontroll                  | C3, C5                             |
-| 12   | T2  | Egen OpenSearch-container per miljö                  | —                                  |
-| 13   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, T2                             |
-| 14   | C13 | Sök-endpoint                                         | C12                                |
-| 15   | T1  | Köer och exchanges i rabbitmq-topology               | —                                  |
-| 16   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                         |
-| 17   | SM1 | SupportManagement: outbox, relay och publicering     | F1                                 |
-| 18   | SM2 | SupportManagement: grundladdning                     | SM1                                |
-| 19   | CD1 | Casedata: outbox, relay och publicering              | F1                                 |
-| 20   | CD2 | Casedata: grundladdning                              | CD1                                |
-| 21   | PA1 | party-assets: outbox, relay och publicering          | F1                                 |
-| 22   | PA2 | party-assets: grundladdning via outbox               | PA1                                |
-| 23   | CT1 | contract: tidsstämplar och vem                       | —                                  |
-| 24   | CT2 | contract: outbox, relay och publicering              | CT1, F1                            |
-| 25   | CT3 | contract: grundladdning                              | CT2                                |
+| Steg | Id  |                       Uppgift                        |            Beror på            |
+|------|-----|------------------------------------------------------|--------------------------------|
+| 1    | C1  | Projektgrund                                         | —                              |
+| 2    | C2  | Datamodell, Flyway och schemaverifiering             | C1                             |
+| 3    | C3  | Integrationer mot Citizen och LegalEntity            | C1, behörighet i Metakatalogen |
+| 4    | C4  | Kontaktpersonsroller via REST                        | C2                             |
+| 5    | C5  | Meddelandekärnan                                     | C2, C3, C4, F1                 |
+| 6    | C6  | Kundmeddelanden (`CUSTOMER`)                         | C5                             |
+| 7    | C7  | Läs-API för kund, kontakter, engagemang och historik | C2, C3                         |
+| 8    | C8  | Noteringar                                           | C3, C5                         |
+| 9    | C9  | Kundradering via REST och API för teknisk logg       | C5                             |
+| 10   | C10 | Skyddad identitet: nattlig kontroll                  | C3, C5                         |
+| 11   | T2  | Egen OpenSearch-container per miljö                  | —                              |
+| 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, T2                         |
+| 13   | C13 | Sök-endpoint                                         | C12                            |
+| 14   | T1  | Köer och exchanges i rabbitmq-topology               | —                              |
+| 15   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                     |
+| 16   | SM1 | SupportManagement: outbox, relay och publicering     | F1                             |
+| 17   | SM2 | SupportManagement: grundladdning                     | SM1                            |
+| 18   | CD1 | Casedata: outbox, relay och publicering              | F1                             |
+| 19   | CD2 | Casedata: grundladdning                              | CD1                            |
+| 20   | PA1 | party-assets: outbox, relay och publicering          | F1                             |
+| 21   | PA2 | party-assets: grundladdning via outbox               | PA1                            |
+| 22   | CT1 | contract: tidsstämplar och vem                       | —                              |
+| 23   | CT2 | contract: outbox, relay och publicering              | CT1, F1                        |
+| 24   | CT3 | contract: grundladdning                              | CT2                            |
 
 ## C1 — Projektgrund
 
 **Bygg:**
 
-- Ta bort POC-koden (`integration/source`, `EventService`, `PartyOverviewService`, POC-entiteter och tester, `PartyOverviewIT`).
+- Ta bort POC-koden (`integration/source`, `EventService`, `PartyOverviewService`, POC-entiteter och tester,
+  `PartyOverviewIT`).
 - I `pom.xml`: uppgradera `dept44-service-parent` till 8.2.0, byt `spring-boot-starter-amqp` mot
   `dept44-starter-rabbitmq`, och lägg till `dept44-starter-feign` och `dept44-starter-scheduler`.
   `dept44-common-validators` finns redan.
@@ -80,76 +80,63 @@ party-overview, **P** är api-service-party, **T** är infrastrukturen (RabbitMQ
 - `SchemaVerificationTest` och `SchemaParityIT` är gröna. Om ett index tas bort i bara den ena källan blir
   `SchemaParityIT` röd. Det ska provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `engagement`, `engagement_history`, `contact`,
-  `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden. Raderna i `technical_log`, `source_object` och
-  `search_index_queue` finns kvar.
+  `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden. Raderna i `technical_log`,
+  `source_object` och `search_index_queue` finns kvar.
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
 
-## P1 — Party: partyId för organisationsnummer i batch
-
-Uppgiften görs i api-service-party ([beslut 32]).
+## C3 — Integrationer mot Citizen och LegalEntity
 
 **Bygg:**
 
-- `POST /{municipalityId}/ENTERPRISE/partyIds`. Kroppen är en lista med legalId, och svaret är en lista av objekt,
-  `[{ "legalId": …, "partyId": … }]`. En map med legalId som nycklar, som `PRIVATE/partyIds` har, går inte, eftersom
-  dept44:s allowlist loggar nycklarna i klartext. I en lista är numret ett värde och maskas.
-- Samma validering som `GET /{municipalityId}/ENTERPRISE/{legalId}/partyId`: organisationsnummer, och personnummer för
-  enskild firma (`validateEnterpriseLegalId`). Ett ogiltigt element utelämnas ur svaret i stället för att hela batchen
-  får 400.
-- Ett legalId som inte finns utelämnas ur svaret. Ett tillfälligt fel för något element, t.ex. från LegalEntity, ger
-  5xx för hela anropet och utelämnar aldrig elementet. party-overview tolkar ett utelämnat element som att parten inte
-  finns ([§3.3]).
-- Internt får numren slås upp ett i taget mot LegalEntity.
-
-**Acceptans:**
-
-- Ett organisationsnummer och ett personnummer för en enskild firma ger rätt partyId. Det verifieras med ett IT för
-  vart och ett, som `GetPartyIdIT.test03_getPartyIdEnterpriseForEnskildFirma` gör för GET-varianten.
-- Ett okänt nummer och ett ogiltigt nummer saknas i svaret, och resten av batchen besvaras.
-- Ett tillfälligt fel från LegalEntity ger 5xx för hela anropet.
-- Inget legalId finns i URL:en mot Party, i loggrader, i payload-loggen eller i Problem-detail. Det verifieras mot
-  loggern `se.sundsvall.dept44.payload`.
-- `openapi.yaml` i api-service-party är regenererad, och party-overviews kopia av `party.yaml` uppdateras i C3.
-
-## C3 — Integrationer mot Party, Citizen och LegalEntity
-
-**Bygg:**
-
-- Kodgenereringen för `party.yaml`, `citizen.yaml` och `legalentity.yaml` med openapi-generator ([§9]).
-- `PartyClient`/`PartyIntegration` med `getPartyIds(PRIVATE, batch)`, `getPartyIds(ENTERPRISE, batch)` från P1 och
-  `getPartyType`. legalId valideras mot dept44:s format innan det skickas ([§7.1]). För en `ENTERPRISE`-part ger
-  typuppslaget också organisationsnumret, så att en enskild firma känns igen ([§5.4]). Numret sparas aldrig.
-- `CitizenClient`/`CitizenIntegration` med `getCitizen` och `getCitizens` (batch), som båda returnerar skyddsnivå och,
-  för oskyddade personer, namn och adress ([§5.4]).
-- `LegalEntityClient`/`LegalEntityIntegration`.
+- Kodgenereringen för `citizen.yaml` och `legalentity.yaml` med openapi-generator ([§9]).
+- `CitizenClient`/`CitizenIntegration` med:
+  - `getPartyIds` (batch, `POST /{municipalityId}/guid/batch`) för personnummer → partyId ([§7.1])
+  - `getCitizen` och `getCitizens` (batch), som båda returnerar skyddsnivå och, för oskyddade personer, namn och adress
+    ([§5.4])
+- `LegalEntityClient`/`LegalEntityIntegration` med:
+  - `getPartyId` (`GET /{municipalityId}/{organizationNumber}/guid`) för organisationsnummer → partyId ([§7.1])
+  - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, adress och organisationsnummer
+- Partytypen för ett partyId avgörs med `getCitizen` och `getLegalEntity` ([§7.2]). En enskild firma känns igen på att
+  organisationsnumret är ett personnummer ([§5.4]). Numret sparas aldrig.
+- legalId valideras mot dept44:s format innan det skickas ([§7.1]).
+- `logbook.excluded.paths` för LegalEntitys uppslag med numret i URL:en ([§12]).
 - Konfiguration med OAuth2 och circuit breaker.
 - WireMock-stubbar för IT.
 
 **Acceptans:**
 
-- 404 på ett enskilt anrop ger `Optional.empty`, och 5xx ger `ServerProblem` som inte sväljs. Ett legalId som saknas
-  i ett batchsvar ger ingen mappning, och ett legalId med fel format skickas inte.
-- 429 och 408 från Party görs om till ett avbrott. Från Citizen ger de samma resultat som när Citizen inte svarar
-  ([§3.7]).
+- 404 på ett enskilt anrop ger `Optional.empty`, och 5xx ger `ServerProblem` som inte sväljs. Ett element utan
+  `success` i Citizens batchsvar ger ingen mappning, och ett legalId med fel format skickas inte.
+- 429 och 408 görs om till ett avbrott när partyId slås upp. När skyddsstatus hämtas ger de samma resultat som när
+  Citizen inte svarar ([§3.7]).
 - Inga legalId i några loggrader eller undantagsmeddelanden. Testet stubbar ett fel vars detail innehåller ett legalId
   och kontrollerar att det inte syns i undantaget.
-- Personnumren som nycklar i svaret från `PRIVATE/partyIds` syns inte i loggern `se.sundsvall.dept44.payload`, eftersom
-  PII-maskningen är påslagen.
+- LegalEntitys uppslag med organisationsnumret i URL:en finns inte i loggern `se.sundsvall.dept44.payload`, och inget
+  personnummer skickas i en URL. Det verifieras med ett test.
+- Partytypen: en person som Citizen känner ger `PRIVATE`, ett företag som bara LegalEntity känner ger `ENTERPRISE`,
+  ett partyId som ingen av dem känner ger `Optional.empty`, och 5xx från någon av dem ger ett fel och aldrig
+  `Optional.empty`.
 - Utan behörighet i Metakatalogen svarar Citizen 401 och inte ett filtrerat svar. Det verifieras i testmiljön, eftersom
   [§5.4] bygger på det.
-- I testmiljön verifieras i vilket format Party ger en enskild firmas organisationsnummer, och hur århundradet avgörs
-  för ett tiosiffrigt nummer innan ägaren slås upp via `PRIVATE/partyIds`. Resultatet dokumenteras i README
-  ([§13.3]).
-- Citizen anropas alltid med `ShowClassified=true`. Flaggorna tolkas enligt tabellen i [§5.4], med ett testfall per rad.
-  För en skyddad person returnerar integrationen varken namn eller adress.
+- I testmiljön verifieras också:
+  - att `guid/batch` ger `personId` även för personer med skyddade personuppgifter
+  - vilken version av LegalEntity som har `…/{organizationNumber}/guid`
+  - i vilket format LegalEntity ger en enskild firmas organisationsnummer, och hur århundradet avgörs för ett
+    tiosiffrigt nummer innan ägaren slås upp ([§13.3])
+
+  Resultaten dokumenteras i README.
+
+- Citizen anropas med `ShowClassified=true` i alla anrop som ger personuppgifter. Flaggorna tolkas enligt tabellen i
+  [§5.4], med ett testfall per rad. För en skyddad person returnerar integrationen varken namn eller adress.
+
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
   och en testperson med skyddad folkbokföring. Resultatet dokumenteras i README.
+
 - 401 från Citizen ger en `ClientProblem` vars detail säger att behörigheten i Metakatalogen saknas.
+
 - Ingenting ur Citizens svar loggas.
-- Partytypen avgörs med `PRIVATE` först och sedan `ENTERPRISE`. Om ingen av dem hittas blir det `Optional.empty`.
-- Inget personnummer eller organisationsnummer finns i någon URL mot Party. Båda skickas i kroppen ([§7.1]).
 
 ## C4 — Kontaktpersonsroller via REST
 
@@ -190,7 +177,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
   som kund eller enligt Citizen, eller vars status är `UNKNOWN`, sparas inte ([§5.3]).
 - En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer får ägarens partyId som `registry_party_id` och
   ägarens skydd från Citizen. Ett vanligt organisationsnummer ger `registry_party_id = null` ([§5.4]).
-- En part med legalId mappas och tillämpas. Saknas legalId i Party:s svar, eller har det fel format, hoppas parten över
+- En part med legalId mappas och tillämpas. Saknas legalId i svaret från Citizen eller LegalEntity, eller har det fel
+  format, hoppas parten över
   medan övriga parter tillämpas, och inga engagemang raderas för kunder som inte längre är parter ([§3.3]). legalId
   finns inte i någon entitet.
 - En kund som förekommer två gånger blir en rad, och rollerna slås ihop.
@@ -258,8 +246,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 - En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adress och kontaktkanaler.
 - `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
   hanteras som skyddad ([§5.4]).
-- Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Om Party inte känner numret,
-  eller om kunden saknas, blir det 404. Numret finns aldrig i svar, loggrader eller Problem-detail.
+- Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Om numret inte finns, eller
+  om kunden saknas, blir det 404. Numret finns aldrig i svar, loggrader eller Problem-detail.
 - Engagemang från alla namespaces visas. `engagementNamespace` och `objectType` filtrerar. Förvald sortering är
   `sourceModified,desc`, och paginering med `size > 100` begränsas till 100.
 - Ett engagemang som tillhör en annan kund ger 404.
@@ -277,19 +265,18 @@ Uppgiften görs i api-service-party ([beslut 32]).
 **Acceptans:**
 
 - CRUD inom namespacet. En notering i ett annat namespace ger 404 vid läsning, ändring och radering.
-- `CREATED` och `UPDATED` skrivs till historiken med `performed_by` från `X-Sent-By`. Ett anrop utan `X-Sent-By` ger 400.
+- `CREATED` och `UPDATED` skrivs till historiken med `performed_by` från `X-Sent-By`. Ett anrop utan `X-Sent-By` ger
+  400.
 - En notering på en okänd kund skapar kunden:
-  - en `PRIVATE`-kund med skyddsstatus från Citizen, och med namn och adress bara om personen är oskyddad
-  - en `ENTERPRISE`-kund med namn och adress från LegalEntity, och för en enskild firma med ägarens skydd från
-    Citizen, utan namn och adress om ägaren är skyddad
-  - med `UNKNOWN`, utan namn och adress, när Citizen inte har någon post, eller när Party har avgjort typen men
-    party-overviews anrop till Citizen misslyckas
+  - en `PRIVATE`-kund när Citizen känner partyId:t, med skyddsstatus från Citizen, och med namn och adress bara om
+    personen är oskyddad
+  - en `ENTERPRISE`-kund när bara LegalEntity känner det, med namn och adress från LegalEntity, och för en enskild
+    firma med ägarens skydd från Citizen, utan namn och adress om ägaren är skyddad
 
   Kunden loggas som `CUSTOMER_CREATED` med kanalen `REST`.
 
-- Okänd part ger 404, och ingen kund skapas. Kan Party inte avgöra partytypen, t.ex. för att Citizen inte svarar, blir
-  svaret 503 och varken notering eller kund skapas. Ett tillfälligt fel ger aldrig 404. WireMock-stubben låter Party
-  svara 5xx när Citizen gör det.
+- En part som varken Citizen eller LegalEntity känner ger 404, och ingen kund skapas. Svarar Citizen eller LegalEntity
+  inte, eller med 5xx, blir svaret 503, och varken notering eller kund skapas. Ett tillfälligt fel ger aldrig 404.
 
 - `subject` över 255 tecken och `body` över 10 000 tecken ger 400.
 
@@ -475,8 +462,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 - Soft delete publiceras som `DELETE`, och restore som `UPDATE` med högre version.
 - En ändring som bara rör stakeholders ökar versionen.
 - `parameters` finns aldrig i meddelandet.
-- Kanaltyperna mappas enligt [§11.2], och kanaler med en annan typ skickas inte. Mappningen täcker de typvärden som finns
-  i SM:s `contact_channel` i produktion.
+- Kanaltyperna mappas enligt [§11.2], och kanaler med en annan typ skickas inte. Mappningen täcker de typvärden som
+  finns i SM:s `contact_channel` i produktion.
 - Bara `externalIdType` `PRIVATE` och `ENTERPRISE` skickas som partytyp. Stakeholders med `EMPLOYEE` eller
   `ADMINISTRATOR` skickas inte, och andra skickas utan id.
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
@@ -622,7 +609,6 @@ Uppgiften görs i api-service-party ([beslut 32]).
 - Alla kontrakt i kommunen publiceras utan aktiviteter.
 - Inga bilagor läses.
 
-[§3]: 03-meddelanden.md
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
@@ -630,7 +616,6 @@ Uppgiften görs i api-service-party ([beslut 32]).
 [§3.5]: 03-meddelanden.md#35-tillämpning
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§4.3]: 04-datamodell.md#43-tabellerna
-[§5]: 05-synlighet-och-kunddata.md
 [§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace
 [§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
@@ -638,9 +623,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 [§6]: 06-rest-api.md
 [§6.1]: 06-rest-api.md#61-endpoints
 [§6.2]: 06-rest-api.md#62-kundsökning-opensearch
-[§7.1]: 07-integrationer.md#71-party-api-service-party
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 [§7.2]: 07-integrationer.md#72-citizen-och-legalentity
-[§8]: 08-teknisk-logg.md
 [§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
 [§8.2]: 08-teknisk-logg.md#82-radering-av-den-tekniska-loggen
 [§10]: 10-teststrategi.md
@@ -654,7 +638,6 @@ Uppgiften görs i api-service-party ([beslut 32]).
 [beslut 31]: 00-beslutslogg.md#beslut-31-dead-letter-köer-utan-ttl-med-larm
 [beslut 38]: 00-beslutslogg.md#beslut-38-egen-opensearch-container-per-miljö
 [beslut 41]: 00-beslutslogg.md#beslut-41-tolkningen-av-citizens-skyddsflaggor
-[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party
 [§9]: 09-kodstruktur.md
 [§3.7]: 03-meddelanden.md#37-felhantering
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller

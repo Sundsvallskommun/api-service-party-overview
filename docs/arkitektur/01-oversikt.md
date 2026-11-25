@@ -18,9 +18,8 @@ flowchart LR
     QCD --> PO
     PO --> DB[(MariaDB)]
     PO -->|sökindex via kö + relay| OS[(OpenSearch)]
-    PO -->|legalId → partyId, partytyp| PARTY[api-service-party]
-    PO -->|skyddsstatus; namn/adress när en notering skapar kunden| CIT[Citizen]
-    PO -->|namn/adress när en notering skapar kunden| LE[LegalEntity]
+    PO -->|personnummer → partyId; skyddsstatus; partytyp, namn/adress när en notering skapar kunden| CIT[Citizen]
+    PO -->|organisationsnummer → partyId; partytyp, namn/adress när en notering skapar kunden| LE[LegalEntity]
     FE[Kundvy, frontend] -->|REST| PO
     FE -->|detaljer om ett objekt| SM
     FE -->|detaljer om ett objekt| PA

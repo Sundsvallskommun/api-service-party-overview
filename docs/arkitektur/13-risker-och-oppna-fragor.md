@@ -16,7 +16,6 @@ Del av [arkitekturen för party-overview](README.md).
 | party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar som skapar kunder (C8) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
 | En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                     |
 | Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                   |
-| Party har `POST /{municipalityId}/ENTERPRISE/partyIds` (P1, [beslut 32]).                                                 | Mappningen av organisationsnummer i meddelanden (C5) och i uppslaget (C7)                                                                |
 | Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                |
 
 ## 13.3 Risker
@@ -149,11 +148,12 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras tills vidare. SM har en roll per stakeholder, så det gäller Casedata och contract, där en
   part kan ha flera roller.
 
-- Party slår upp organisationsnummer mot LegalEntity med numret i URL:en
+- party-overview slår upp organisationsnummer mot LegalEntity med numret i URL:en
   (`GET /{municipalityId}/{organizationNumber}/guid`). För en enskild firma är numret ett personnummer, som då kan
-  hamna i Party:s och gatewayens loggar, också med P1.
+  hamna i gatewayens och LegalEntitys loggar.
 
-  **Hantering:** Accepteras. LegalEntity och Party:s anrop till den ligger utanför party-overview.
+  **Hantering:** Accepteras ([beslut 32]). LegalEntity saknar ett uppslag med numret i kroppen och är inte vår tjänst.
+  Anropet undantas från party-overviews payload-logg, och PII-maskningen är påslagen ([§7.1]).
 
 - En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen och sparas med namn och
   kanaler. En kontaktperson som får skydd efter att raden sparades, utan att själv vara kund, ligger kvar tills objektet
@@ -162,11 +162,11 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras. Publicerarna skickar partyId när de har det, och nästa ändring av objektet kontrollerar
   kontaktpersonen igen.
 
-- För en enskild firma med ett tiosiffrigt organisationsnummer framgår inte århundradet, som `PRIVATE/partyIds` kräver
-  ([§5.4]).
+- För en enskild firma med ett tiosiffrigt organisationsnummer framgår inte århundradet, som Citizens uppslag av
+  personnummer behöver ([§5.4]).
 
-  **Hantering:** C3 verifierar i vilket format Party och LegalEntity ger en enskild firmas nummer, och hur århundradet
-  avgörs. Går ägaren inte att avgöra får kunden `UNKNOWN`.
+  **Hantering:** C3 verifierar i vilket format LegalEntity ger en enskild firmas nummer, och hur århundradet avgörs.
+  Går ägaren inte att avgöra får kunden `UNKNOWN`.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
@@ -181,9 +181,10 @@ Del av [arkitekturen för party-overview](README.md).
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
 [beslut 30]: 00-beslutslogg.md#beslut-30-de-administrativa-endpoints-ligger-i-samma-api
-[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party
+[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: #132-förutsättningar-före-driftsättning
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 

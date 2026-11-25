@@ -52,8 +52,8 @@ En ändring av kontaktpersonsrollerna gäller från nästa meddelande om varje o
 
 För en skyddad kund sparas ingen rad med `contact_type = CUSTOMER` ([§5.4]).
 
-**Kontaktpersoner med skyddade personuppgifter** ([beslut 52]). En skyddad person ska inte heller synas som kontaktperson,
-eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är skyddsvärd.
+**Kontaktpersoner med skyddade personuppgifter** ([beslut 52]). En skyddad person ska inte heller synas som
+kontaktperson, eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är skyddsvärd.
 
 - En kontaktpersons legalId mappas till partyId på samma sätt som en kunds ([§3.3]).
 - En kontaktperson med partyId kontrolleras: finns personen som kund används kundens skyddsnivå, annars frågas Citizen
@@ -111,12 +111,12 @@ varje gång någon av källorna ändras. En ändrad nivå loggas som `PROTECTION
 kommer bara från folkbokföringen. En källas `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` går före den, eftersom den
 säger mer, men att en källa inte anger något skydd ändrar inte `UNKNOWN`.
 
-**Enskilda firmor** ([beslut 54]). För en enskild firma är organisationsnumret ägarens personnummer, och firmans namn och
-adress kan vara ägarens. När en `ENTERPRISE`-kund skapas tar party-overview reda på organisationsnumret: från
-meddelandet, eller från Party (`GET /{municipalityId}/ENTERPRISE/{partyId}/legalId`). Är det ett personnummer slås
-ägarens partyId upp via `PRIVATE/partyIds` och sparas som `registry_party_id`. Kunden får sedan folkbokföringens skydd
-precis som en privatkund, också i den nattliga kontrollen. Numret sparas aldrig. För en privatkund är
-`registry_party_id` kundens eget partyId, och för andra företag är den null.
+**Enskilda firmor** ([beslut 54]). För en enskild firma är organisationsnumret ägarens personnummer, och firmans namn
+och adress kan vara ägarens. När en `ENTERPRISE`-kund skapas tar party-overview reda på organisationsnumret: från
+meddelandet, eller från `organizationNumber` i LegalEntitys svar på `GET /{municipalityId}/{legalEntityId}`. Är det ett
+personnummer slås ägarens partyId upp via Citizen (`POST /{municipalityId}/guid/batch`) och sparas som
+`registry_party_id`. Kunden får sedan folkbokföringens skydd precis som en privatkund, också i den nattliga kontrollen.
+Numret sparas aldrig. För en privatkund är `registry_party_id` kundens eget partyId, och för andra företag är den null.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -153,9 +153,10 @@ ur svaret loggas.
 - Citizen svarar inte, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker när ett meddelande skapar
   kunden. Meddelandet tillämpas ändå, så att källans kö inte står still medan Citizen är nere.
 - Citizen har ingen post för personen (se tabellen ovan).
-- Party har avgjort partytypen när en notering skapar kunden, men party-overviews eget anrop till Citizen misslyckas.
-  Kan Party inte avgöra typen, t.ex. för att Party i sin tur inte når Citizen, blir svaret 503 och ingen notering
-  skapas ([§7.2]).
+- En enskild firmas ägare går inte att avgöra, eller Citizen svarar inte när ägarens skydd hämtas.
+
+När en notering skapar kunden avgör Citizen och LegalEntity partytypen ([§7.2]). Svarar Citizen inte går det inte att
+avgöra om parten är en person, och då blir svaret 503 och ingen notering skapas.
 - Kunden fanns när statusen kontrollerades, men hann raderas innan meddelandet eller noteringen skrevs.
 
 Så länge statusen är okänd gäller följande:
@@ -183,8 +184,8 @@ nattliga kontrollen ersätter det.
    personnummer ([§6]).
 3. API:et returnerar `protectionLevel` på kunden, och namn, adress och kontaktkanaler är tomma. Frontend ska visa
    skyddet tydligt i varje vy som rör kunden och skilja nivåerna åt, också `UNKNOWN`.
-4. Engagemang, historik och noteringar finns kvar. Envelope-data och noteringar ska inte innehålla skyddsvärda uppgifter.
-   Det ansvaret ligger hos källsystemen och verksamheterna ([§13]).
+4. Engagemang, historik och noteringar finns kvar. Envelope-data och noteringar ska inte innehålla skyddsvärda
+   uppgifter. Det ansvaret ligger hos källsystemen och verksamheterna ([§13]).
 
 **När skyddet upphör** fylls namn och adress i igen. För privatkunder sker det från Citizens svar i den nattliga
 kontrollen, och för en enskild firma med nästa tillämpade meddelande från källan. Kontaktuppgifter kommer tillbaka med

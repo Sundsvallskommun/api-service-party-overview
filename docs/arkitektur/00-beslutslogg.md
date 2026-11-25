@@ -49,8 +49,8 @@ envelope-data, och samlas inte in.
 
 ## Beslut 6: En notering på en okänd kund skapar kunden
 
-En notering på en kund som inte finns skapar kunden. Party avgör partytypen, och Citizen eller LegalEntity ger namn och
-adress.
+En notering på en kund som inte finns skapar kunden. Citizen eller LegalEntity avgör partytypen och ger namn och adress
+([§7.2]).
 
 **Valdes bort:** Att svara 404 för okända kunder.
 
@@ -145,13 +145,13 @@ men blir aldrig själv kund. Vilka roller som räknas som kontaktpersonsroller k
 ## Beslut 16: Personnummer och organisationsnummer mappas till partyId
 
 Publicerarna skickar partyId när de har det. Det som ändå kommer som personnummer eller organisationsnummer mappar
-party-overview till partyId via api-service-party. Sådana nummer lagras och loggas aldrig. En part som Party inte hittar
-hoppas över.
+party-overview till partyId via Citizen och LegalEntity ([§7.1]). Sådana nummer lagras och loggas aldrig. En part vars
+nummer inte finns hoppas över.
 
 **Valdes bort:** Att bara party-overview mappar, eller att bara publicerarna gör det.
 
-**Skäl:** Personnummer ska färdas över köerna så sällan som möjligt, men kravtexten gäller fortfarande. Ett 404 från
-Party blir inte bättre av omförsök.
+**Skäl:** Personnummer ska färdas över köerna så sällan som möjligt, men kravtexten gäller fortfarande. Ett nummer som
+inte finns blir inte bättre av omförsök.
 
 ## Beslut 17: En lyssnare och en mappning för alla köer
 
@@ -219,7 +219,7 @@ contract och party-assets publicerar utan namespace. Deras engagemang och kontak
 ## Beslut 24: Uppslag på personnummer eller organisationsnummer
 
 party-overview kan slå upp en kund på personnummer eller organisationsnummer via `POST …/customers/lookup`, med numret i
-kroppen. Numret mappas till partyId via Party och kastas sedan.
+kroppen. Numret mappas till partyId via Citizen eller LegalEntity och kastas sedan.
 
 **Valdes bort:** Att bara ta emot partyId.
 
@@ -269,9 +269,9 @@ SupportManagement publicerar inte utkast (`lifecycle = DRAFT`).
 
 Skyddad identitet ([§5.4]) är en egenskap på kunden med tre nivåer: `NONE`, `SECRECY_MARKING` och
 `PROTECTED_REGISTRATION`. Den effektiva nivån är den högsta av folkbokföringens (Citizen), CUSTOMER-meddelandenas (en
-per källa, [beslut 53]) och engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna kontaktuppgifter, och de
-indexeras inte för sökning. När folkbokföringens status inte är känd används värdet `UNKNOWN`, som räknas som skyddat
-([beslut 48]).
+per källa, [beslut 53]) och engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna
+kontaktuppgifter, och de indexeras inte för sökning. När folkbokföringens status inte är känd används värdet `UNKNOWN`,
+som räknas som skyddat ([beslut 48]).
 
 **Valdes bort:** Att lagra uppgifterna och bara dölja dem i API:et, eller att bara lita på publicerarnas flagga.
 
@@ -315,15 +315,17 @@ när någon av dem innehåller meddelanden, och Spring Boot Admin larmar då til
 **Skäl:** Inget meddelande får försvinna utan att någon har tittat på det. Spring Boot Admin med Slack-notifiering
 används redan.
 
-## Beslut 32: Organisationsnummer skickas i kroppen mot Party
+## Beslut 32: Organisationsnummer slås upp direkt mot LegalEntity
 
-Organisationsnummer mappas till partyId med en ny endpoint i Party, `POST /{municipalityId}/ENTERPRISE/partyIds`, med
-numren i kroppen. Den byggs i P1 ([§14]).
+Organisationsnummer mappas till partyId med LegalEntitys `GET /{municipalityId}/{organizationNumber}/guid`, med numret
+i URL:en. Anropet undantas från dept44:s payload-logg ([§7.1]).
 
-**Valdes bort:** Den befintliga `GET /{municipalityId}/ENTERPRISE/{legalId}/partyId`, med numret i URL:en.
+**Valdes bort:** En ny POST-endpoint i api-service-party med numren i kroppen.
 
-**Skäl:** För en enskild firma är organisationsnumret ägarens personnummer, och Party tar emot det som legalId för
-`ENTERPRISE`. En URL hamnar i gatewayens och Party:s loggar, och personnummer ska aldrig stå i en URL ([beslut 24]).
+**Skäl:** LegalEntity saknar ett uppslag med numret i kroppen och är inte vår tjänst. En POST-endpoint i Party skulle
+ändå ha anropat LegalEntity med numret i URL:en, så den skulle bara flytta URL:en ett steg och kräva en ändring i en
+annan tjänst. För en enskild firma är numret ägarens personnummer. Det hålls borta från party-overviews payload-logg,
+och att det syns i gatewayens och LegalEntitys loggar är en accepterad risk ([§13.3]).
 
 ## Beslut 33: Kontaktpersonsrollerna sätts via REST vid driftsättning
 
@@ -469,8 +471,8 @@ datatabellerna gav ingen spårbarhet utöver det.
 
 Om Citizen inte svarar, svarar 5xx, har en öppen circuit breaker eller saknar en post för personen när en privatkund
 skapas, får kunden skyddsstatusen `UNKNOWN` och behandlas som skyddad tills den nattliga kontrollen har fått svar
-([§5.4]). Meddelandet eller noteringen tillämpas ändå. 401 dead-letteras som tidigare, eftersom det är ett konfigurationsfel. README, javadoc
-och OpenAPI-specen beskriver värdet.
+([§5.4]). Meddelandet eller noteringen tillämpas ändå. 401 dead-letteras som tidigare, eftersom det är ett
+konfigurationsfel. README, javadoc och OpenAPI-specen beskriver värdet.
 
 **Valdes bort:** Att göra om meddelandet tills Citizen svarar, och att sedan dead-lettera det.
 
@@ -552,6 +554,18 @@ publiceras inte ([§11.2]).
 **Skäl:** Kundbilden visar ärendet, inte meddelandena som skickas till och från det. Kommunikationen ökar dessutom inte
 ärendets version, så den kunde ändå inte publiceras som en egen ändring.
 
+## Beslut 56: party-overview anropar inte api-service-party
+
+partyId slås upp direkt mot Citizen och LegalEntity, och partytypen avgörs med de anrop som ändå görs mot dem
+([§7.1]). party-overview anropar inte api-service-party.
+
+**Valdes bort:** Att slå upp partyId och partytyp via api-service-party.
+
+**Skäl:** api-service-party är ett tunt lager ovanpå Citizen och LegalEntity, och partyId är deras id: Citizens
+`personId` för en person och LegalEntitys id för ett företag. Tjänsten anropar redan båda, så Party gav bara ett
+beroende till. Direkt syns fel per element i Citizens batchsvar, som Party annars gör om till att numret inte finns,
+och partytypen avgörs utan att personnummer hämtas.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -560,10 +574,8 @@ publiceras inte ([§11.2]).
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [§11.4]: 11-publicerare.md#114-contract-contract
-[§14]: 14-uppgifter.md#p1--party-partyid-för-organisationsnummer-i-batch
 [beslut 15]: #beslut-15-party-overview-härleder-kontaktpersoner
 [beslut 19]: #beslut-19-supportmanagement-publicerar-bara-namespaces-med-opt-in
-[beslut 24]: #beslut-24-uppslag-på-personnummer-eller-organisationsnummer
 [beslut 34]: #beslut-34-casedata-publicerar-ärenden-och-sekretessärenden-som-delete
 [beslut 37]: #beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 48]: #beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
@@ -576,4 +588,7 @@ publiceras inte ([§11.2]).
 [beslut 50]: #beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
 [beslut 51]: #beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
 [beslut 53]: #beslut-53-skyddet-från-customer-meddelanden-lagras-per-källa
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
+[§7.2]: 07-integrationer.md#72-citizen-och-legalentity
+[§13.3]: 13-risker-och-oppna-fragor.md#133-risker
 
