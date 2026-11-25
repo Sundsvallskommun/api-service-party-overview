@@ -160,7 +160,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   5563793586) som stub och kontrollerar:
 
   - SNI-koderna 70100, 72190, 86212 och 91012, i den ordningen, utan de tomma elementen
-  - storleksklassen `8` "200–499 anställda", juridisk form `49` och sätets kommun `2281`
+  - storleksklassen `8` "200–499 anställda", juridisk form `49` och kommunen för företagets säte `2281`
   - besöksadressen "SKEPPARPLATSEN 1" och en postadress med bara postnummer och ort
   - att tomma strängar blir null
 - `officers` och `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar

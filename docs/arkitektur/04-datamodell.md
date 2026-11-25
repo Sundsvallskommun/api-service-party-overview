@@ -127,21 +127,21 @@ tar bort källans rad.
 **`enterprise_profile`**: företagsuppgifter från LegalEntity, högst en rad per företagskund ([§5.5], [beslut 58]). En
 skyddad kund har ingen. Raden och dess barn ersätts som helhet.
 
-|                        Kolumn                         |             Typ              |  Null  |                                  Anmärkning                                  |
-|-------------------------------------------------------|------------------------------|--------|------------------------------------------------------------------------------|
-| `customer_id`                                         | varchar(36)                  | nej    | PK och FK `fk_enterprise_profile_customer_id`, cascade                       |
-| `legal_form_code`, `legal_form`                       | varchar(8), varchar(255)     | ja     | SCB:s juridiska form                                                         |
-| `company_form`                                        | varchar(64)                  | ja     | Bolagsverkets företagsform                                                   |
-| `seat_municipality_code`, `seat_municipality`         | varchar(8), varchar(255)     | ja     |                                                                              |
-| `registered`, `deregistered`                          | date                         | ja     |                                                                              |
-| `deregistration_reason_code`, `deregistration_reason` | varchar(32), varchar(255)    | ja     |                                                                              |
-| `employee_size_class`, `employee_size`                | varchar(8), varchar(64)      | ja     | SCB:s storleksklass, t.ex. `8` och "200–499 anställda"                       |
-| `revenue_size_class`, `revenue_size`, `revenue_year`  | varchar(8), varchar(64), int | ja     |                                                                              |
-| `workplace_count`                                     | int                          | ja     |                                                                              |
-| `business_description`                                | text                         | ja     |                                                                              |
-| `email`, `phone_number`                               | varchar(255)                 | ja     |                                                                              |
-| `fetched`                                             | datetime(6)                  | nej    | När anropet till LegalEntity startade. Bara en senare hämtning skriver över. |
-| `created`, `modified`                                 | datetime(6)                  | nej/ja |                                                                              |
+|                                 Kolumn                                  |             Typ              |  Null  |                                      Anmärkning                                      |
+|-------------------------------------------------------------------------|------------------------------|--------|--------------------------------------------------------------------------------------|
+| `customer_id`                                                           | varchar(36)                  | nej    | PK och FK `fk_enterprise_profile_customer_id`, cascade                               |
+| `legal_form_code`, `legal_form`                                         | varchar(8), varchar(255)     | ja     | SCB:s juridiska form                                                                 |
+| `company_form`                                                          | varchar(64)                  | ja     | Bolagsverkets företagsform                                                           |
+| `registered_office_municipality_code`, `registered_office_municipality` | varchar(8), varchar(255)     | ja     | Kommunen där företaget har sitt säte. Kan skilja sig från kundens `municipality_id`. |
+| `registered`, `deregistered`                                            | date                         | ja     |                                                                                      |
+| `deregistration_reason_code`, `deregistration_reason`                   | varchar(32), varchar(255)    | ja     |                                                                                      |
+| `employee_size_class`, `employee_size`                                  | varchar(8), varchar(64)      | ja     | SCB:s storleksklass, t.ex. `8` och "200–499 anställda"                               |
+| `revenue_size_class`, `revenue_size`, `revenue_year`                    | varchar(8), varchar(64), int | ja     |                                                                                      |
+| `workplace_count`                                                       | int                          | ja     |                                                                                      |
+| `business_description`                                                  | text                         | ja     |                                                                                      |
+| `email`, `phone_number`                                                 | varchar(255)                 | ja     |                                                                                      |
+| `fetched`                                                               | datetime(6)                  | nej    | När anropet till LegalEntity startade. Bara en senare hämtning skriver över.         |
+| `created`, `modified`                                                   | datetime(6)                  | nej/ja |                                                                                      |
 
 **`enterprise_sni_code`**: företagets SNI-koder, med huvudnäringen på plats 1 ([§5.5]).
 

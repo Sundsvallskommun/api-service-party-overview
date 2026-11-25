@@ -49,9 +49,9 @@ och kontaktpersonsroller och som `performed_by` i historiken och den tekniska lo
   - `Address`: `type`, `careOf`, `street`, `postalCode`, `city` och `country` ([§5.2])
   - `ContactPerson`: `name`, `role`, `contactChannels[]` och `address` ([§5.3])
   - `Note`: `id`, `subject`, `body`, `created`, `createdBy`, `modified` och `modifiedBy`
-  - `EnterpriseProfile`: uppgifterna i [§5.5], där `sniCodes[]` har `code` och `name` i ordning och
-    `proceedings[]` har `code`, `name` och `fromDate`. Saknas för en privatkund, en skyddad kund och ett företag som
-    ännu inte har någon profil.
+  - `EnterpriseProfile`: uppgifterna i [§5.5], där `registeredOfficeMunicipality` har `code` och `name`, `sniCodes[]`
+    har `code` och `name` i ordning och `proceedings[]` har `code`, `name` och `fromDate`. Saknas för en privatkund, en
+    skyddad kund och ett företag som ännu inte har någon profil.
   - `CustomerSearchHit`, `Engagement`, `HistoryEntry`, `TechnicalLogEntry` och `ContactPersonRoles`
 
   `openapi.yaml` regenereras och verifieras av `OpenApiSpecificationIT`.
