@@ -28,7 +28,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 | 10   | C10 | Skyddad identitet: nattlig kontroll                  | C3, C5                         |
 | 11   | T2  | Egen OpenSearch-container per miljö                  | —                              |
 | 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, T2                         |
-| 13   | C13 | Sök-endpoint                                         | C12                            |
+| 13   | C13 | Sök-endpoint                                         | C5, C12                        |
 | 14   | T1  | Köer och exchanges i rabbitmq-topology               | —                              |
 | 15   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                     |
 | 16   | SM1 | SupportManagement: outbox, relay och publicering     | F1                             |
@@ -37,7 +37,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 | 19   | CD2 | Casedata: grundladdning                              | CD1                            |
 | 20   | PA1 | party-assets: outbox, relay och publicering          | F1                             |
 | 21   | PA2 | party-assets: grundladdning via outbox               | PA1                            |
-| 22   | CT1 | contract: tidsstämplar och vem                       | —                              |
+| 22   | CT1 | contract: tidsstämplar                               | —                              |
 | 23   | CT2 | contract: outbox, relay och publicering              | CT1, F1                        |
 | 24   | CT3 | contract: grundladdning                              | CT2                            |
 
@@ -81,7 +81,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   `SchemaParityIT` röd. Det ska provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `engagement`, `engagement_history`, `contact`,
   `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden. Raderna i `technical_log`,
-  `source_object` och `search_index_queue` finns kvar.
+  `source_object` och `search_index_queue` finns kvar, och likaså kundens kontaktrader hos andra kunder
+  (`contact.party_id`).
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
@@ -100,21 +101,31 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, adress och organisationsnummer
 - Partytypen för ett partyId avgörs med `getCitizen` och `getLegalEntity` ([§7.2]). En enskild firma känns igen på att
   organisationsnumret är ett personnummer ([§5.4]). Numret sparas aldrig.
-- legalId valideras mot dept44:s format innan det skickas ([§7.1]).
+- legalId valideras mot formatet i [§3.1], per partytyp och med kontrollsiffran, innan det skickas ([§7.1]).
+- Ett eget undantag utan URL för IO-fel ([§7.1]).
 - `logbook.excluded.paths` för LegalEntitys uppslag med numret i URL:en ([§12]).
 - Konfiguration med OAuth2 och circuit breaker.
 - WireMock-stubbar för IT.
 
 **Acceptans:**
 
-- 404 på ett enskilt anrop ger `Optional.empty`, och 5xx ger `ServerProblem` som inte sväljs. Ett element utan
-  `success` i Citizens batchsvar ger ingen mappning, och ett legalId med fel format skickas inte.
+- 404 på ett enskilt anrop ger `Optional.empty`, och 5xx ger `ServerProblem` som inte sväljs. 400 från LegalEntitys
+  uppslag ger också `Optional.empty`. Ett element utan `success` i Citizens batchsvar ger ingen mappning, och ett
+  legalId med fel format eller fel kontrollsiffra skickas inte.
+- Ett `ENTERPRISE`-nummer slås upp mot LegalEntity och aldrig mot Citizen, också en enskild firmas nummer med 10 eller
+  12 siffror. Ett `PRIVATE`-nummer slås upp mot Citizen.
+- Ett tiosiffrigt personnummer får århundradet enligt [§5.4]. Det testas med gränsfallen: dagens datum ger innevarande
+  sekel, och morgondagens datum ger förra seklet.
+- En timeout mot LegalEntitys uppslag ger ett undantag vars meddelande och stacktrace saknar organisationsnumret, och
+  startern klassar det som ett avbrott (`TransientFailures.isOutage`). Testet stubbar en fördröjning som är längre än
+  read timeout.
 - 429 och 408 görs om till ett avbrott när partyId slås upp. När skyddsstatus hämtas ger de samma resultat som när
   Citizen inte svarar ([§3.7]).
 - Inga legalId i några loggrader eller undantagsmeddelanden. Testet stubbar ett fel vars detail innehåller ett legalId
   och kontrollerar att det inte syns i undantaget.
 - LegalEntitys uppslag med organisationsnumret i URL:en finns inte i loggern `se.sundsvall.dept44.payload`, och inget
-  personnummer skickas i en URL. Det verifieras med ett test.
+  `PRIVATE`-personnummer skickas i en URL. Det verifieras med ett test. En enskild firmas nummer står i LegalEntitys URL
+  ([beslut 32]).
 - Partytypen: en person som Citizen känner ger `PRIVATE`, ett företag som bara LegalEntity känner ger `ENTERPRISE`,
   ett partyId som ingen av dem känner ger `Optional.empty`, och 5xx från någon av dem ger ett fel och aldrig
   `Optional.empty`.
@@ -122,9 +133,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   [§5.4] bygger på det.
 - I testmiljön verifieras också:
   - att `guid/batch` ger `personId` även för personer med skyddade personuppgifter
+  - att Citizen svarar 5xx på hela `guid/batch`-anropet, och inte per element, när felet är tillfälligt ([§7.1])
   - vilken version av LegalEntity som har `…/{organizationNumber}/guid`
-  - i vilket format LegalEntity ger en enskild firmas organisationsnummer, och hur århundradet avgörs för ett
-    tiosiffrigt nummer innan ägaren slås upp ([§13.3])
+  - i vilket format LegalEntity ger en enskild firmas organisationsnummer, och vilket format `…/guid` tar emot för det
 
   Resultaten dokumenteras i README.
 
@@ -174,13 +185,22 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - En kontaktpersonsroll ger en `CONTACT_PERSON`-kontakt på varje `ENTERPRISE`-kund och aldrig en egen kund. Ett objekt
   utan företagskund ger ingen kontakt.
 - En kontaktpersons legalId mappas till partyId, och partyId sparas på kontaktraden. En kontaktperson som är skyddad,
-  som kund eller enligt Citizen, eller vars status är `UNKNOWN`, sparas inte ([§5.3]).
-- En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer får ägarens partyId som `registry_party_id` och
-  ägarens skydd från Citizen. Ett vanligt organisationsnummer ger `registry_party_id = null` ([§5.4]).
-- En part med legalId mappas och tillämpas. Saknas legalId i svaret från Citizen eller LegalEntity, eller har det fel
-  format, hoppas parten över
-  medan övriga parter tillämpas, och inga engagemang raderas för kunder som inte längre är parter ([§3.3]). legalId
-  finns inte i någon entitet.
+  som kund eller enligt Citizen, eller vars status är `UNKNOWN`, sparas inte ([§5.3]). En kontaktperson med
+  `ENTERPRISE` kontrolleras som en företagskund och frågas inte i Citizens batch.
+- En kontaktperson som finns som kund låses med de andra kunderna, och dess nivå läses efter låset. Samtidighetstest:
+  kontaktpersonen blir skyddad i en annan transaktion medan ett meddelande om företaget tillämpas. Efter båda finns
+  ingen kontaktrad för personen, oavsett vilken transaktion som får låset först ([§3.3]).
+- När en kund skapas med, eller får, en skyddsnivå som inte är `NONE` raderas personens kontaktrader hos företag, och
+  varje företag loggas som `CONTACT_REMOVED` och markeras för omindexering. En automatisk radering av kunden lämnar
+  kontaktraderna kvar ([§5.3]).
+- En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer, med 10 eller 12 siffror, får ägarens partyId
+  som `registry_party_id` och ägarens skydd från Citizen. Firman och ägaren blir två olika kunder. Ett vanligt
+  organisationsnummer ger `registry_party_id = null` ([§5.4]).
+- Svarar LegalEntity eller Citizen inte när en ny företagskunds organisationsnummer eller ägare hämtas, får kunden
+  `UNKNOWN` utan `registry_party_id`, och meddelandet tillämpas utan omförsök ([§3.7]).
+- En part med legalId mappas och tillämpas. Finns legalId inte hos Citizen eller LegalEntity, eller har det fel format,
+  hoppas parten över medan övriga parter tillämpas, och engagemang raderas ändå för kunder som inte längre är parter
+  ([beslut 16]). legalId finns inte i någon entitet.
 - En kund som förekommer två gånger blir en rad, och rollerna slås ihop.
 - Ett nyare `sourceModified` ersätter namn och adress, men ett äldre gör det inte.
 - En ny privatkund får sin skyddsstatus från Citizen innan den skapas. Om Citizen inte svarar, svarar 5xx, 429 eller
@@ -188,7 +208,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   och egna kontaktuppgifter, och meddelandet tillämpas utan omförsök. 401 från Citizen kastas som `ClientProblem`
   ([§5.4]).
 - `UNKNOWN` från folkbokföringen ger den effektiva nivån `UNKNOWN`, men en källas `SECRECY_MARKING` eller
-  `PROTECTED_REGISTRATION` går före. En kund med `UNKNOWN` indexeras bara med engagemangens referenser.
+  `PROTECTED_REGISTRATION` går före.
 - README och javadoc för `ProtectionLevel` beskriver alla fyra värden. För `UNKNOWN` står när värdet uppstår, att
   kunden hanteras som skyddad och att den nattliga kontrollen ersätter det ([§5.4]).
 - En part med `protection` ger `engagement.party_protection`, och kunden räknas som skyddad. Namn, adress och egna
@@ -196,15 +216,17 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   folkbokföringen inte gör det heller.
 - En ändrad skyddsnivå loggas som `PROTECTION_CHANGED`.
 - Varje kund som får en rad i den tekniska loggen, utom `IGNORED_STALE`, markeras i `search_index_queue` i samma
-  transaktion.
+  transaktion, och markeringarna skrivs i `customer_id`-ordning ([§6.2]).
+- Varje loggrad från ett meddelande har meddelandets `message-id` och request-id, och `PROTECTION_CHANGED` har den nya
+  nivån ([§4.3]).
 - Ett ogiltigt meddelande ger `ConstraintViolationException`, som startern dead-letterar (verifieras i C11). Ett test
   per obligatoriskt fält i [§3.1].
 - Feign-anropen görs utanför transaktionen: `MessageService` har ingen `@Transactional`, och `MessageWriter` anropar
   inga integrationer.
 - Samtidighetstest: ett objekt raderas medan ett meddelande från en annan källa ger samma kund ett nytt engagemang.
   Kunden och det nya engagemanget finns kvar, oavsett vilken transaktion som får låset först ([§3.3]).
-- Samtidighetstest: kunden raderas via REST medan ett meddelande om ett objekt som kunden har lämnat tillämpas. Kunden
-  skapas inte på nytt ([§3.3]).
+- Samtidighetstest: kunden raderas i en annan transaktion, med samma bulk-delete som den automatiska raderingen, medan
+  ett meddelande om ett objekt som kunden har lämnat tillämpas. Kunden skapas inte på nytt ([§3.3]).
 - En `DELETE` där den första av två kunder raderas automatiskt markerar ändå `source_object` som raderat, och den andra
   kundens skyddsnivå räknas om ([§3.6]).
 - En part utan id behöver ingen `partyType`. En part med id men utan `partyType`, och ett textfält över maxlängden,
@@ -226,6 +248,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `DELETE` raderar kunden även när källan aldrig har skickat `CUSTOMER UPDATE` för den, och när kunden har raderats och
   skapats på nytt av ett engagemang ([§3.4]). Ett `DELETE` utan part ger valideringsfel. Kundens rader i
   `source_object` raderas med den.
+- `DELETE` sparar aldrig någon tombstone. Efter ett `DELETE`, också ett som levereras igen, finns ingen rad i
+  `source_object` för `CUSTOMER` med partyId:t, även när kunden saknades.
+- `DELETE` raderar personens kontaktrader hos företag och loggar `CONTACT_REMOVED` för företagen ([§5.3]).
+- En kund som har fått ett `CUSTOMER UPDATE` raderas inte automatiskt när dess sista engagemang försvinner, och dess
+  kontaktuppgifter och skydd från källan finns kvar ([§3.6]).
+- Ett `UPDATE` med `protection` för en kund som var oskyddad raderar personens kontaktrader hos företag ([§5.3]).
 - Partens `protection` sparas som källans rad i `asserted_protection`, skyddsnivån räknas om, och en skyddad kund får
   varken namn, adress eller kontaktuppgifter. `UPDATE` loggas som `CUSTOMER_UPDATED`.
 - Ett `UPDATE` utan `protection` från källa B tar bort B:s rad men lämnar källa A:s skydd orört, och kunden förblir
@@ -247,7 +275,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
   hanteras som skyddad ([§5.4]).
 - Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Om numret inte finns, eller
-  om kunden saknas, blir det 404. Numret finns aldrig i svar, loggrader eller Problem-detail.
+  om kunden saknas, blir det 404. Numret finns aldrig i svar, loggrader eller Problem-detail. En enskild firma slås upp
+  med `ENTERPRISE` och ägarens personnummer, med 10 eller 12 siffror, och ger firman och inte ägaren ([§3.1]).
+- Historiken för ett engagemang sorteras förvalt på `occurredAt,desc` och pagineras ([§6.1]).
 - Engagemang från alla namespaces visas. `engagementNamespace` och `objectType` filtrerar. Förvald sortering är
   `sourceModified,desc`, och paginering med `size > 100` begränsas till 100.
 - Ett engagemang som tillhör en annan kund ger 404.
@@ -260,7 +290,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - `NoteResource`, `NoteService` och `note_history`.
 - Att en notering skapar kunden enligt [§7.2].
-- Varje skrivning av en notering låser kunden först och körs med READ COMMITTED ([§3.6]).
+- Varje skrivning av en notering låser kunden först och körs med READ COMMITTED ([§3.6]). Omförsök vid deadlock.
 
 **Acceptans:**
 
@@ -285,8 +315,16 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Om ett meddelande skapar kunden samtidigt blir det en kund och inget fel. Om ett meddelande raderar kunden medan en
   notering skapas blir det inget FK-fel, eftersom kunden är låst.
 
-- När den sista noteringen raderas och kunden saknar engagemang raderas kunden, och `CUSTOMER_DELETED` loggas med
-  kanalen `REST` ([§3.6]).
+- `PATCH` och `DELETE` på en notering vars kund har raderats ger 404 och skapar inte kunden ([§3.6]).
+
+- När den sista noteringen raderas och kunden saknar engagemang och `CUSTOMER`-data raderas kunden, och
+  `CUSTOMER_DELETED` loggas med kanalen `REST` ([§3.6]).
+
+- En notering som skapar en kund med en skyddsnivå som inte är `NONE` raderar personens kontaktrader hos företag
+  ([§5.3]).
+
+- En skrivning som faller på deadlock görs om, och efter tre misslyckade försök kastas felet. Det testas med en
+  `CannotAcquireLockException` som stubbas i första försöket ([§3.6]).
 
 ## C9 — Kundradering via REST och API för teknisk logg
 
@@ -299,8 +337,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - `DELETE` på kund raderar kunden med allt den äger, inklusive dess rader i `source_object` för `CUSTOMER`, och skriver
   `CUSTOMER_DELETED` med kanalen `REST` och `performed_by`.
-- `DELETE` på kund raderar också personens kontaktrader hos företag (`contact.party_id`), även när personen bara är
-  kontaktperson, och markerar företagen för omindexering. 404 blir det bara när varken kund eller kontaktrader finns.
+- `DELETE` på kund raderar också personens kontaktrader hos företag i kommunen (`contact.party_id`), även när personen
+  bara är kontaktperson, loggar `CONTACT_REMOVED` för företagen och markerar dem för omindexering. Kontaktrader i en
+  annan kommun lämnas orörda. 404 blir det bara när varken kund eller kontaktrader finns.
+- `DELETE` på kund låser kundens rader i `source_object` för `CUSTOMER` före kunden ([§3.6]). Samtidighetstest: ett
+  `CUSTOMER UPDATE` för samma kund tillämpas samtidigt, och båda blir klara utan att någon av dem misslyckas.
+- En radering som faller på deadlock görs om, som i C8.
 - Båda `DELETE`-anropen kräver `X-Sent-By`, och ett anrop utan den ger 400.
 - Den tekniska loggen kan läsas efter raderingen, sorteras förvalt på `created,desc` och pagineras.
 - `DELETE` på den tekniska loggen utan något filter ger 400. Med `partyId`, med `createdBefore` och med båda raderas
@@ -311,20 +353,31 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 **Bygg:**
 
-- `ProtectionRefreshScheduler` enligt [§5.4]: urval på `registry_checked`, keyset på `id`, Citizen batch, en
-  transaktion per batch, omräkning av skyddsnivån, `PROTECTION_CHANGED` och markering av ändrade kunder för
-  omindexering.
+- `ProtectionRefreshScheduler` enligt [§5.4]: urval på `registry_party_id`, `registry_protection` och
+  `registry_checked`, keyset på `id`, uppslaget av ägaren för företag utan `registry_party_id`, Citizen batch, en
+  transaktion per batch, omräkning av skyddsnivån, `PROTECTION_CHANGED`, radering av kontaktrader och markering av
+  ändrade kunder för omindexering.
 
 **Acceptans:**
 
-- Alla kunder med `registry_party_id`, alltså privatkunder och enskilda firmor, vars `registry_checked` saknas eller är
-  äldre än körningens start tas med, även en kund som skapades kl. 10 dagen före. Andra företag tas aldrig med.
+- Alla kunder med `registry_party_id` eller `registry_protection = UNKNOWN` vars `registry_checked` saknas eller är
+  äldre än körningens start tas med, även en kund som skapades kl. 10 dagen före. Ett företag med känd status som inte
+  är en enskild firma tas aldrig med.
+- Urvalet går i primärnyckelns ordning. `EXPLAIN` i ett repository-test visar en range-läsning på `PRIMARY` utan
+  filesort.
 - En batch som misslyckas väljs inte igen i samma körning.
-- En kund med `UNKNOWN` får folkbokföringens nivå när Citizen svarar, och namn och adress om personen är oskyddad.
-  Svarar Citizen inte förblir kunden `UNKNOWN` och tas med nästa natt.
+- En kund med `UNKNOWN` får folkbokföringens nivå när Citizen svarar. En privatkund som är oskyddad får namn och adress
+  från svaret, men en enskild firma får aldrig ägarens namn eller adress. Svarar Citizen inte förblir kunden `UNKNOWN`
+  och tas med nästa natt.
+- Ett företag med `UNKNOWN` utan `registry_party_id` slås upp i LegalEntity igen. En enskild firma får ägaren som
+  `registry_party_id` och ägarens nivå, och ett annat företag får `registry_protection = null` och tas inte med igen.
 - När en kund blir skyddad töms namn, adress och egna kontaktuppgifter, och kunden markeras för omindexering.
-  Personens kontaktrader hos företag raderas, och företagen markeras för omindexering ([§5.3]).
-- När skyddet upphör fylls namn och adress i från Citizens svar.
+  Personens kontaktrader hos företag raderas, och företagen loggas som `CONTACT_REMOVED` och markeras för
+  omindexering ([§5.3]).
+- Varje kund i batchen vars nivå inte är `NONE` får sina kontaktrader hos företag raderade, även när nivån inte
+  ändrades.
+- När skyddet upphör för en privatkund fylls namn och adress i från Citizens svar.
+- En batch som faller på deadlock görs om, som i C8.
 - En batch där Citizen svarar 5xx lämnar kundernas `registry_checked` orört, och övriga batchar körs ändå.
 - ShedLock förhindrar att två körningar pågår samtidigt.
 - Ett test med fler kunder än `batch-size` visar att alla behandlas.
@@ -346,8 +399,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - **Spike först:** verifiera att en explicit indexeringsplan med `writeSync` kastar ett fel när OpenSearch avvisar
   dokumentet. Resultatet dokumenteras i README.
 - Hibernate Searchs automatiska lyssnare är avstängda (`indexing.listeners.enabled: false`).
-- En skyddad kunds dokument innehåller bara `references` av de sökbara fälten. Namn, adress, kontakt- och telefonfält
-  saknas.
+- En skyddad kunds dokument, också en kund med `UNKNOWN`, innehåller bara `references` av de sökbara fälten. Namn,
+  adress, kontakt- och telefonfält saknas.
 - Kontakter hamnar i `contacts_ns_<namespace>` respektive `contacts_global`.
 - Telefonnummer i formaten `+46 70-123 45 67`, `0046701234567` och `070-1234567` ger samma värde.
 - Engagemangens referens, titel och kategori indexeras. Noteringar hamnar i `notes_ns_<namespace>`.
@@ -357,6 +410,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   - låter en markering som kom in under indexeringen ligga kvar
   - ökar `attempts` bara på en rad vars dokument avvisas ensamt
   - avbryter körningen utan att ändra `attempts` när OpenSearch inte går att nå eller svarar med timeout, 5xx eller 429
+  - ökar `attempts` på en rad vars dokument inte går att bygga, och fortsätter med de andra raderna
   - avslutar körningen efter `search.relay.max-run-time`
 - `OpenSearchHealthIndicator` blir `DOWN` när någon rad har `attempts ≥ 5` och ingår inte i `readiness`.
 - Reindexeringen svarar 202, 409 om låset redan är taget och 503 om sökningen är avstängd. Den pausar relayn medan den
@@ -399,6 +453,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `size` över 100 begränsas till 100, som för andra listor.
 - Timeout ger 504, och avstängd eller otillgänglig sökning ger 503.
 - Frågan tas emot i kroppen och finns aldrig i URL:en eller i loggrader.
+- `CustomerSearchIT` enligt [§10], där ett meddelande som tillämpas via `MessageService` blir sökbart via relayn.
 
 ## T2 — Egen OpenSearch-container per miljö
 
@@ -441,7 +496,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - Ett meddelande per väg (alla objekttyper och operationer) går hela vägen från kön till databasen.
 - Ett meddelande som ligger i omförsök på en kö hindrar inte att ett meddelande på en annan kö tillämpas.
-- Ett ogiltigt meddelande hamnar i sin dead letter-kö.
+- Ett ogiltigt meddelande hamnar i sin dead letter-kö, och likaså ett meddelande utan `message-id` ([§3.1]).
 - Varje meddelande får starterns loggrad och request-id, även med containrar som registreras via
   `RabbitListenerConfigurer`.
 - Det finns ingen `@ConditionalOnProperty` på lyssnaren och ingen `@EnableRabbit`.
@@ -457,13 +512,14 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 **Acceptans:**
 
-- Ett namespace utan opt-in publicerar inget.
+- En ändring i ett namespace utan opt-in ger ingen outbox-rad.
+- Outbox-tabellen har kolumnerna och indexet i [§11.1].
 - Ett API-anrop som ger flera events blir ett meddelande med alla aktiviteter.
 - Soft delete publiceras som `DELETE`, och restore som `UPDATE` med högre version.
 - En ändring som bara rör stakeholders ökar versionen.
 - `parameters` finns aldrig i meddelandet.
 - Kanaltyperna mappas enligt [§11.2], och kanaler med en annan typ skickas inte. Mappningen täcker de typvärden som
-  finns i SM:s `contact_channel` i produktion.
+  finns i SM:s `contact_channel` i produktion. En kanal som förekommer flera gånger på en stakeholder skickas en gång.
 - Bara `externalIdType` `PRIVATE` och `ENTERPRISE` skickas som partytyp. Stakeholders med `EMPLOYEE` eller
   `ADMINISTRATOR` skickas inte, och andra skickas utan id.
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
@@ -491,7 +547,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 **Acceptans:**
 
 - Alla ärenden i namespaces med opt-in publiceras utan aktiviteter.
-- Körs jobbet för ett namespace utan opt-in publiceras namespacets ärenden som `DELETE` ([§11.1]).
+- Körs jobbet med ett namespace utan opt-in som parameter publiceras namespacets ärenden som `DELETE` ([§11.1]).
 - Två samtidiga starter ger en körning.
 - Pågående ändringar publiceras i rätt ordning per ärende.
 
@@ -501,7 +557,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 **Acceptans:**
 
-- Ett namespace utan opt-in publicerar inget.
+- En ändring i ett namespace utan opt-in ger ingen outbox-rad.
+- Outbox-tabellen har kolumnerna och indexet i [§11.1].
 - Varje publiceringspunkt i [§11.5] ger en outbox-rad. Schedulers, noteringar och beslut ger ingen.
 - En PATCH av en enskild part ökar ärendets version och `updated`. Det verifieras med ett IT.
 - Ett API-anrop blir ett meddelande med alla aktiviteter.
@@ -510,8 +567,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Meddelandet innehåller aldrig `personId` som inte är ett UUID, `extraParameters`, `authorizedSignatory` eller
   handläggare. `organizationNumber` skickas bara som `legalId` när partyId saknas.
 - `CELLPHONE` och `PHONE` skickas som kanaltypen `PHONE`, och `EMAIL` som `EMAIL`.
+- En kanal som förekommer flera gånger på en part skickas en gång ([§11.1]).
 - Titeln, `display_name` följt av `caseTitleAddition`, ryms inom 512 tecken ([§3.1]).
-- `organizationNumber` skickas utan bindestreck ([§3.1]). Ett värde som ändå inte valideras skickas inte.
+- `organizationNumber` skickas utan bindestreck och utan ett inledande `16` ([§3.1]). En enskild firmas nummer, med 10
+  eller 12 siffror, skickas med `ENTERPRISE`. Ett värde som inte följer formatet, kontrollsiffran inräknad, skickas
+  inte.
 - Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
   relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
   meddelande med den nya versionen och båda ändringarnas aktiviteter.
@@ -531,7 +591,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - Endpointen returnerar utan att vänta på brokern.
 - Alla ärenden i namespaces med opt-in publiceras utan aktiviteter.
-- Körs jobbet för ett namespace utan opt-in publiceras namespacets ärenden som `DELETE` ([§11.1]).
+- Körs jobbet med ett namespace utan opt-in som parameter publiceras namespacets ärenden som `DELETE` ([§11.1]).
 - Två samtidiga starter ger en körning.
 - Pågående ändringar publiceras i rätt ordning per ärende.
 
@@ -542,20 +602,25 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 **Acceptans:**
 
 - Alla ändringspunkter i [§11.3] ger en outbox-rad, även PR3-importen och originalet som blir `REPLACED`.
-- Bara asset-typer på vitlistan publiceras. Parkeringstillstånd (`PARKINGPERMIT`, `PARKING_PERMIT`) står inte på listan
-  och publiceras aldrig ([beslut 50]).
+- Outbox-tabellen har kolumnerna och indexet i [§11.1].
+- En ändring ger en outbox-rad bara om assetens typ står på vitlistan före eller efter ändringen. En asset vars typ byts
+  till en som inte står på listan publiceras som `DELETE`. Parkeringstillstånd (`PARKINGPERMIT`, `PARKING_PERMIT`)
+  står inte på listan, och en ändring av dem ger ingen outbox-rad ([beslut 50]).
 - Versionen är `AssetEntity.version`.
 - `performedBy` sätts även vid delete.
 - Händelsen skickas av servicemetoderna och `PR3Importer`, inte av `AssetEntityListener`. Ett IT visar att
   `createAsset`, `deleteAsset` och PR3-importen ger en outbox-rad.
 - En ny asset publiceras med `sourceModified = created`.
-- `PR3Importer` skickar händelsen inne i en transaktion ([§11.1]).
+- `PR3Importer` sparar varje asset och skickar händelsen i en `TransactionTemplate`, så att asseten och outbox-raden
+  committas tillsammans ([§11.1]).
 - En radering publiceras som `DELETE` med versionen från outbox-raden.
 - Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
   relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
   meddelande med den nya versionen och båda ändringarnas aktiviteter.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - party-assets exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
+- En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
+  nästa körning.
 
 ## PA2 — party-assets: grundladdning via outbox
 
@@ -567,9 +632,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - republish returnerar utan att vänta på brokern. Jobbet körs asynkront med ShedLock, och två samtidiga starter ger en
   körning.
-- Alla assets i kommunen publiceras utan aktiviteter.
+- Utan parameter publiceras alla assets av typerna på vitlistan utan aktiviteter. Körs jobbet för en typ som inte står
+  på listan publiceras dess assets som `DELETE` ([§11.1]).
 
-## CT1 — contract: tidsstämplar och vem
+## CT1 — contract: tidsstämplar
 
 **Bygg:**
 
@@ -589,13 +655,16 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - Alla publiceringspunkter i [§11.4] ger en outbox-rad, även en vanlig periodförlängning.
 - Billing-outboxen påverkas inte.
+- Outbox-tabellen har kolumnerna och indexet i [§11.1].
 - `organizationNumber` skickas bara som `legalId` när partyId saknas.
 - `phoneNumber` och `emailAddress` skickas som kanaler av typen `PHONE` respektive `EMAIL`, och bara när de har ett
   värde.
 - `type` mappas till partytyp enligt [§11.4]. En stakeholder med `OTHER` eller utan typ skickas utan id.
 - En stakeholder av typen `MUNICIPALITY`, och en som bara är `SIGNATORY` eller har en `POWER_OF_ATTORNEY_*`-roll,
   skickas inte. En stakeholder med en partsroll skickas med alla sina roller.
-- `organizationNumber` skickas utan bindestreck ([§3.1]). Ett värde som ändå inte valideras skickas inte.
+- `organizationNumber` skickas utan bindestreck och utan ett inledande `16` ([§3.1]). En enskild firmas nummer, med 10
+  eller 12 siffror, skickas med `ENTERPRISE`. Ett värde som inte följer formatet, kontrollsiffran inräknad, skickas
+  inte.
 - Ett kontrakt utan `modified` publiceras med `sourceModified` = `1970-01-01T00:00:00Z` ([§11.4]).
 - `Identifier` fångas när `X-Sent-By` finns och blir `performedBy`. Ett anrop utan headern fungerar som tidigare.
 - En radering publiceras som `DELETE` med versionen från outbox-raden.
@@ -604,6 +673,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   meddelande med den nya versionen och båda ändringarnas aktiviteter.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - contract exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
+- En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
+  nästa körning.
 
 ## CT3 — contract: grundladdning
 
@@ -654,4 +725,6 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 [beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
 [beslut 51]: 00-beslutslogg.md#beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
 [beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
+[beslut 16]: 00-beslutslogg.md#beslut-16-personnummer-och-organisationsnummer-mappas-till-partyid
+[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
 

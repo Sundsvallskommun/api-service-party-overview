@@ -74,8 +74,9 @@ Ett engagemang lagras som en rad per kund. Ett ärende med tre kunder blir allts
 
 **Valdes bort:** En delad rad med kopplingstabell.
 
-**Skäl:** Det är det enda alternativet där `DELETE FROM customer` direkt i databasen tar med allt och inte lämnar
-föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data.
+**Skäl:** Det är det enda alternativet där `DELETE FROM customer` direkt i databasen tar med allt kunden äger och inte
+lämnar föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data. Personens kontaktrader hos
+andra företag ägs av företagen och raderas via `contact.party_id` ([beslut 52]).
 
 ## Beslut 9: En tabell för alla engagemangstyper
 
@@ -126,8 +127,8 @@ ska komma i rätt ordning.
 
 ## Beslut 14: Tre sätt att radera en kund
 
-En kund raderas av ett CUSTOMER DELETE-meddelande, av REST DELETE eller automatiskt när kunden saknar både engagemang
-och noteringar.
+En kund raderas av ett CUSTOMER DELETE-meddelande, av REST DELETE eller automatiskt när kunden saknar engagemang,
+noteringar och data från `CUSTOMER`-meddelanden ([§3.6]).
 
 **Valdes bort:** —
 
@@ -146,12 +147,16 @@ men blir aldrig själv kund. Vilka roller som räknas som kontaktpersonsroller k
 
 Publicerarna skickar partyId när de har det. Det som ändå kommer som personnummer eller organisationsnummer mappar
 party-overview till partyId via Citizen och LegalEntity ([§7.1]). Sådana nummer lagras och loggas aldrig. En part vars
-nummer inte finns hoppas över.
+nummer inte finns, eller har fel format, hoppas över, och resten av meddelandet tillämpas, även raderingen av
+engagemang för kunder som inte längre är parter ([§3.5]).
 
-**Valdes bort:** Att bara party-overview mappar, eller att bara publicerarna gör det.
+**Valdes bort:** Att bara party-overview mappar, eller att bara publicerarna gör det. Att hoppa över raderingen av
+engagemang när en part inte gick att mappa.
 
 **Skäl:** Personnummer ska färdas över köerna så sällan som möjligt, men kravtexten gäller fortfarande. Ett nummer som
-inte finns blir inte bättre av omförsök.
+inte finns blir inte bättre av omförsök. Ett nummer som aldrig går att mappa skulle annars för alltid hindra att
+engagemang raderas för parter som har lämnat objektet. Tillfälliga fel görs om och når aldrig tillämpningen
+([§3.7]).
 
 ## Beslut 17: En lyssnare och en mappning för alla köer
 
@@ -281,12 +286,15 @@ namn och adress.
 
 ## Beslut 28: Skyddsstatus från Citizen vid skapandet och varje natt
 
-Folkbokföringens skyddsstatus hämtas från Citizen (`ShowClassified=true`) när en privatkund skapas, och dessutom för
-alla privatkunder varje natt.
+Folkbokföringens skyddsstatus hämtas från Citizen (`ShowClassified=true`) när en privatkund eller enskild firma
+skapas, och dessutom varje natt för dem och för kunder med okänd status. Natten tar med varje sådan kund vars senaste
+kontroll är äldre än körningens start ([§5.4]).
 
-**Valdes bort:** Att bara kontrollera vid skapandet, eller att bara lita på meddelandena.
+**Valdes bort:** Att bara kontrollera vid skapandet, eller att bara lita på meddelandena. Att välja kunder vars senaste
+kontroll är äldre än en fast ålder, t.ex. ett dygn.
 
 **Skäl:** Skyddet kan tillkomma eller upphöra när som helst, och vägledningen kräver att uppgifterna hålls uppdaterade.
+En fast ålder skulle missa kunder som skapades eller kontrollerades under dagen före körningen.
 
 ## Beslut 29: Den tekniska loggen raderas inte automatiskt vid GDPR-radering
 
@@ -329,8 +337,8 @@ och att det syns i gatewayens och LegalEntitys loggar är en accepterad risk ([�
 
 ## Beslut 33: Kontaktpersonsrollerna sätts via REST vid driftsättning
 
-Kontaktpersonsrollerna sätts till `CONTACT_PERSON` för SupportManagement, contract och Casedata via REST vid
-driftsättning.
+Kontaktpersonsrollerna sätts via REST vid driftsättning: `CONTACT_PERSON` för contract och Casedata, och för
+SupportManagement de roller som produktionens metadata visar ([§12]).
 
 **Valdes bort:** Att lägga in startvärdena i en Flyway-migrering.
 
@@ -463,15 +471,16 @@ versionsregistret har inget meddelande-id ([§4.2]).
 
 **Valdes bort:** `message_id` och `last_message_id` på varje rad som ett meddelande skriver.
 
-**Skäl:** Den tekniska loggen har redan id:t för varje meddelande och kund, även för inaktuella meddelanden, och
-dept44-starter-rabbitmq loggar samma id för varje meddelande hos både publiceraren och party-overview. Kolumnerna på
-datatabellerna gav ingen spårbarhet utöver det.
+**Skäl:** Den tekniska loggen har redan id:t för varje meddelande och kund, även för inaktuella meddelanden. I
+applikationsloggarna maskeras id:t, eftersom det är ett UUID ([§12]), så det är den tekniska loggen som knyter en
+ändring till sitt meddelande. Kolumnerna på datatabellerna gav ingen spårbarhet utöver den.
 
 ## Beslut 48: Okänd skyddsstatus när Citizen inte svarar
 
-Om Citizen inte svarar, svarar 5xx, har en öppen circuit breaker eller saknar en post för personen när en privatkund
-skapas, får kunden skyddsstatusen `UNKNOWN` och behandlas som skyddad tills den nattliga kontrollen har fått svar
-([§5.4]). Meddelandet eller noteringen tillämpas ändå. 401 dead-letteras som tidigare, eftersom det är ett
+Om Citizen eller LegalEntity inte svarar, svarar 5xx, har en öppen circuit breaker eller saknar en post för personen
+när ett meddelande skapar en kund, får kunden skyddsstatusen `UNKNOWN` och behandlas som skyddad tills den nattliga
+kontrollen har fått svar ([§5.4]). Meddelandet tillämpas ändå. När en notering skapar kunden blir svaret i stället 503,
+eftersom partytypen då inte går att avgöra ([§7.2]). 401 dead-letteras som tidigare, eftersom det är ett
 konfigurationsfel. README, javadoc och OpenAPI-specen beskriver värdet.
 
 **Valdes bort:** Att göra om meddelandet tills Citizen svarar, och att sedan dead-lettera det.
@@ -518,7 +527,9 @@ visar engagemang för hela kommunen och kan inte återskapa den kontrollen.
 ## Beslut 52: Kontaktpersoner kontrolleras mot skyddad identitet
 
 En kontaktperson med partyId kontrolleras mot sin skyddsnivå och sparas inte om den inte är `NONE`. Kontaktpersonens
-partyId sparas, så att raderna kan tas bort när personen raderas eller får skydd ([§5.3]).
+partyId sparas, så att raderna kan tas bort när personen raderas via REST eller ett `CUSTOMER DELETE`, eller får skydd
+([§5.3]). En automatisk radering av personen som kund lämnar raderna kvar, eftersom källorna fortfarande anger
+personen som kontaktperson.
 
 **Valdes bort:** Att skyddet bara gäller kunden och inte kontaktpersonen.
 
@@ -538,11 +549,15 @@ och då skulle namn och adress sparas för en skyddad person.
 ## Beslut 54: Enskilda firmor kontrolleras mot folkbokföringen
 
 För en enskild firma, där organisationsnumret är ägarens personnummer, hämtas ägarens skydd från folkbokföringen på
-samma sätt som för en privatkund, också i den nattliga kontrollen ([§5.4]).
+samma sätt som för en privatkund, också i den nattliga kontrollen ([§5.4]). Ett legalId för `ENTERPRISE` får därför
+vara ett personnummer med 10 eller 12 siffror, och det slås alltid upp mot LegalEntity ([§3.1]). Ett tiosiffrigt
+nummer får det århundrade som gör ägaren yngre än 100 år.
 
-**Valdes bort:** Att bara kontrollera privatkunder.
+**Valdes bort:** Att bara kontrollera privatkunder. Att slå upp numret mot Citizen när det är ett personnummer.
 
 **Skäl:** En enskild firmas namn och adress är ofta ägarens, och en skyddad ägare ska inte bli synlig via sin firma.
+Slogs numret upp mot Citizen skulle firmans engagemang hamna på ägarens privatkund. Hundraårsregeln är Skatteverkets
+regel för skiljetecknet i ett tiosiffrigt personnummer.
 
 ## Beslut 55: Kommunikation i SM publiceras inte
 
@@ -591,4 +606,9 @@ och partytypen avgörs utan att personnummer hämtas.
 [§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 [§7.2]: 07-integrationer.md#72-citizen-och-legalentity
 [§13.3]: 13-risker-och-oppna-fragor.md#133-risker
+[beslut 52]: #beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
+[§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
+[§3.5]: 03-meddelanden.md#35-tillämpning
+[§3.7]: 03-meddelanden.md#37-felhantering
+[§12]: 12-drift.md
 

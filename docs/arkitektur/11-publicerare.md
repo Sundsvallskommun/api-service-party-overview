@@ -9,14 +9,17 @@ Del av [arkitekturen för party-overview](README.md).
    - Tabellen `party_overview_outbox` (`id`, `object_type`, `object_id`, `municipality_id`, `activities` som JSON,
      `version`, `created`) skrivs i samma transaktion som ändringen. `version` sätts bara vid en radering, eftersom
      objektet inte finns kvar när relayn körs, och blir versionen i `DELETE`-meddelandet.
+   - `id` är `bigint auto_increment`, så att raderna kan läsas i den ordning de skrevs, och tabellen har indexet
+     `idx_party_overview_outbox_object_type_object_id`. Relayn väljer objekt bland de äldsta raderna i id-ordning och
+     läser sedan objektets rader via indexet, så att ingen fråga går igenom hela tabellen under en grundladdning.
    - Raden skrivs av en `@TransactionalEventListener(phase = BEFORE_COMMIT)`, eftersom Hibernates entity-callbacks inte
      får skriva.
    - Händelsen skickas av servicemetoderna, inte från entity-callbacks. En callback som `@PostPersist` körs när
      Hibernate flushar vid commit, efter att BEFORE_COMMIT-lyssnarna redan har körts, och då skrivs ingen rad.
    - Varje publiceringspunkt körs i en transaktion. Utan transaktion kastas händelsen tyst, eftersom en
-     `@TransactionalEventListener` har `fallbackExecution = false` som förval. Där en publiceringspunkt inte har någon
-     transaktion, t.ex. `PR3Importer` i party-assets, skrivs outbox-raden i stället direkt i en egen transaktion, som
-     SM:s `ProcessEventPublisher` gör.
+     `@TransactionalEventListener` har `fallbackExecution = false` som förval. En publiceringspunkt som saknar
+     transaktion får en, t.ex. med `TransactionTemplate` per asset i `PR3Importer` i party-assets. Outbox-raden skrivs
+     aldrig i en egen transaktion, eftersom ändringen och raden då kan committas var för sig.
    - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter samlade på raden.
 3. **Relay:**
    - Körs direkt efter commit och dessutom schemalagt med ShedLock.
@@ -43,15 +46,18 @@ Del av [arkitekturen för party-overview](README.md).
    - En health-indikator blir `DOWN` när den äldsta väntande raden är äldre än en konfigurerbar gräns, som
      `ProcessEventRelay.findHealthFault` i SM. Annars märks det inte om publiceringen har stannat, t.ex. för att
      brokern returnerar meddelandena.
-   - `message-id` är ett nytt UUID per publicering. Det återanvänds om samma publicering görs om efter `TIMEOUT`.
+   - `message-id` är ett nytt UUID per publicering. En publicering som görs om efter `TIMEOUT` kan ge en dubblett, och
+     party-overview tillämpar den som en rättning med samma version ([§3.4]).
 4. **Version:** objektets `@Version`. Den ska öka vid varje ändring som publiceras.
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
 6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
    publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adress
    eller kontaktkanaler för den parten. Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för
    kommande publicerare.
-   - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort. Ett värde som ändå inte valideras skickas inte,
-     och parten skickas utan id.
+   - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort, och ett inledande `16` på ett tolvsiffrigt
+     organisationsnummer tas bort. Ett värde som ändå inte följer formatet, kontrollsiffran inräknad, skickas inte, och
+     parten skickas utan id.
+   - En enskild firmas nummer, alltså ägarens personnummer med 10 eller 12 siffror, skickas med `ENTERPRISE`.
    - Källans partytyp mappas till `PRIVATE` eller `ENTERPRISE`. En part vars typ inte går att mappa skickas utan id. Den
      kan då bara bli kontaktperson, och resten av meddelandet tillämpas.
    - Textfälten hålls inom maxlängderna i [§3.1].
@@ -62,17 +68,22 @@ Del av [arkitekturen för party-overview](README.md).
      keyset-paginering.
    - Den körs asynkront, med ShedLock så att den inte startar två gånger.
    - Den använder samma outbox som vanliga ändringar och behåller därför ordningen per objekt.
-   - Den kan köras för ett namespace som just har stängt av opt-in. Relayn publicerar då `DELETE` för namespacets
-     objekt, eftersom de inte ska synas.
+   - Publiceringspunkterna skriver inga outbox-rader för objekt som inte ska synas för att deras namespace saknar
+     opt-in (SM, Casedata) eller deras asset-typ inte står på vitlistan (party-assets). Grundladdningen tar ett
+     valfritt namespace eller en asset-typ som parameter. Utan parameter går den igenom det som ska synas. Med ett
+     namespace som har stängt av opt-in, eller en typ som har tagits bort från vitlistan, skriver den rader för de
+     objekten ändå, och relayn publicerar `DELETE` för dem, eftersom de inte ska synas.
+   - Ett objekt som har publicerats som `DELETE` kommer tillbaka först när dess version har ökat, eftersom tombstonen
+     har samma version ([§3.4], [§13.3]).
 8. **AsyncAPI:** publiceraren exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet. Mönster: party-assets
    `origin/publish-asset-events` `AssetEventsAsyncApi`.
 
 ## 11.2 SupportManagement (`ERRAND`)
 
-- **Opt-in:** En ny egenskap i `namespace_config` slår på publiceringen per namespace. Namespaces utan den publicerar
-  inget. Ett namespace med åtkomstkontroll (`accessControl = true`) kan inte slå på publiceringen, eftersom SM där
-  styr läsrätten per ärende med etiketter och trimmar fälten per roll ([beslut 51]). Slås åtkomstkontrollen på för ett
-  namespace som publicerar, behandlas det som att opt-in stängs av ([§13.3]).
+- **Opt-in:** En ny egenskap i `namespace_config` slår på publiceringen per namespace. En ändring i ett namespace utan
+  den ger ingen outbox-rad ([§11.1]). Ett namespace med åtkomstkontroll (`accessControl = true`) kan inte slå på
+  publiceringen, eftersom SM där styr läsrätten per ärende med etiketter och trimmar fälten per roll ([beslut 51]). Slås
+  åtkomstkontrollen på för ett namespace som publicerar, behandlas det som att opt-in stängs av ([§13.3]).
 - **Publiceringspunkter:** De ställen där ärendet självt ändras: när det skapas, ändras (även parter, status och
   klassning), raderas eller återställs. Det är de anrop till `publishToProcess` i `service/EventService.java` som
   följer en sådan ändring. Kommunikation till och från ärendet, alltså e-post, sms och webbmeddelanden via REST,
@@ -99,7 +110,8 @@ Del av [arkitekturen för party-overview](README.md).
 - **Skyddad identitet:** SM har i dag ingen uppgift om skyddade personuppgifter på stakeholders och skickar därför inte
   `protection`. Skyddet för SM:s kunder kommer från folkbokföringen ([§5.4]).
 - **Grundladdning:** En ny `JobType` som går igenom ärendena per namespace med keyset, som
-  `ErrandPurgeRunner.findIdsAfter`, och med ShedLock per namespace.
+  `ErrandPurgeRunner.findIdsAfter`, och med ShedLock per namespace. Den tar ett valfritt namespace som parameter
+  ([§11.1]).
 
 ## 11.3 party-assets (`ASSET`)
 
@@ -109,12 +121,15 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
 - **Asset-typer:** bara typer som står på en vitlista i party-assets konfiguration
   (`integration.party-overview.asset-types`) publiceras ([beslut 50]). Parkeringstillstånd för rörelsehindrade
   (`PARKINGPERMIT` och `PARKING_PERMIT`) står inte på listan förrän dataskyddsombudet har svarat ([§13.1]), som för
-  Casedatas parkeringsärenden ([beslut 37]). Tas en typ bort från listan publiceras dess assets som `DELETE` vid nästa
-  grundladdning, och läggs en typ till publiceras de som `UPDATE`.
+  Casedatas parkeringsärenden ([beslut 37]). En ändring ger en outbox-rad om assetens typ står på listan före eller
+  efter ändringen. Tas en typ bort från listan körs grundladdningen för typen, och dess assets publiceras som `DELETE`.
+  Läggs en typ till körs grundladdningen, och dess assets publiceras som `UPDATE`. En typ som tidigare har tagits bort
+  kommer tillbaka per asset först när versionen har ökat ([§11.1]).
 - **Outbox:** Servicemetoderna och `PR3Importer` skickar en Spring-händelse, och en `BEFORE_COMMIT`-lyssnare skriver
-  outbox-raden. `AssetEntityListener` kan inte skicka händelsen, eftersom dess callbacks körs när Hibernate flushar vid
-  commit och då kommer efter BEFORE_COMMIT ([§11.1]). Det täcker `createAsset`, `updateAsset` (även originalet som blir
-  `REPLACED`), `deleteAsset`, `AssetExpirationWorker` och `PR3Importer`, som sparar direkt i repositoryt.
+  outbox-raden. `PR3Importer` saknar i dag transaktion och får en `TransactionTemplate` per asset ([§11.1]).
+  `AssetEntityListener` kan inte skicka händelsen, eftersom dess callbacks körs när Hibernate flushar vid commit och då
+  kommer efter BEFORE_COMMIT ([§11.1]). Det täcker `createAsset`, `updateAsset` (även originalet som blir `REPLACED`),
+  `deleteAsset`, `AssetExpirationWorker` och `PR3Importer`, som sparar direkt i repositoryt.
 - **Version:** `AssetEntity.version`, inte `revision`, som inte ökar för drafts och delete.
 - **Vem:** `Identifier` sparas med typ, även vid delete.
 - **Envelope:** `reference` = `assetId`, `title`, `category` = `type`, `status`, `validFrom` = `issued`, `validTo`,
@@ -123,15 +138,15 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   ([beslut 23]).
 - **Parter:** Exakt ett: `partyId` och `partyType`, utan kontaktuppgifter.
 - **Grundladdning:** `POST /{municipalityId}/asset-events/republish` skriver outbox-rader i batchar i stället för att
-  publicera direkt.
+  publicera direkt. Den tar en valfri asset-typ som parameter ([§11.1]).
 
 ## 11.4 contract (`CONTRACT`)
 
 - **Tidsstämplar:** Nya, nullbara kolumner `created` och `modified` på kontraktet. Det är en additiv migrering, och
   befintliga rader behåller null. `created` och `modified` sätts när ett kontrakt skapas, och `modified` vid varje
   ändring. Saknar ett kontrakt `modified` publiceras `sourceModified` som den fasta tidpunkten `1970-01-01T00:00:00Z`,
-  som i party-assets. Med `now()` på befintliga rader skulle varje gammalt kontrakt räknas som nyast, och contracts
-  namn och adress skulle då skriva över de andra källornas efter grundladdningen ([§5.2]).
+  som i party-assets. Ett gammalt kontrakt räknas då aldrig som nyast, så contracts namn och adress skriver inte över
+  de andra källornas efter grundladdningen ([§5.2]).
 - **Vem:** `Identifier` fångas när `X-Sent-By` finns, och blir `performedBy`. Utan headern saknas `performedBy`, så att
   contracts befintliga klienter inte behöver ändras.
 - **Outbox:** En egen CRM-outbox. Den befintliga är byggd för billing, har ett enda mål och tar bort raden.
@@ -186,8 +201,9 @@ från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är
 - **Loggning:** `StakeholderEntity.toString` skriver ut personId och organisationsnummer, och `ErrandEntity` är `@Data`.
   Publiceraren får aldrig logga entiteter.
 - **Grundladdning:** En admin-endpoint startar ett asynkront jobb med ShedLock, enligt mönstret i
-  `MessageExchangeScheduler`. Jobbet går igenom ärendena per namespace med opt-in, med keyset på `id`. Det läser bara
-  id:n, 500 per batch med en transaktion per batch, och skriver outbox-rader utan aktiviteter.
+  `MessageExchangeScheduler`. Jobbet går igenom ärendena per namespace med opt-in, med keyset på `id`, eller bara det
+  namespace som anges som parameter ([§11.1]). Det läser bara id:n, 500 per batch med en transaktion per batch, och
+  skriver outbox-rader utan aktiviteter.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen

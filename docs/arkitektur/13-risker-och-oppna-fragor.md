@@ -4,10 +4,10 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 13.1 Öppna frågor
 
-| # |                                                                                                                                                 Fråga                                                                                                                                                 |                        Förslag tills den är besvarad                        |
-|---|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. C5 och C11 kan inte avslutas innan formatet är klart. |
-| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras, och party-assets parkeringstillstånd för rörelsehindrade (`PARKINGPERMIT`, `PARKING_PERMIT`)? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37], [beslut 50]).   |
+| # |                                                                                                                                                 Fråga                                                                                                                                                 |                                                           Förslag tills den är besvarad                                                            |
+|---|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. Uppgifterna som beror på F1 (C5, SM1, CD1, PA1 och CT2), och de som bygger på C5, kan inte avslutas innan formatet är klart. |
+| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras, och party-assets parkeringstillstånd för rörelsehindrade (`PARKINGPERMIT`, `PARKING_PERMIT`)? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37], [beslut 50]).                                                                          |
 
 ## 13.2 Förutsättningar före driftsättning
 
@@ -70,14 +70,23 @@ Del av [arkitekturen för party-overview](README.md).
 - Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först vid nästa nattliga
   kontroll. Fram till dess kan ett meddelande hinna spara namn och adress.
 
-  **Hantering:** Fönstret är högst ett dygn, eftersom kontrollen tar med alla privatkunder varje natt ([§5.4]). Ingen
-  publicerare skickar i dag `protection`, så skyddet kommer bara från folkbokföringen ([§11.1]).
+  **Hantering:** Fönstret är högst ett dygn, eftersom kontrollen tar med alla privatkunder och enskilda firmor varje
+  natt ([§5.4]). Ingen publicerare skickar i dag `protection`, så skyddet kommer bara från folkbokföringen ([§11.1]).
 
-- När opt-in stängs av för ett namespace i SM eller Casedata ligger dess engagemang kvar i party-overview.
+- När opt-in stängs av för ett namespace i SM eller Casedata, eller en asset-typ tas bort från party-assets vitlista,
+  ligger engagemangen kvar i party-overview.
 
-  **Hantering:** Publiceraren kör grundladdningsjobbet för namespacet, och relayn publicerar `DELETE` för objekten,
-  eftersom namespacet saknar opt-in ([§11.1], SM2, CD2). Slås opt-in på igen kommer ett objekt tillbaka först när
-  dess version har ökat, eftersom tombstonen har samma version ([§3.4]).
+  **Hantering:** Publiceraren kör grundladdningen för namespacet eller typen, och relayn publicerar `DELETE` för
+  objekten, eftersom de inte ska synas ([§11.1], SM2, CD2, PA2). Slås opt-in på igen, eller läggs typen tillbaka,
+  kommer ett objekt tillbaka först när dess version har ökat, eftersom tombstonen har samma version ([§3.4]). En typ
+  eller ett namespace som aldrig har publicerats har inga tombstones och kommer in direkt.
+
+- När Citizen eller LegalEntity inte svarar sparas inga kontaktpersoner med partyId som inte är kunder, och nya kunder
+  får `UNKNOWN` utan egna kontaktuppgifter ([§5.3], [§5.4]). Det som saknas kommer tillbaka först med nästa ändring av
+  objektet, och för avslutade objekt kommer ingen.
+
+  **Hantering:** Varje sådant fel loggas på WARN med källan och antalet berörda kunder och kontaktpersoner ([§7.2]).
+  Efter ett avbrott körs grundladdningen om för de källor som berördes. README beskriver det.
 
 - En reindexering som avbryts, t.ex. av en omstart, lämnar ett halvbyggt index.
 
@@ -163,10 +172,10 @@ Del av [arkitekturen för party-overview](README.md).
   kontaktpersonen igen.
 
 - För en enskild firma med ett tiosiffrigt organisationsnummer framgår inte århundradet, som Citizens uppslag av
-  personnummer behöver ([§5.4]).
+  personnummer behöver. party-overview antar att ägaren är yngre än 100 år ([§5.4]).
 
-  **Hantering:** C3 verifierar i vilket format LegalEntity ger en enskild firmas nummer, och hur århundradet avgörs.
-  Går ägaren inte att avgöra får kunden `UNKNOWN`.
+  **Hantering:** Accepteras. En ägare som är 100 år eller äldre får fel århundrade, och då hittas ingen ägare, så att
+  kunden får `UNKNOWN`, eller i värsta fall en annan person med samma nummer i ett annat århundrade.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen

@@ -8,7 +8,7 @@ Dokumentationen beskriver lösningen i party-overview och de ändringar som publ
 contract och Casedata) behöver göra. All utveckling ska utgå från den. [§14] delar upp arbetet i uppgifter med
 acceptanskriterier som kan klistras in i Jira.
 
-**Status:** fastställd design, version 1.2 (2026-11-25). Det gemensamma meddelandeformatet definieras senare. [§3.1]
+**Status:** fastställd design, version 1.3 (2026-11-25). Det gemensamma meddelandeformatet definieras senare. [§3.1]
 listar de krav party-overview ställer på det.
 
 ## Innehåll

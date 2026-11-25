@@ -26,9 +26,9 @@ sökningen, som är `POST` bara för att hålla numret och frågan borta från U
 | `POST /{municipalityId}/{namespace}/customers/{partyId}/notes`                             | Skapar en notering och vid behov kunden ([§7.2]). `subject` högst 255 tecken och `body` högst 10 000.                                                                                                                         | 201 med Location, 400, 404 om parten är okänd, 503 om partytypen inte går att avgöra |
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                     | En notering                                                                                                                                                                                                                   | 200, 404                                                                             |
 | `PATCH /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                   | Ändrar `subject` eller `body`                                                                                                                                                                                                 | 200, 404                                                                             |
-| `DELETE /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                  | Raderar noteringen och dess historik                                                                                                                                                                                          | 204, 404                                                                             |
+| `DELETE /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                  | Raderar noteringen och dess historik. Är det kundens sista notering och har kunden varken engagemang eller `CUSTOMER`-data raderas kunden ([§3.6]).                                                                           | 204, 404                                                                             |
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}/history`             | Noteringens historik                                                                                                                                                                                                          | 200, 404                                                                             |
-| `DELETE /{municipalityId}/customers/{partyId}`                                             | Raderar kunden med allt den äger och loggar `CUSTOMER_DELETED`. Raderar också personens kontaktrader hos företag, även när personen bara är kontaktperson ([§5.3]).                                                           | 204, 404 när varken kund eller kontaktrader finns                                    |
+| `DELETE /{municipalityId}/customers/{partyId}`                                             | Raderar kunden med allt den äger och loggar `CUSTOMER_DELETED`. Raderar också personens kontaktrader hos företag, även när personen bara är kontaktperson, och loggar `CONTACT_REMOVED` för företagen ([§5.3]).               | 204, 404 när varken kund eller kontaktrader finns                                    |
 | `GET /{municipalityId}/customers/{partyId}/technical-log`                                  | Den tekniska loggen, förvalt `created,desc`. Fungerar även efter radering.                                                                                                                                                    | 200                                                                                  |
 | `DELETE /{municipalityId}/technical-log?partyId=&createdBefore=`                           | Raderar rader i den tekniska loggen. Minst ett av filtren krävs, och båda kan kombineras ([§8.2]).                                                                                                                            | 204, 400                                                                             |
 | `GET /{municipalityId}/contact-person-roles`                                               | Kontaktpersonsroller per källa                                                                                                                                                                                                | 200                                                                                  |
@@ -100,8 +100,10 @@ funktion som går att enhetstesta.
      behöver komma ihåg den.
    - när en notering skapas, ändras eller raderas (C8).
 
-   Kundraden är redan låst ([§3.3], [§3.6]), så ingen ny låsordning tillkommer. Primärnyckeln gör att det högst finns en
-   rad per kund, även när OpenSearch ligger nere.
+   Markeringarna samlas per transaktion och skrivs före commit i `customer_id`-ordning. Två transaktioner tar därför
+   aldrig köns radlås i olika ordning, inte heller för företag vars kontaktrader raderas när en person raderas eller
+   får skydd, och som inte är låsta ([§5.3]). Övriga kunder är redan låsta ([§3.3], [§3.6]).
+   Primärnyckeln gör att det högst finns en rad per kund, även när OpenSearch ligger nere.
 
 2. *Relay:* `SearchIndexRelay` körs direkt efter varje commit som har markerat kunder, och dessutom var 10:e sekund som
    skyddsnät ([beslut 40]).
@@ -120,6 +122,8 @@ funktion som går att enhetstesta.
    `attempts` ändras inte, och nästa körning försöker igen. Ett avbrott är inget fel i dokumenten.
    - Om OpenSearch avvisar enskilda dokument, t.ex. vid ett mappningsfel, körs raderna en och en. En rad som avvisas
    ensam får `attempts + 1`.
+   - Ett tillfälligt databasfel (`TransientDataAccessException`) räknas som ett avbrott. Andra fel, t.ex. ett undantag
+   när dokumentet byggs, hanteras som ett avvisat dokument, så att en rad som alltid felar inte stoppar kön.
    - Körningen avslutas när den har hållit på i `search.relay.max-run-time` (förval `PT4M`), en bit under låsets
    `shedlock-lock-at-most-for`, så att två relayer aldrig skriver samtidigt.
 

@@ -7,27 +7,36 @@ Del av [arkitekturen för party-overview](README.md).
 partyId är Citizens `personId` för en person och LegalEntitys id för ett företag. party-overview slår upp dem direkt mot
 Citizen och LegalEntity, utan api-service-party ([beslut 56]).
 
-|                                           Användning                                           |                                                              Endpoint                                                               |
-|------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| Personnummer → partyId: meddelanden, uppslag, kontaktpersoner och ägaren till en enskild firma | Citizen `POST /{municipalityId}/guid/batch`, med numren i kroppen                                                                   |
-| Organisationsnummer → partyId: meddelanden och uppslag                                         | LegalEntity `GET /{municipalityId}/{organizationNumber}/guid`                                                                       |
-| Partytyp när en notering skapar kunden                                                         | De anrop som ändå görs: Citizen `GET /{municipalityId}/{personId}` och LegalEntity `GET /{municipalityId}/{legalEntityId}` ([§7.2]) |
+|                                                      Användning                                                      |                                                              Endpoint                                                               |
+|----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| Personnummer → partyId: `PRIVATE`-parter i meddelanden och uppslag, kontaktpersoner och ägaren till en enskild firma | Citizen `POST /{municipalityId}/guid/batch`, med numren i kroppen                                                                   |
+| Organisationsnummer → partyId: `ENTERPRISE`-parter i meddelanden och uppslag, även en enskild firmas nummer          | LegalEntity `GET /{municipalityId}/{organizationNumber}/guid`                                                                       |
+| Partytyp när en notering skapar kunden                                                                               | De anrop som ändå görs: Citizen `GET /{municipalityId}/{personId}` och LegalEntity `GET /{municipalityId}/{legalEntityId}` ([§7.2]) |
 
 - Feign med `dismiss404` → `Optional`, `@CircuitBreaker` och OAuth2, i `CitizenIntegration` och
   `LegalEntityIntegration`.
 - Citizens batchsvar har ett element per nummer, med `personNumber` och `personId` som värden och `success` och
-  `errorMessage`. Ett element utan `success` ger ingen mappning, och då raderas inga engagemang för kunder som inte
-  längre är parter ([§3.3]). Svarar Citizen 5xx på hela anropet görs meddelandet om ([§3.7]).
+  `errorMessage`. Ett element utan `success` räknas som att numret inte finns ([§3.3]). Svarar Citizen 5xx på hela
+  anropet görs meddelandet om ([§3.7]).
+- Ett `ENTERPRISE`-nummer slås alltid upp mot LegalEntity, också en enskild firmas, och aldrig mot Citizen. Annars
+  skulle firmans engagemang hamna på ägarens privatkund. LegalEntity anropas med numret i det format som C3 verifierar,
+  och ett tolvsiffrigt nummer kortas då till tio siffror. 404 och 400 från LegalEntity räknas som att numret inte finns.
 - Organisationsnumret står i URL:en mot LegalEntity, eftersom LegalEntity saknar ett uppslag med numret i kroppen och
   inte är vår tjänst ([beslut 32]). För en enskild firma är det ägarens personnummer. Anropet undantas från dept44:s
   payload-logg med `logbook.excluded.paths` ([§12]), och PII-maskningen är påslagen. Numret syns ändå i gatewayens och
   LegalEntitys loggar, vilket är en accepterad risk ([§13.3]).
-- Integrationerna lägger aldrig legalId i loggrader eller undantag, inte heller när ett fels detail innehåller numret.
-- legalId valideras mot dept44:s format innan det skickas. Ett ogiltigt värde skickas inte, och parten hoppas över
-  ([§3.7]).
+- Integrationerna lägger aldrig legalId eller partyId i loggrader eller undantag, inte heller när ett fels detail
+  innehåller numret.
+- Ett IO-fel, t.ex. en timeout, blir i Feign ett `RetryableException`, vars meddelande innehåller URL:en med
+  organisationsnumret eller partyId:t. PII-maskningen gäller bara loggradens meddelande och inte stacktraces ([§12]).
+  Integrationerna kastar därför ett eget undantag utan URL, med IO-felet som orsak, så att startern fortfarande klassar
+  det som ett avbrott ([§3.7]). dept44:s `ProblemErrorDecoder` lägger inte URL:en i sina undantag.
+- legalId valideras mot formatet i [§3.1], med kontrollsiffran, innan det skickas. Ett ogiltigt värde skickas inte,
+  och parten hoppas över ([§3.7]).
 - 429 och 408 görs om till ett avbrott, eftersom dept44-startern annars dead-letterar en 4xx direkt ([§3.7]).
-- C3 verifierar att `guid/batch` ger `personId` även för personer med skyddade personuppgifter, och vilken version av
-  LegalEntity som har `…/{organizationNumber}/guid`.
+- C3 verifierar att `guid/batch` ger `personId` även för personer med skyddade personuppgifter, att Citizen svarar 5xx
+  på hela anropet och inte per element när felet är tillfälligt, vilken version av LegalEntity som har
+  `…/{organizationNumber}/guid`, och vilket format den tar emot för en enskild firmas nummer.
 
 ## 7.2 Citizen och LegalEntity
 
@@ -59,13 +68,17 @@ När en notering skapar en kund ([beslut 6]) sker följande:
    LegalEntity inte, eller med 5xx, blir svaret 503, och ingen notering skapas. Ett tillfälligt fel blir aldrig 404.
 4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU och låses ([§3.6]). Om ett meddelande hann skapa
    kunden under tiden behålls dess uppgifter, men skyddsnivån räknas om. Om kunden fanns men hann raderas under tiden
-   skapas den med `UNKNOWN`, eftersom Citizen aldrig tillfrågades om skyddet.
+   skapas den med `UNKNOWN`, eftersom Citizen aldrig tillfrågades om skyddet. Ett företag får då inget
+   `registry_party_id`, och den nattliga kontrollen gör uppslaget ([§5.4]).
+5. Skapas kunden med en skyddsnivå som inte är `NONE` raderas personens kontaktrader hos företag ([§5.3]).
 
 Fel från Citizen hanteras olika beroende på var anropet görs:
 
-- *När skyddsstatus hämtas i meddelandeflödet:* om Citizen inte svarar, svarar 5xx, 429 eller 408, eller har en öppen
-  circuit breaker, skapas nya kunder med `UNKNOWN` ([§5.4]). Felet kastas inte vidare, så meddelandet görs inte om och
-  källans kö står inte still ([§3.7]). Felet loggas med antalet berörda kunder, men utan partyId.
+- *När skyddsstatus, eller en ny företagskunds organisationsnummer och ägare, hämtas i meddelandeflödet:* om Citizen
+  eller LegalEntity inte svarar, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker, skapas nya kunder med
+  `UNKNOWN`, och kontaktpersoner utan nivå sparas inte ([§5.3], [§5.4]). Felet kastas inte vidare, så meddelandet görs
+  inte om och källans kö står inte still ([§3.7]). Felet loggas på WARN med källan och antalet berörda kunder och
+  kontaktpersoner, men utan partyId, så att det går att se vilka källor som behöver en ny grundladdning ([§13.3]).
 - *När partyId slås upp:* ett fel görs om som andra avbrott ([§3.7]), eftersom en part utan partyId inte kan
   tillämpas.
 - *När en notering skapar kunden:* 503, enligt steg 3 ovan.
@@ -95,4 +108,6 @@ Förebilder:
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
 [beslut 56]: 00-beslutslogg.md#beslut-56-party-overview-anropar-inte-api-service-party
 [§7.1]: #71-uppslag-av-partyid
+[§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
+[§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 

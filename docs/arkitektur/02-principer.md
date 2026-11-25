@@ -13,11 +13,14 @@ Del av [arkitekturen för party-overview](README.md).
    party-overview själv äger är noteringarna och konfigurationen av kontaktpersonsroller.
 4. **Allt som hör till en kund raderas med kunden.** Det gäller både via JPA och via `DELETE FROM customer` direkt i
    databasen, eftersom varje FK under `customer` har `on delete cascade`. Undantagen saknar FK: den tekniska loggen,
-   som raderas för sig ([§8.2]), sökindexets kö, som töms av relayn ([§6.2]), och versionsregistret, vars rader för
-   `CUSTOMER` raderas med kunden ([§3.6]) och vars övriga rader inte innehåller några kunduppgifter ([§4.3]).
+   som raderas för sig ([§8.2]), sökindexets kö, som töms av relayn ([§6.2]), versionsregistret, vars rader för
+   `CUSTOMER` raderas med kunden ([§3.6]) och vars övriga rader inte innehåller några kunduppgifter ([§4.3]), och
+   personens kontaktrader hos företag, som tjänsten raderar via `contact.party_id` ([§5.3]). Vid en radering direkt i
+   databasen raderas de för sig, och README beskriver hur.
 5. **Spårbarhet.** Tabellerna har `created`, utom kollektionstabellen `contact_channel` och `search_index_queue`, som
-   har `queued`. De tabeller som uppdateras har även `modified`. Noteringar och kontaktpersonsroller har
-   `created_by`/`modified_by`, och för andra ändringar via REST står anroparen i den tekniska loggens `performed_by`.
+   har `queued`. De tabeller som uppdateras har även `modified`. Noteringar har `created_by`/`modified_by` och
+   kontaktpersonsroller `created_by`, och för andra ändringar via REST står anroparen i den tekniska loggens
+   `performed_by`.
    Varje ändring av en kund eller dess engagemang, vare sig den kom via
    meddelande, REST eller den nattliga kontrollen, syns i den tekniska loggen med id:t på meddelandet eller anropet
    bakom den ([beslut 47]). Noteringar har en egen historik.
@@ -36,4 +39,5 @@ Del av [arkitekturen för party-overview](README.md).
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [beslut 47]: 00-beslutslogg.md#beslut-47-meddelandets-id-finns-bara-i-den-tekniska-loggen
 [§7.1]: 07-integrationer.md#71-uppslag-av-partyid
+[§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 

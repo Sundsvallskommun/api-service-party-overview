@@ -77,8 +77,9 @@ spring:
   `CONTACT_PERSON` finns inte i SM:s testdata. Vilka roller som betyder kontaktperson i SM tas fram ur produktionens
   metadata innan rollerna sätts ([§13.2]).
 - dept44:s PII-maskning är påslagen med alla kategorier, även `uuid`. Den maskar personnummer, telefonnummer, e-post och
-  UUID:n i alla loggrader, payload-loggen inräknad. Meddelande-id och request-id är också UUID:n, men de finns
-  omaskerade i den tekniska loggen.
+  UUID:n i loggradernas meddelanden, payload-loggen inräknad, men inte i stacktraces. Därför får inga undantag ha
+  personuppgifter i sina meddelanden ([§7.1]). Meddelande-id och request-id är också UUID:n och maskeras i
+  loggraderna, men de finns omaskerade i den tekniska loggen.
 
 ## 12.1 Larm för dead letter-köer
 
@@ -97,4 +98,5 @@ spring:
 [§9]: 09-kodstruktur.md
 [§13.2]: 13-risker-och-oppna-fragor.md#132-förutsättningar-före-driftsättning
 [beslut 33]: 00-beslutslogg.md#beslut-33-kontaktpersonsrollerna-sätts-via-rest-vid-driftsättning
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 

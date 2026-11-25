@@ -57,11 +57,17 @@ kontaktperson, eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är
 
 - En kontaktpersons legalId mappas till partyId på samma sätt som en kunds ([§3.3]).
 - En kontaktperson med partyId kontrolleras: finns personen som kund används kundens skyddsnivå, annars frågas Citizen
-  i samma batch som för nya privatkunder. Är nivån något annat än `NONE`, `UNKNOWN` inräknat, sparas inte
-  kontaktpersonen alls.
-- Kontaktpersonens partyId sparas på raden (`contact.party_id`). När personen raderas ([§3.6]), eller när personen som
-  kund får en skyddsnivå som inte är `NONE`, raderas personens kontaktrader hos alla företag i kommunen, och företagen
-  markeras för omindexering.
+  i samma batch som för nya privatkunder. En kontaktperson med `ENTERPRISE` som inte finns som kund kontrolleras som en
+  ny företagskund ([§5.4]): en enskild firma får ägarens nivå, och ett annat företag har `NONE`. Är nivån något annat
+  än `NONE`, `UNKNOWN` inräknat, sparas inte kontaktpersonen alls. Nivån avgörs efter kundlåsen ([§3.3]).
+- Kontaktpersonens partyId sparas på raden (`contact.party_id`). Personens kontaktrader hos alla företag i kommunen
+  raderas när personen raderas via REST eller ett `CUSTOMER DELETE` ([§3.6]), och när en kund skapas med, eller får,
+  en skyddsnivå som inte är `NONE`. Vid en automatisk radering ligger de kvar.
+- Raderna hittas på `contact.party_id`, och kommunen avgörs via `contact.customer_id`. Varje berört företag loggas som
+  `CONTACT_REMOVED` och markeras för omindexering ([§8.1]).
+- Den nattliga kontrollen gör samma radering för varje kund i batchen vars nivå inte är `NONE` ([§5.4]). En kontaktrad
+  som ett meddelande skrev samtidigt som personen skapades som skyddad kund, innan det fanns en kundrad att låsa, ligger
+  då kvar högst ett dygn.
 - En kontaktperson som saknar både partyId och legalId kan inte kontrolleras och sparas som förut. Det står som risk i
   [§13.3].
 
@@ -113,10 +119,15 @@ säger mer, men att en källa inte anger något skydd ändrar inte `UNKNOWN`.
 
 **Enskilda firmor** ([beslut 54]). För en enskild firma är organisationsnumret ägarens personnummer, och firmans namn
 och adress kan vara ägarens. När en `ENTERPRISE`-kund skapas tar party-overview reda på organisationsnumret: från
-meddelandet, eller från `organizationNumber` i LegalEntitys svar på `GET /{municipalityId}/{legalEntityId}`. Är det ett
-personnummer slås ägarens partyId upp via Citizen (`POST /{municipalityId}/guid/batch`) och sparas som
-`registry_party_id`. Kunden får sedan folkbokföringens skydd precis som en privatkund, också i den nattliga kontrollen.
-Numret sparas aldrig. För en privatkund är `registry_party_id` kundens eget partyId, och för andra företag är den null.
+meddelandet, eller från `organizationNumber` i LegalEntitys svar på `GET /{municipalityId}/{legalEntityId}`.
+
+- Numret är ett personnummer om det har 12 siffror, eller om det har 10 siffror och tredje siffran är 0 eller 1.
+- Ett tiosiffrigt nummer får det århundrade som gör personen yngre än 100 år, enligt Skatteverkets regel för
+  skiljetecknet i ett personnummer.
+- Ägarens partyId slås upp via Citizen (`POST /{municipalityId}/guid/batch`) och sparas som `registry_party_id`.
+  Kunden får sedan folkbokföringens skydd precis som en privatkund, också i den nattliga kontrollen.
+- Numret sparas aldrig. För en privatkund är `registry_party_id` kundens eget partyId. För andra företag är den null,
+  och likaså för ett företag där det inte gick att avgöra om det är en enskild firma eller vem som äger den.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -147,24 +158,29 @@ hanteringen nedan är densamma för båda nivåerna.
 Svaret från Citizen hålls bara i minnet. Namn och adress ur svaret används bara om personen är oskyddad, och ingenting
 ur svaret loggas.
 
-**Okänd skyddsstatus (`UNKNOWN`).** En privatkund eller enskild firma skapas med `registry_protection = UNKNOWN` och
-`registry_checked = null` när folkbokföringens status inte går att få ([beslut 48]):
+**Okänd skyddsstatus (`UNKNOWN`).** En kund får `registry_protection = UNKNOWN` och `registry_checked = null` när
+folkbokföringens status inte går att få ([beslut 48]):
 
-- Citizen svarar inte, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker när ett meddelande skapar
-  kunden. Meddelandet tillämpas ändå, så att källans kö inte står still medan Citizen är nere.
-- Citizen har ingen post för personen (se tabellen ovan).
-- En enskild firmas ägare går inte att avgöra, eller Citizen svarar inte när ägarens skydd hämtas.
+- Citizen svarar inte, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker när ett meddelande skapar en
+  privatkund eller en enskild firma. Meddelandet tillämpas ändå, så att källans kö inte står still medan Citizen är
+  nere.
+- Citizen har ingen post för personen eller ägaren (se tabellen ovan).
+- Det går inte att avgöra om en ny företagskund är en enskild firma, eller vem som äger den: LegalEntity eller Citizen
+  svarar inte, LegalEntity känner inte partyId:t, eller ägarens nummer finns inte i Citizen. Kunden har då inget
+  `registry_party_id`.
+- Kunden fanns när statusen kontrollerades, men hann raderas innan meddelandet eller noteringen skrevs. Ett företag har
+  då inget `registry_party_id`.
 
-När en notering skapar kunden avgör Citizen och LegalEntity partytypen ([§7.2]). Svarar Citizen inte går det inte att
-avgöra om parten är en person, och då blir svaret 503 och ingen notering skapas.
-- Kunden fanns när statusen kontrollerades, men hann raderas innan meddelandet eller noteringen skrevs.
+När en notering skapar kunden blir svaret i stället 503 om Citizen eller LegalEntity inte svarar ([§7.2]).
 
 Så länge statusen är okänd gäller följande:
 
 - `UNKNOWN` räknas som skyddat. Inga namn, adresser eller egna kontaktuppgifter sparas, och kunden indexeras bara med
   engagemangens referenser.
-- Den nattliga kontrollen tar alltid med kunden. När Citizen svarar ersätts `UNKNOWN` med folkbokföringens nivå, och är
-  personen oskyddad fylls namn och adress i från svaret. Kontaktuppgifterna kommer tillbaka med nästa tillämpade
+- Den nattliga kontrollen tar alltid med kunden. Saknar kunden `registry_party_id` görs uppslaget av organisationsnumret
+  och ägaren om först. Är kunden inte en enskild firma blir `registry_protection` null. När Citizen svarar ersätts
+  `UNKNOWN` med folkbokföringens nivå. Är kunden en oskyddad privatkund fylls namn och adress i från svaret, och en
+  enskild firma får dem med nästa tillämpade meddelande. Kontaktuppgifterna kommer tillbaka med nästa tillämpade
   meddelande från källan.
 - Frontend visar `UNKNOWN` som okänd skyddsstatus och hanterar kunden som skyddad.
 
@@ -191,14 +207,19 @@ nattliga kontrollen ersätter det.
 kontrollen, och för en enskild firma med nästa tillämpade meddelande från källan. Kontaktuppgifter kommer tillbaka med
 nästa tillämpade meddelande från källan, eller vid en grundladdning.
 
-**Nattlig kontroll.** `ProtectionRefreshScheduler` (`@Dept44Scheduled` med ShedLock) körs en gång per natt. Den hämtar
-alla kunder som har `registry_party_id`, alltså privatkunder och enskilda firmor, och vars `registry_checked` saknas
-eller är äldre än körningens start ([beslut 28]). En gräns i form av en
-ålder, t.ex. ett dygn, skulle missa kunder som skapades eller kontrollerades under dagen före. Kunderna gås igenom med
-keyset på `id` i batchar om `protection.batch-size` (förval 100), så att en batch som misslyckas inte väljs igen i samma
-körning, via `POST /{municipalityId}/batch?ShowClassified=true`. Varje batch skrivs i en egen transaktion med READ
-COMMITTED ([§3.3]). Batchens kunder låses i partyId-ordning, som i meddelandeflödet, och nivån räknas om. De ändrade
-kunderna markeras för omindexering ([§6.2]).
+**Nattlig kontroll.** `ProtectionRefreshScheduler` (`@Dept44Scheduled` med ShedLock) körs en gång per natt.
+
+- Den hämtar alla kunder som har `registry_party_id` eller `registry_protection = UNKNOWN`, alltså privatkunder,
+  enskilda firmor och företag med okänd status, och vars `registry_checked` saknas eller är äldre än körningens start
+  ([beslut 28]).
+- Kunderna gås igenom med keyset på `id` i batchar om `protection.batch-size` (förval 100), så att en batch som
+  misslyckas inte väljs igen i samma körning. Nästan alla kunder tas med varje natt, så urvalet går i primärnyckelns
+  ordning och har inget eget index.
+- För en kund utan `registry_party_id` görs först uppslaget av organisationsnumret och ägaren, som när kunden skapas.
+  Sedan hämtas skyddet med `POST /{municipalityId}/batch?ShowClassified=true`.
+- Varje batch skrivs i en egen transaktion med READ COMMITTED ([§3.3]). Batchens kunder låses i partyId-ordning, som i
+  meddelandeflödet, och nivån räknas om. De ändrade kunderna markeras för omindexering ([§6.2]), och kontaktrader
+  raderas enligt [§5.3]. En batch som faller på deadlock görs om ([§3.6]).
 
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [§5.4]: #54-skyddad-identitet
@@ -214,4 +235,6 @@ kunderna markeras för omindexering ([§6.2]).
 [beslut 54]: 00-beslutslogg.md#beslut-54-enskilda-firmor-kontrolleras-mot-folkbokföringen
 [§13.3]: 13-risker-och-oppna-fragor.md#133-risker
 [§3.6]: 03-meddelanden.md#36-kundradering
+[§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
+[§5.3]: #53-kunder-kontaktpersoner-och-kontaktuppgifter
 
