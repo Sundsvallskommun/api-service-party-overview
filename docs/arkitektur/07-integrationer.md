@@ -59,17 +59,26 @@ när en notering skapar en kund och när ett meddelande skapar en företagskund,
 När en notering skapar en kund ([beslut 6]) sker följande:
 
 1. Citizen `GET /{municipalityId}/{personId}` anropas med partyId. Svarar Citizen med en person är kunden `PRIVATE`.
-   Svaret ger skyddsstatus och, om personen är oskyddad, namn (`givenname` plus `lastname`) och folkbokföringsadress.
+   Svaret ger skyddsstatus och, om personen är oskyddad, namn (`givenname` plus `lastname`) och folkbokföringsadressen,
+   alltså adressen med `addressType = POPULATION_REGISTRATION_ADDRESS`. Andra adresser i svaret används inte.
 2. Har Citizen ingen post anropas LegalEntity `GET /{municipalityId}/{legalEntityId}`. Svarar LegalEntity är kunden
-   `ENTERPRISE`, med namnet (`name`) och adressen (`postAddress`). Är `organizationNumber` i svaret ett personnummer,
-   alltså en enskild firma, får kunden ägarens skydd från folkbokföringen som i [§5.4], och är ägaren skyddad sparas
-   varken namn eller adress.
+   `ENTERPRISE`, med namnet (`name`) och två adresser ([§5.2]):
+   - `postAddress` som `POSTAL_ADDRESS`: `coAdress` blir `careOf`, `address1` och `address2` blir `street` med
+     kommatecken emellan, och `postalCode`, `city` och `country` följer med.
+   - `address` som `VISITING_ADDRESS`: `addressArea` och `adressNumber` blir `street` med mellanslag emellan, och
+     `postalCode` och `city` följer med.
+
+   Är `organizationNumber` i svaret ett personnummer, alltså en enskild firma, får kunden ägarens skydd från
+   folkbokföringen som i [§5.4], och är ägaren skyddad sparas varken namn eller adresser.
+
 3. Känner varken Citizen eller LegalEntity partyId:t blir svaret 404, och ingen notering skapas. Svarar Citizen eller
    LegalEntity inte, eller med 5xx, blir svaret 503, och ingen notering skapas. Ett tillfälligt fel blir aldrig 404.
+
 4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU och låses ([§3.6]). Om ett meddelande hann skapa
    kunden under tiden behålls dess uppgifter, men skyddsnivån räknas om. Om kunden fanns men hann raderas under tiden
    skapas den med `UNKNOWN`, eftersom Citizen aldrig tillfrågades om skyddet. Ett företag får då inget
    `registry_party_id`, och den nattliga kontrollen gör uppslaget ([§5.4]).
+
 5. Skapas kunden med en skyddsnivå som inte är `NONE` raderas personens kontaktrader hos företag ([§5.3]).
 
 Fel från Citizen hanteras olika beroende på var anropet görs:
@@ -110,4 +119,5 @@ Förebilder:
 [§7.1]: #71-uppslag-av-partyid
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
+[§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 

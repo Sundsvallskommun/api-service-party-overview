@@ -130,9 +130,11 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Accepteras. Kaskaden görs av databasen och låser bara kundens rader.
 
-- Namn och adress kan skilja sig mellan källor.
+- Namn och adresser kan skilja sig mellan källor. Kunden har adresserna från det senaste meddelandet, så en källa som
+  bara har en postadress tar bort en fakturaadress som en annan källa skickade tidigare.
 
-  **Hantering:** "Nyast vinner" på `sourceModified` ger ett deterministiskt resultat. Källorna bör vårda sina uppgifter.
+  **Hantering:** "Nyast vinner" på `sourceModified` ger ett deterministiskt resultat ([beslut 21]). Källorna bör vårda
+  sina uppgifter.
 
 - Ett meddelande som är äldre än lagrad version tappar sina aktiviteter.
 
@@ -164,8 +166,8 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras ([beslut 32]). LegalEntity saknar ett uppslag med numret i kroppen och är inte vår tjänst.
   Anropet undantas från party-overviews payload-logg, och PII-maskningen är påslagen ([§7.1]).
 
-- En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen och sparas med namn och
-  kanaler. En kontaktperson som får skydd efter att raden sparades, utan att själv vara kund, ligger kvar tills objektet
+- En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen och sparas med namn, kanaler och
+  adress. En kontaktperson som får skydd efter att raden sparades, utan att själv vara kund, ligger kvar tills objektet
   ändras i källan ([§5.3]).
 
   **Hantering:** Accepteras. Publicerarna skickar partyId när de har det, och nästa ändring av objektet kontrollerar
@@ -196,4 +198,5 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
 [§7.1]: 07-integrationer.md#71-uppslag-av-partyid
+[beslut 21]: 00-beslutslogg.md#beslut-21-namn-och-adress-nyast-vinner
 

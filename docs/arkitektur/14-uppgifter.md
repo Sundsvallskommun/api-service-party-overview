@@ -52,6 +52,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   `dept44-common-validators` finns redan.
 - Lägg in `application.yml` och profilerna enligt [§12], och `SourceProperties` (`integration.sources`, `@Validated`),
   som C4 och C11 använder.
+- `SentBy`, som hämtar anroparen ur dept44:s `Identifier` och ger 400 enligt [§6] när `X-Sent-By` saknas, inte går att
+  tolka eller har ett värde över 255 tecken. C4, C8, C9 och C12 använder den.
 - README skrivs om efter detta dokument.
 
 **Acceptans:**
@@ -61,13 +63,15 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `management.health.rabbit.enabled` är borttagen ur `application.yml`.
 - dept44:s PII-maskning är påslagen med alla kategorier.
 - Ingen POC-kod finns kvar, och `openapi.yaml` är regenererad utan POC:ens endpoint.
+- `SentBy` ger värdet för `joe01doe; type=adAccount` och ger 400 för en saknad header, för `joe01doe` utan `type=` och
+  för ett värde på 256 tecken. Enhetstest.
 
 ## C2 — Datamodell, Flyway och schemaverifiering
 
 **Bygg:**
 
 - En ny `V1_0__create_tables.sql` med alla tabeller i [§4.3], inklusive `shedlock`.
-- Entiteter, `AbstractHistoryEntity`, enums och `RolesConverter`.
+- Entiteter, `AbstractHistoryEntity`, adressens `@Embeddable`, enums och `RolesConverter`.
 - Repositories med grundfrågorna: IODKU och låsning av `source_object` och `customer`, och markeringen i
   `search_index_queue` ([§6.2]). Frågorna för ett visst flöde läggs till i uppgiften som bygger flödet.
 - Valet av modell för `contact_channel` ([§4.2]). Blir den en entitet uppdateras tabellen i [§4.3].
@@ -79,10 +83,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   Flyway och i `schema.sql`.
 - `SchemaVerificationTest` och `SchemaParityIT` är gröna. Om ett index tas bort i bara den ena källan blir
   `SchemaParityIT` röd. Det ska provas manuellt en gång.
-- `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `engagement`, `engagement_history`, `contact`,
-  `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden. Raderna i `technical_log`,
-  `source_object` och `search_index_queue` finns kvar, och likaså kundens kontaktrader hos andra kunder
-  (`contact.party_id`).
+- `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `customer_address`, `engagement`,
+  `engagement_history`, `contact`, `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden.
+  Raderna i `technical_log`, `source_object` och `search_index_queue` finns kvar, och likaså kundens kontaktrader hos
+  andra kunder (`contact.party_id`).
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
@@ -94,11 +98,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Kodgenereringen för `citizen.yaml` och `legalentity.yaml` med openapi-generator ([§9]).
 - `CitizenClient`/`CitizenIntegration` med:
   - `getPartyIds` (batch, `POST /{municipalityId}/guid/batch`) för personnummer → partyId ([§7.1])
-  - `getCitizen` och `getCitizens` (batch), som båda returnerar skyddsnivå och, för oskyddade personer, namn och adress
-    ([§5.4])
+  - `getCitizen` och `getCitizens` (batch), som båda returnerar skyddsnivå och, för oskyddade personer, namn och
+    folkbokföringsadress ([§5.4], [§7.2])
 - `LegalEntityClient`/`LegalEntityIntegration` med:
   - `getPartyId` (`GET /{municipalityId}/{organizationNumber}/guid`) för organisationsnummer → partyId ([§7.1])
-  - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, adress och organisationsnummer
+  - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, postadress, besöksadress och
+    organisationsnummer ([§7.2])
 - Partytypen för ett partyId avgörs med `getCitizen` och `getLegalEntity` ([§7.2]). En enskild firma känns igen på att
   organisationsnumret är ett personnummer ([§5.4]). Numret sparas aldrig.
 - legalId valideras mot formatet i [§3.1], per partytyp och med kontrollsiffran, innan det skickas ([§7.1]).
@@ -136,11 +141,16 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   - att Citizen svarar 5xx på hela `guid/batch`-anropet, och inte per element, när felet är tillfälligt ([§7.1])
   - vilken version av LegalEntity som har `…/{organizationNumber}/guid`
   - i vilket format LegalEntity ger en enskild firmas organisationsnummer, och vilket format `…/guid` tar emot för det
+  - vilka värden Citizen har i `addressType`, och att folkbokföringsadressen har `POPULATION_REGISTRATION_ADDRESS`
 
   Resultaten dokumenteras i README.
 
 - Citizen anropas med `ShowClassified=true` i alla anrop som ger personuppgifter. Flaggorna tolkas enligt tabellen i
   [§5.4], med ett testfall per rad. För en skyddad person returnerar integrationen varken namn eller adress.
+
+- Citizens folkbokföringsadress blir en adress av typen `POPULATION_REGISTRATION_ADDRESS`, och andra adresser i svaret
+  tas inte med. LegalEntitys `postAddress` och `address` blir `POSTAL_ADDRESS` och `VISITING_ADDRESS` enligt [§7.2].
+  En adress där alla fält är tomma tas inte med.
 
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
   och en testperson med skyddad folkbokföring. Resultatet dokumenteras i README.
@@ -184,6 +194,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   noteringar ger det dessutom `CUSTOMER_DELETED`. En kund med en notering finns kvar.
 - En kontaktpersonsroll ger en `CONTACT_PERSON`-kontakt på varje `ENTERPRISE`-kund och aldrig en egen kund. Ett objekt
   utan företagskund ger ingen kontakt.
+- En kontaktperson får partens första postadress, annars den första besöksadressen och annars den första
+  fakturaadressen ([§5.3]). En part utan adress ger en kontaktrad utan adress, och kundens egen kontaktrad
+  (`contact_type = CUSTOMER`) har aldrig någon adress.
 - En kontaktpersons legalId mappas till partyId, och partyId sparas på kontaktraden. En kontaktperson som är skyddad,
   som kund eller enligt Citizen, eller vars status är `UNKNOWN`, sparas inte ([§5.3]). En kontaktperson med
   `ENTERPRISE` kontrolleras som en företagskund och frågas inte i Citizens batch.
@@ -202,16 +215,18 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   hoppas parten över medan övriga parter tillämpas, och engagemang raderas ändå för kunder som inte längre är parter
   ([beslut 16]). legalId finns inte i någon entitet.
 - En kund som förekommer två gånger blir en rad, och rollerna slås ihop.
-- Ett nyare `sourceModified` ersätter namn och adress, men ett äldre gör det inte.
+- Ett nyare `sourceModified` ersätter namn och adresser som helhet, men ett äldre gör det inte. Ett nyare meddelande
+  med färre adresser tar bort de övriga, och ett med namn men utan adresser tömmer adresserna ([§5.2]).
+- Identiska adresser i ett meddelande sparas en gång, och en adress där alla fält utom typen är tomma sparas inte.
 - En ny privatkund får sin skyddsstatus från Citizen innan den skapas. Om Citizen inte svarar, svarar 5xx, 429 eller
-  408, har en öppen circuit breaker eller saknar en post för personen, skapas kunden med `UNKNOWN`, utan namn, adress
+  408, har en öppen circuit breaker eller saknar en post för personen, skapas kunden med `UNKNOWN`, utan namn, adresser
   och egna kontaktuppgifter, och meddelandet tillämpas utan omförsök. 401 från Citizen kastas som `ClientProblem`
   ([§5.4]).
 - `UNKNOWN` från folkbokföringen ger den effektiva nivån `UNKNOWN`, men en källas `SECRECY_MARKING` eller
   `PROTECTED_REGISTRATION` går före.
 - README och javadoc för `ProtectionLevel` beskriver alla fyra värden. För `UNKNOWN` står när värdet uppstår, att
   kunden hanteras som skyddad och att den nattliga kontrollen ersätter det ([§5.4]).
-- En part med `protection` ger `engagement.party_protection`, och kunden räknas som skyddad. Namn, adress och egna
+- En part med `protection` ger `engagement.party_protection`, och kunden räknas som skyddad. Namn, adresser och egna
   kontaktuppgifter sparas inte, och befintliga töms. Skyddet upphör när inget engagemang längre anger det och
   folkbokföringen inte gör det heller.
 - En ändrad skyddsnivå loggas som `PROTECTION_CHANGED`.
@@ -229,8 +244,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   ett meddelande om ett objekt som kunden har lämnat tillämpas. Kunden skapas inte på nytt ([§3.3]).
 - En `DELETE` där den första av två kunder raderas automatiskt markerar ändå `source_object` som raderat, och den andra
   kundens skyddsnivå räknas om ([§3.6]).
-- En part utan id behöver ingen `partyType`. En part med id men utan `partyType`, och ett textfält över maxlängden,
-  ger valideringsfel ([§3.1]).
+- En part utan id behöver ingen `partyType`. En part med id men utan `partyType`, ett textfält över maxlängden, en
+  adress utan typ och en part med fler än 10 adresser ger valideringsfel ([§3.1]).
 
 ## C6 — Kundmeddelanden (`CUSTOMER`)
 
@@ -255,7 +270,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   kontaktuppgifter och skydd från källan finns kvar ([§3.6]).
 - Ett `UPDATE` med `protection` för en kund som var oskyddad raderar personens kontaktrader hos företag ([§5.3]).
 - Partens `protection` sparas som källans rad i `asserted_protection`, skyddsnivån räknas om, och en skyddad kund får
-  varken namn, adress eller kontaktuppgifter. `UPDATE` loggas som `CUSTOMER_UPDATED`.
+  varken namn, adresser eller kontaktuppgifter. `UPDATE` loggas som `CUSTOMER_UPDATED`.
 - Ett `UPDATE` utan `protection` från källa B tar bort B:s rad men lämnar källa A:s skydd orört, och kunden förblir
   skyddad ([§4.3]).
 - Kundens kontaktrader från meddelandet får meddelandets namespace, eller blir globala om det saknas.
@@ -270,8 +285,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 **Acceptans:**
 
-- Kontakter visas för det egna namespacet och de globala, aldrig för andra namespaces. Dubbletter slås ihop.
-- En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adress och kontaktkanaler.
+- Kontakter visas för det egna namespacet och de globala, aldrig för andra namespaces. Dubbletter slås ihop, men två
+  kontaktpersoner som bara skiljer sig i adress visas båda.
+- Kunden returneras med alla sina adresser, i ordningen i [§5.2], och varje kontaktperson med sin adress.
+- En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adresser och kontaktkanaler.
 - `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
   hanteras som skyddad ([§5.4]).
 - Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Om numret inte finns, eller
@@ -295,13 +312,16 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 **Acceptans:**
 
 - CRUD inom namespacet. En notering i ett annat namespace ger 404 vid läsning, ändring och radering.
-- `CREATED` och `UPDATED` skrivs till historiken med `performed_by` från `X-Sent-By`. Ett anrop utan `X-Sent-By` ger
-  400.
+- `POST` sätter `created_by` till värdet i `X-Sent-By`, och `PATCH` sätter `modified_by` men ändrar aldrig
+  `created_by`. Båda returneras som `createdBy` och `modifiedBy` ([§4.3]).
+- `CREATED` och `UPDATED` skrivs till historiken med `performed_by` och `performed_by_type` från `X-Sent-By`.
+- `POST`, `PATCH` och `DELETE` utan `X-Sent-By`, med en header utan `type=` och med ett värde över 255 tecken ger 400,
+  och ingenting sparas ([§6]).
 - En notering på en okänd kund skapar kunden:
-  - en `PRIVATE`-kund när Citizen känner partyId:t, med skyddsstatus från Citizen, och med namn och adress bara om
-    personen är oskyddad
-  - en `ENTERPRISE`-kund när bara LegalEntity känner det, med namn och adress från LegalEntity, och för en enskild
-    firma med ägarens skydd från Citizen, utan namn och adress om ägaren är skyddad
+  - en `PRIVATE`-kund när Citizen känner partyId:t, med skyddsstatus från Citizen, och med namn och folkbokföringsadress
+    bara om personen är oskyddad
+  - en `ENTERPRISE`-kund när bara LegalEntity känner det, med namn, postadress och besöksadress från LegalEntity, och
+    för en enskild firma med ägarens skydd från Citizen, utan namn och adresser om ägaren är skyddad
 
   Kunden loggas som `CUSTOMER_CREATED` med kanalen `REST`.
 
@@ -366,17 +386,17 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Urvalet går i primärnyckelns ordning. `EXPLAIN` i ett repository-test visar en range-läsning på `PRIMARY` utan
   filesort.
 - En batch som misslyckas väljs inte igen i samma körning.
-- En kund med `UNKNOWN` får folkbokföringens nivå när Citizen svarar. En privatkund som är oskyddad får namn och adress
-  från svaret, men en enskild firma får aldrig ägarens namn eller adress. Svarar Citizen inte förblir kunden `UNKNOWN`
-  och tas med nästa natt.
+- En kund med `UNKNOWN` får folkbokföringens nivå när Citizen svarar. En privatkund som är oskyddad får namn och
+  folkbokföringsadress från svaret, men en enskild firma får aldrig ägarens namn eller adress. Svarar Citizen inte
+  förblir kunden `UNKNOWN` och tas med nästa natt.
 - Ett företag med `UNKNOWN` utan `registry_party_id` slås upp i LegalEntity igen. En enskild firma får ägaren som
   `registry_party_id` och ägarens nivå, och ett annat företag får `registry_protection = null` och tas inte med igen.
-- När en kund blir skyddad töms namn, adress och egna kontaktuppgifter, och kunden markeras för omindexering.
+- När en kund blir skyddad töms namn, adresser och egna kontaktuppgifter, och kunden markeras för omindexering.
   Personens kontaktrader hos företag raderas, och företagen loggas som `CONTACT_REMOVED` och markeras för
   omindexering ([§5.3]).
 - Varje kund i batchen vars nivå inte är `NONE` får sina kontaktrader hos företag raderade, även när nivån inte
   ändrades.
-- När skyddet upphör för en privatkund fylls namn och adress i från Citizens svar.
+- När skyddet upphör för en privatkund fylls namn och folkbokföringsadress i från Citizens svar.
 - En batch som faller på deadlock görs om, som i C8.
 - En batch där Citizen svarar 5xx lämnar kundernas `registry_checked` orört, och övriga batchar körs ändå.
 - ShedLock förhindrar att två körningar pågår samtidigt.
@@ -400,7 +420,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   dokumentet. Resultatet dokumenteras i README.
 - Hibernate Searchs automatiska lyssnare är avstängda (`indexing.listeners.enabled: false`).
 - En skyddad kunds dokument, också en kund med `UNKNOWN`, innehåller bara `references` av de sökbara fälten. Namn,
-  adress, kontakt- och telefonfält saknas.
+  adresser, kontakt- och telefonfält saknas.
 - Kontakter hamnar i `contacts_ns_<namespace>` respektive `contacts_global`.
 - Telefonnummer i formaten `+46 70-123 45 67`, `0046701234567` och `070-1234567` ger samma värde.
 - Engagemangens referens, titel och kategori indexeras. Noteringar hamnar i `notes_ns_<namespace>`.
@@ -431,14 +451,14 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 
 - Sökningen träffar på:
 
-  - namn och adress
+  - namn och var och en av kundens adresser
   - kontaktuppgifter och kontaktpersoner i eget namespace och globalt
   - engagemangens referens, titel och kategori
   - noteringar i eget namespace
 
   Den träffar aldrig på kontaktuppgifter eller noteringar i andra namespaces.
 
-- En skyddad kund hittas på ett ärendenummer, men inte på namn, adress, kontaktuppgifter, titel eller notering. En
+- En skyddad kund hittas på ett ärendenummer, men inte på namn, adresser, kontaktuppgifter, titel eller notering. En
   skyddad kund vars dokument är inaktuellt släpps ur träfflistan.
 
 - Ett telefonnummer hittas oavsett format.
@@ -522,6 +542,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   finns i SM:s `contact_channel` i produktion. En kanal som förekommer flera gånger på en stakeholder skickas en gång.
 - Bara `externalIdType` `PRIVATE` och `ENTERPRISE` skickas som partytyp. Stakeholders med `EMPLOYEE` eller
   `ADMINISTRATOR` skickas inte, och andra skickas utan id.
+- En stakeholders adress skickas som `POSTAL_ADDRESS` ([§11.2]). En stakeholder vars adressfält alla är tomma skickas
+  utan adress.
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
 - Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
   relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
@@ -568,6 +590,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
   handläggare. `organizationNumber` skickas bara som `legalId` när partyId saknas.
 - `CELLPHONE` och `PHONE` skickas som kanaltypen `PHONE`, och `EMAIL` som `EMAIL`.
 - En kanal som förekommer flera gånger på en part skickas en gång ([§11.1]).
+- En parts alla adresser skickas med sin `addressCategory` som typ, och `street` och `houseNumber` blir `street`
+  ([§11.5]). En adress utan kategori skickas som `POSTAL_ADDRESS`, och en part får högst 10 adresser.
 - Titeln, `display_name` följt av `caseTitleAddition`, ryms inom 512 tecken ([§3.1]).
 - `organizationNumber` skickas utan bindestreck och utan ett inledande `16` ([§3.1]). En enskild firmas nummer, med 10
   eller 12 siffror, skickas med `ENTERPRISE`. Ett värde som inte följer formatet, kontrollsiffran inräknad, skickas
@@ -659,6 +683,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `organizationNumber` skickas bara som `legalId` när partyId saknas.
 - `phoneNumber` och `emailAddress` skickas som kanaler av typen `PHONE` respektive `EMAIL`, och bara när de har ett
   värde.
+- Adressen skickas med sin typ, där `BILLING_ADDRESS` blir `INVOICE_ADDRESS` och en adress utan typ blir
+  `POSTAL_ADDRESS` ([§11.4]).
 - `type` mappas till partytyp enligt [§11.4]. En stakeholder med `OTHER` eller utan typ skickas utan id.
 - En stakeholder av typen `MUNICIPALITY`, och en som bara är `SIGNATORY` eller har en `POWER_OF_ATTORNEY_*`-roll,
   skickas inte. En stakeholder med en partsroll skickas med alla sina roller.

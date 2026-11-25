@@ -8,8 +8,12 @@ sätts inte på id-fält som är READ_ONLY.
 
 `X-Sent-By` krävs för alla anrop som ändrar något: noteringar (`POST`, `PATCH`, `DELETE`), kundradering, radering av den
 tekniska loggen, kontaktpersonsrollerna och `POST /search/reindex`. Läsningar kräver den inte, inte heller uppslaget och
-sökningen, som är `POST` bara för att hålla numret och frågan borta från URL:en. Ett ändrande anrop utan headern ger
-400.
+sökningen, som är `POST` bara för att hålla numret och frågan borta från URL:en.
+
+Headern läses med dept44:s `Identifier`, och formatet är `<värde>; type=<typ>`, t.ex. `joe01doe; type=adAccount`. Ett
+ändrande anrop ger 400 om headern saknas, om den inte går att tolka, t.ex. för att `type=` saknas, eller om värdet är
+längre än 255 tecken. Det är värdet som sparas, som `created_by` och `modified_by` på noteringar
+och kontaktpersonsroller och som `performed_by` i historiken och den tekniska loggen ([§4.3]).
 
 ## 6.1 Endpoints
 
@@ -23,9 +27,9 @@ sökningen, som är `POST` bara för att hålla numret och frågan borta från U
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements/{engagementId}`         | Ett engagemang                                                                                                                                                                                                                | 200, 404                                                                             |
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/engagements/{engagementId}/history` | Historik, förvalt `occurredAt,desc`                                                                                                                                                                                           | 200, 404                                                                             |
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/notes`                              | Namespacets noteringar, förvalt `created,desc`                                                                                                                                                                                | 200, 404                                                                             |
-| `POST /{municipalityId}/{namespace}/customers/{partyId}/notes`                             | Skapar en notering och vid behov kunden ([§7.2]). `subject` högst 255 tecken och `body` högst 10 000.                                                                                                                         | 201 med Location, 400, 404 om parten är okänd, 503 om partytypen inte går att avgöra |
+| `POST /{municipalityId}/{namespace}/customers/{partyId}/notes`                             | Skapar en notering och vid behov kunden ([§7.2]). `subject` högst 255 tecken och `body` högst 10 000. `createdBy` sätts från `X-Sent-By`.                                                                                     | 201 med Location, 400, 404 om parten är okänd, 503 om partytypen inte går att avgöra |
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                     | En notering                                                                                                                                                                                                                   | 200, 404                                                                             |
-| `PATCH /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                   | Ändrar `subject` eller `body`                                                                                                                                                                                                 | 200, 404                                                                             |
+| `PATCH /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                   | Ändrar `subject` eller `body`. `modifiedBy` sätts från `X-Sent-By`.                                                                                                                                                           | 200, 404                                                                             |
 | `DELETE /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}`                  | Raderar noteringen och dess historik. Är det kundens sista notering och har kunden varken engagemang eller `CUSTOMER`-data raderas kunden ([§3.6]).                                                                           | 204, 404                                                                             |
 | `GET /{municipalityId}/{namespace}/customers/{partyId}/notes/{noteId}/history`             | Noteringens historik                                                                                                                                                                                                          | 200, 404                                                                             |
 | `DELETE /{municipalityId}/customers/{partyId}`                                             | Raderar kunden med allt den äger och loggar `CUSTOMER_DELETED`. Raderar också personens kontaktrader hos företag, även när personen bara är kontaktperson, och loggar `CONTACT_REMOVED` för företagen ([§5.3]).               | 204, 404 när varken kund eller kontaktrader finns                                    |
@@ -39,9 +43,15 @@ sökningen, som är `POST` bara för att hålla numret och frågan borta från U
   hela kommunen. De finns i samma interna API som resten ([beslut 30]).
 - Uppslaget på personnummer tar numret i kroppen och aldrig i URL:en. Om numret inte finns, eller om kunden inte
   finns i party-overview, blir svaret 404. Problem-detail innehåller aldrig numret.
-- Responsmodeller: `Customer` (`partyId`, `partyType`, `protectionLevel`, `name`, `address`, `contactChannels[]`,
-  `contactPersons[]`), `CustomerSearchHit`, `Engagement`, `HistoryEntry`, `Note`, `TechnicalLogEntry` och
-  `ContactPersonRoles`. `openapi.yaml` regenereras och verifieras av `OpenApiSpecificationIT`.
+- Responsmodeller:
+  - `Customer`: `partyId`, `partyType`, `protectionLevel`, `name`, `addresses[]`, `contactChannels[]` och
+    `contactPersons[]`
+  - `Address`: `type`, `careOf`, `street`, `postalCode`, `city` och `country` ([§5.2])
+  - `ContactPerson`: `name`, `role`, `contactChannels[]` och `address` ([§5.3])
+  - `Note`: `id`, `subject`, `body`, `created`, `createdBy`, `modified` och `modifiedBy`
+  - `CustomerSearchHit`, `Engagement`, `HistoryEntry`, `TechnicalLogEntry` och `ContactPersonRoles`
+
+  `openapi.yaml` regenereras och verifieras av `OpenApiSpecificationIT`.
 
 ## 6.2 Kundsökning (OpenSearch)
 
@@ -67,16 +77,16 @@ Lösningen följer SupportManagement, men med två skillnader: indexeringen går
 **Indexmodell**
 
 `@Indexed` sitter på `CustomerEntity`, och dokumentet byggs av en `CustomerDocumentBinder` (TypeBinder). Bindaren läser
-kundens kontakter, engagemang och noteringar genom sessionen, deduplicerade och grupperade per namespace. Det sker med
-projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion ([§4.2]). Grupperingen är en ren
-funktion som går att enhetstesta.
+kundens adresser, kontakter, engagemang och noteringar genom sessionen, deduplicerade och grupperade per namespace. Det
+sker med projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion ([§4.2]). Grupperingen är
+en ren funktion som går att enhetstesta.
 
 |                     Fält                     |                                                          Mappning                                                          |                 Skyddad kund                 |
 |----------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
 | `municipalityId`, `partyType`                | keyword, filter                                                                                                            | med                                          |
 | `protectionLevel`                            | keyword, projicerbar                                                                                                       | med                                          |
 | `name`                                       | text (`text_sv`: standard, lowercase och light_swedish), plus `name_sort` som keyword                                      | saknas, eftersom namnet inte lagras ([§5.4]) |
-| `careOf`, `street`, `postalCode`, `city`     | text (`text_sv`)                                                                                                           | utelämnas                                    |
+| `careOf`, `street`, `postalCode`, `city`     | text (`text_sv`), från alla kundens adresser                                                                               | utelämnas                                    |
 | `contacts_global`, `contacts_ns_<namespace>` | text via fieldTemplate: kontaktpersoners namn och kanalvärden, högst 500 värden per fält                                   | utelämnas                                    |
 | `phones_global`, `phones_ns_<namespace>`     | keyword med normalizern `phone` (`+46` och `0046` blir `0`, och allt utom siffror tas bort), bara kanaler av typen `PHONE` | utelämnas                                    |
 | `references`                                 | keyword med `lowercase_normalizer`: engagemangens `reference` och `objectId`, alla                                         | **med**                                      |
@@ -182,8 +192,8 @@ payload-logg och i gatewayens loggar, medan en kropp bara loggas med de fält so
   inaktuellt och innehålla adressen.
 - En kund som har raderats ger ingen träff.
 
-*Svar:* `Page<CustomerSearchHit>` med `partyId`, `partyType`, `protectionLevel`, `name` och `address`. För en skyddad
-kund är `name` och `address` tomma.
+*Svar:* `Page<CustomerSearchHit>` med `partyId`, `partyType`, `protectionLevel`, `name` och `addresses[]`. För en
+skyddad kund är `name` och `addresses` tomma.
 
 *Fel:* timeout ger 504, och en OpenSearch som inte svarar ger 503. `simple_query_string` ger inga parsfel.
 
@@ -209,4 +219,6 @@ kund är `name` och `address` tomma.
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§12]: 12-drift.md
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
+[§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
+[§4.3]: 04-datamodell.md#43-tabellerna
 

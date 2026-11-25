@@ -29,7 +29,7 @@ Källsystemen är master för engagemang och kunddata. party-overview lagrar env
 
 ## Beslut 4: Kunddata kommer bara från meddelanden
 
-Kunddata (namn, adress, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST.
+Kunddata (namn, adresser, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST.
 Undantaget är namn och adress från Citizen och LegalEntity när en notering skapar kunden ([beslut 6]), och när den
 nattliga kontrollen fyller i dem för en privatkund ([§5.4]).
 
@@ -197,11 +197,17 @@ ShedLock. Grundladdningen går genom samma outbox.
 
 ## Beslut 21: Namn och adress: nyast vinner
 
-Namn och adress följer regeln "nyast vinner", mätt på källans `sourceModified`.
+Namn och adresser följer regeln "nyast vinner", mätt på källans `sourceModified`. De ersätts som helhet, så kunden har
+namnet och adresserna från det senaste meddelandet som hade något av dem ([§5.2]).
 
-**Valdes bort:** Att den som skrev senast vinner.
+**Valdes bort:**
 
-**Skäl:** Ordningen blir deterministisk oavsett i vilken ordning meddelandena kommer, även vid grundladdning.
+- Att den som skrev senast vinner.
+- Att slå ihop adresserna per typ eller per källa.
+
+**Skäl:** Ordningen blir deterministisk oavsett i vilken ordning meddelandena kommer, även vid grundladdning. Slogs
+adresserna ihop per typ eller källa skulle en adress som källan har tagit bort ligga kvar för alltid, eftersom inget
+meddelande säger att den ska bort.
 
 ## Beslut 22: Kontaktuppgifter lagras per engagemang
 
@@ -581,6 +587,21 @@ partyId slås upp direkt mot Citizen och LegalEntity, och partytypen avgörs med
 beroende till. Direkt syns fel per element i Citizens batchsvar, som Party annars gör om till att numret inte finns,
 och partytypen avgörs utan att personnummer hämtas.
 
+## Beslut 57: En kund kan ha flera adresser, och en kontaktperson har en
+
+En kund har noll eller flera adresser i en egen tabell, `customer_address`, var och en med en typ: postadress,
+besöksadress, fakturaadress eller folkbokföringsadress ([§5.2]). En kontaktperson har en adress på sin kontaktrad, vald
+efter typ ([§5.3]). Formatet har en lista med adresser per part, och publicerarna skickar alla adresser som källan har.
+
+**Valdes bort:**
+
+- Adresskolumner på `customer`, som bara rymmer en adress.
+- En gemensam adresstabell för kunder och kontaktpersoner, som skulle ha en ägare av två slag och ingen FK med kaskad.
+- Alla adresser för en kontaktperson.
+
+**Skäl:** Casedata har flera adresser per part, och contract och LegalEntity skiljer på postadress och besöksadress. En
+kontaktperson behöver bara en adress för att gå att nå, och färre adresser är färre personuppgifter.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -611,4 +632,5 @@ och partytypen avgörs utan att personnummer hämtas.
 [§3.5]: 03-meddelanden.md#35-tillämpning
 [§3.7]: 03-meddelanden.md#37-felhantering
 [§12]: 12-drift.md
+[§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 

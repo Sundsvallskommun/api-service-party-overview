@@ -4,27 +4,39 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 5.1 Synlighet per namespace
 
-|                 Data                 |            Vad en verksamhet (`{namespace}` i sökvägen) ser             |
-|--------------------------------------|-------------------------------------------------------------------------|
-| Kund (namn, adress, typ, skyddsnivå) | Allt. För en skyddad kund finns varken namn eller adress ([§5.4]).      |
-| Engagemang och deras historik        | Alla i kommunen. Valfritt filter: `engagementNamespace`.                |
-| Kontaktuppgifter och kontaktpersoner | `namespace = {namespace}` eller `namespace is null`                     |
-| Noteringar och deras historik        | `namespace = {namespace}`                                               |
-| Teknisk logg                         | Ingen namespace-filtrering. Exponeras utan namespace i sökvägen ([§6]). |
+|                  Data                  |            Vad en verksamhet (`{namespace}` i sökvägen) ser             |
+|----------------------------------------|-------------------------------------------------------------------------|
+| Kund (namn, adresser, typ, skyddsnivå) | Allt. För en skyddad kund finns varken namn eller adresser ([§5.4]).    |
+| Engagemang och deras historik          | Alla i kommunen. Valfritt filter: `engagementNamespace`.                |
+| Kontaktuppgifter och kontaktpersoner   | `namespace = {namespace}` eller `namespace is null`                     |
+| Noteringar och deras historik          | `namespace = {namespace}`                                               |
+| Teknisk logg                           | Ingen namespace-filtrering. Exponeras utan namespace i sökvägen ([§6]). |
 
 Frågan för kontakter, `customer_id = ? and (namespace = ? or namespace is null)`, går via
 `idx_contact_customer_id_namespace` (`ref_or_null`).
 
 ## 5.2 Namn och adress
 
-- Namn och adress sätts från kundparten i varje tillämpat meddelande som har namn eller adress. Det gäller bara om
+En kund kan ha flera adresser, var och en med en typ ([beslut 57]):
+
+|                Typ                |        Adress        |                 Kommer från                 |
+|-----------------------------------|----------------------|---------------------------------------------|
+| `POSTAL_ADDRESS`                  | postadress           | meddelanden, och LegalEntitys `postAddress` |
+| `VISITING_ADDRESS`                | besöksadress         | meddelanden, och LegalEntitys `address`     |
+| `INVOICE_ADDRESS`                 | fakturaadress        | meddelanden                                 |
+| `POPULATION_REGISTRATION_ADDRESS` | folkbokföringsadress | Citizen, för en privatkund                  |
+
+- Namn och adresser sätts från kundparten i varje tillämpat meddelande som har namn eller adresser. Det gäller bara om
   `customer.profile_modified` är null eller ≤ meddelandets `sourceModified`. När det sker sätts `profile_modified` till
   `sourceModified`.
-- Uppgifterna ersätts som helhet. Ett meddelande som har namn men saknar adress tömmer alltså adressen.
+- Uppgifterna ersätts som helhet: kundens adresser raderas och meddelandets skrivs. Kunden har alltså namnet och
+  adresserna från det senaste meddelandet, och ett meddelande som har namn men saknar adresser tömmer adresserna.
+- Identiska adresser, med samma typ och samma fält, sparas en gång. En adress där alla fält utom typen är tomma sparas
+  inte. Adresserna returneras i typernas ordning i tabellen ovan och sedan sorterade på gatuadress.
 - En oskyddad kund som skapas av en notering får sina uppgifter från Citizen eller LegalEntity, med
-  `profile_modified = now()` ([§7.2]). Detsamma gäller när den nattliga kontrollen fyller i namn och adress för en
-  privatkund ([§5.4]).
-- För en skyddad kund sparas inga namn- eller adressuppgifter alls ([§5.4]).
+  `profile_modified = now()` ([§7.2]). Detsamma gäller när den nattliga kontrollen fyller i namn och
+  folkbokföringsadress för en privatkund ([§5.4]).
+- För en skyddad kund sparas inga namn eller adresser alls ([§5.4]).
 
 ## 5.3 Kunder, kontaktpersoner och kontaktuppgifter
 
@@ -40,12 +52,16 @@ För varje kunds engagemangsrad ersätts kontaktuppgifterna (`contact` med `enga
 
 - en rad med `contact_type = CUSTOMER` med kundpartens egna `contactChannels`, om den har några, och
 - om kunden är `ENTERPRISE`: en rad med `contact_type = CONTACT_PERSON` för varje kontaktperson, med namn, den roll som
-  matchade, kontaktkanaler och kontaktpersonens partyId när det är känt.
+  matchade, kontaktkanaler, en adress och kontaktpersonens partyId när det är känt.
 
 Alla rader får engagemangets namespace.
 
-Vid läsning slås identiska kontakter ihop: samma typ, namn, roll och samma uppsättning kanaler. Det som ändrats senast
-kommer först.
+Kontaktpersonens adress är partens första adress av typen `POSTAL_ADDRESS`, annars den första av typen
+`VISITING_ADDRESS` och annars den första av typen `INVOICE_ADDRESS` ([beslut 57]). Raden med
+`contact_type = CUSTOMER` har ingen adress, eftersom kundens adresser ligger på kunden ([§5.2]).
+
+Vid läsning slås identiska kontakter ihop: samma typ, namn, roll, adress och samma uppsättning kanaler. Det som ändrats
+senast kommer först.
 
 En ändring av kontaktpersonsrollerna gäller från nästa meddelande om varje objekt. Befintliga rader räknas om vid nästa
 ändring i källan eller vid en grundladdning.
@@ -68,8 +84,8 @@ kontaktperson, eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är
 - Den nattliga kontrollen gör samma radering för varje kund i batchen vars nivå inte är `NONE` ([§5.4]). En kontaktrad
   som ett meddelande skrev samtidigt som personen skapades som skyddad kund, innan det fanns en kundrad att låsa, ligger
   då kvar högst ett dygn.
-- En kontaktperson som saknar både partyId och legalId kan inte kontrolleras och sparas som förut. Det står som risk i
-  [§13.3].
+- En kontaktperson som saknar både partyId och legalId kan inte kontrolleras och sparas med namn, kanaler och adress.
+  Det står som risk i [§13.3].
 
 ## 5.4 Skyddad identitet
 
@@ -179,9 +195,9 @@ Så länge statusen är okänd gäller följande:
   engagemangens referenser.
 - Den nattliga kontrollen tar alltid med kunden. Saknar kunden `registry_party_id` görs uppslaget av organisationsnumret
   och ägaren om först. Är kunden inte en enskild firma blir `registry_protection` null. När Citizen svarar ersätts
-  `UNKNOWN` med folkbokföringens nivå. Är kunden en oskyddad privatkund fylls namn och adress i från svaret, och en
-  enskild firma får dem med nästa tillämpade meddelande. Kontaktuppgifterna kommer tillbaka med nästa tillämpade
-  meddelande från källan.
+  `UNKNOWN` med folkbokföringens nivå. Är kunden en oskyddad privatkund fylls namn och folkbokföringsadress i från
+  svaret, och en enskild firma får dem med nästa tillämpade meddelande. Kontaktuppgifterna kommer tillbaka med nästa
+  tillämpade meddelande från källan.
 - Frontend visar `UNKNOWN` som okänd skyddsstatus och hanterar kunden som skyddad.
 
 401 från Citizen ger inte `UNKNOWN`. Den betyder att behörigheten i Metakatalogen saknas, vilket är ett
@@ -193,17 +209,17 @@ nattliga kontrollen ersätter det.
 
 **Hantering när kunden är skyddad** (`protection_level ≠ NONE`):
 
-1. `name`, adressfälten och `profile_modified` töms, och kundens rader med `contact_type = CUSTOMER` raderas. Så länge
+1. `name` och `profile_modified` töms, och kundens adresser och rader med `contact_type = CUSTOMER` raderas. Så länge
    skyddet gäller sparas inga sådana uppgifter, varken från meddelanden, från Citizen eller från LegalEntity.
-2. Kunden indexeras i OpenSearch bara med engagemangens referenser, utan namn, adress, kontaktuppgifter, titlar och
+2. Kunden indexeras i OpenSearch bara med engagemangens referenser, utan namn, adresser, kontaktuppgifter, titlar och
    noteringar. Den går därför bara att hitta på en referens, som ett ärendenummer, på partyId eller med uppslag på
    personnummer ([§6]).
-3. API:et returnerar `protectionLevel` på kunden, och namn, adress och kontaktkanaler är tomma. Frontend ska visa
+3. API:et returnerar `protectionLevel` på kunden, och namn, adresser och kontaktkanaler är tomma. Frontend ska visa
    skyddet tydligt i varje vy som rör kunden och skilja nivåerna åt, också `UNKNOWN`.
 4. Engagemang, historik och noteringar finns kvar. Envelope-data och noteringar ska inte innehålla skyddsvärda
    uppgifter. Det ansvaret ligger hos källsystemen och verksamheterna ([§13]).
 
-**När skyddet upphör** fylls namn och adress i igen. För privatkunder sker det från Citizens svar i den nattliga
+**När skyddet upphör** fylls namn och adresser i igen. För privatkunder sker det från Citizens svar i den nattliga
 kontrollen, och för en enskild firma med nästa tillämpade meddelande från källan. Kontaktuppgifter kommer tillbaka med
 nästa tillämpade meddelande från källan, eller vid en grundladdning.
 
@@ -237,4 +253,6 @@ nästa tillämpade meddelande från källan, eller vid en grundladdning.
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
 [§5.3]: #53-kunder-kontaktpersoner-och-kontaktuppgifter
+[beslut 57]: 00-beslutslogg.md#beslut-57-en-kund-kan-ha-flera-adresser-och-en-kontaktperson-har-en
+[§5.2]: #52-namn-och-adress
 

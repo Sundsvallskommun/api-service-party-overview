@@ -51,7 +51,7 @@ Del av [arkitekturen för party-overview](README.md).
 4. **Version:** objektets `@Version`. Den ska öka vid varje ändring som publiceras.
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
 6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
-   publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adress
+   publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adresser
    eller kontaktkanaler för den parten. Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för
    kommande publicerare.
    - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort, och ett inledande `16` på ett tolvsiffrigt
@@ -63,6 +63,9 @@ Del av [arkitekturen för party-overview](README.md).
    - Textfälten hålls inom maxlängderna i [§3.1].
    - Kontaktkanalernas typ mappas till `EMAIL` eller `PHONE`. Kanaler med en annan typ skickas inte, eftersom ett okänt
      värde dead-letterar hela meddelandet ([§3.7]). En kanal som förekommer flera gånger skickas en gång.
+   - Adressernas typ mappas till `POSTAL_ADDRESS`, `VISITING_ADDRESS` eller `INVOICE_ADDRESS`. En adress utan typ
+     skickas som `POSTAL_ADDRESS`, och en adress med en annan typ skickas inte. En adress där alla fält är tomma skickas
+     inte, en adress som förekommer flera gånger skickas en gång, och en part får högst 10 adresser.
 7. **Grundladdning:**
    - En admin-endpoint eller ett jobb skriver outbox-rader utan aktiviteter för alla objekt i kommunen, i batchar med
      keyset-paginering.
@@ -102,7 +105,8 @@ Del av [arkitekturen för party-overview](README.md).
   Bara `PRIVATE` och `ENTERPRISE` mappas, utan hänsyn till skiftläge. Stakeholders med `EMPLOYEE` eller `ADMINISTRATOR`
   skickas inte, på samma sätt som handläggarna i Casedata. De kan ändå aldrig bli kunder, och deras uppgifter ska inte
   gå över kön. Andra typer skickas utan id ([§11.1]). `role`, namn,
-  adress och `contactChannels` följer med. Kanaltypen är fritext i SM och mappas utan hänsyn till skiftläge: `EMAIL`
+  adress och `contactChannels` följer med. Adressen skickas som `POSTAL_ADDRESS`, med `address` som `street` och
+  `zipCode` som `postalCode`. Kanaltypen är fritext i SM och mappas utan hänsyn till skiftläge: `EMAIL`
   blir `EMAIL`, och `PHONE` och `SMS` blir `PHONE` ([§11.1]). Stakeholders utan partyId skickas med, eftersom de kan
   vara kontaktpersoner. `parameters` skickas aldrig.
 - **Utkast:** Ärenden med `lifecycle = DRAFT` publiceras inte ([beslut 26]). När ett utkast skickas in publiceras det
@@ -145,7 +149,7 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
 - **Tidsstämplar:** Nya, nullbara kolumner `created` och `modified` på kontraktet. Det är en additiv migrering, och
   befintliga rader behåller null. `created` och `modified` sätts när ett kontrakt skapas, och `modified` vid varje
   ändring. Saknar ett kontrakt `modified` publiceras `sourceModified` som den fasta tidpunkten `1970-01-01T00:00:00Z`,
-  som i party-assets. Ett gammalt kontrakt räknas då aldrig som nyast, så contracts namn och adress skriver inte över
+  som i party-assets. Ett gammalt kontrakt räknas då aldrig som nyast, så contracts namn och adresser skriver inte över
   de andra källornas efter grundladdningen ([§5.2]).
 - **Vem:** `Identifier` fångas när `X-Sent-By` finns, och blir `performedBy`. Utan headern saknas `performedBy`, så att
   contracts befintliga klienter inte behöver ändras.
@@ -157,7 +161,8 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   `startDate`/`endDate`, `sourceCreated` = `created`, `sourceModified` = `modified`. Ingen titel. Inget namespace, så
   engagemangen blir globala ([beslut 23]).
 - **Parter:** Stakeholders med `roles`, namn, adress och kontaktkanaler, där `phoneNumber` blir `PHONE` och
-  `emailAddress` blir `EMAIL` ([beslut 49]).
+  `emailAddress` blir `EMAIL` ([beslut 49]). Adressen skickas med sin typ, där `BILLING_ADDRESS` blir
+  `INVOICE_ADDRESS`, och med `streetAddress` som `street` och `town` som `city`.
   - Bara stakeholders med minst en partsroll skickas: `LESSEE`, `LESSOR`, `BUYER`, `SELLER`, `LEASEHOLDER`, `GRANTOR`,
     `LAND_RIGHT_OWNER`, `PROPERTY_OWNER`, `PRIMARY_BILLING_PARTY` eller `CONTACT_PERSON`. Den som bara är `SIGNATORY`
     eller har en `POWER_OF_ATTORNEY_*`-roll skickas inte. En skickad stakeholder har alla sina roller med sig.
@@ -194,8 +199,9 @@ från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är
   (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas inte.
 - **Parter:** `errand.stakeholders`, där `PERSON` blir `PRIVATE` och `ORGANIZATION` blir `ENTERPRISE`. `personId`
   skickas som partyId bara om det är ett UUID, och aldrig annars. `organizationNumber` skickas som legalId bara när
-  partyId saknas. `roles`, namn, adress (`POSTAL_ADDRESS`, annars `VISITING_ADDRESS`) och `contactChannels` följer med,
-  där `CELLPHONE` och `PHONE` blir `PHONE`. Parter med rollen `ADMINISTRATOR` eller med `adAccount`, alltså handläggare,
+  partyId saknas. `roles`, namn, alla adresser och `contactChannels` följer med, där `CELLPHONE` och `PHONE` blir
+  `PHONE`. Adresserna skickas med sin `addressCategory` som typ, och `street` och `houseNumber` blir `street` med
+  mellanslag emellan. Parter med rollen `ADMINISTRATOR` eller med `adAccount`, alltså handläggare,
   skickas inte. Parter utan id skickas med, eftersom de kan vara kontaktpersoner. `extraParameters` och
   `authorizedSignatory` skickas aldrig.
 - **Loggning:** `StakeholderEntity.toString` skriver ut personId och organisationsnummer, och `ErrandEntity` är `@Data`.
