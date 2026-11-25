@@ -30,8 +30,12 @@ se.sundsvall.partyoverview
 - **Beroenden:** `dept44-starter-jpa`, `dept44-starter-feign`, `dept44-starter-rabbitmq`, `dept44-starter-scheduler`,
   `dept44-common-validators`, `hibernate-search-mapper-orm` och `hibernate-search-backend-elasticsearch`. För test:
   `dept44-starter-test`, `dept44-starter-jpa-test`, Testcontainers RabbitMQ och `opensearch-testcontainers`.
-- **Genererade modeller:** `integrations/party-overview-messages.yaml`, `party.yaml`, `citizen.yaml` och
-  `legalentity.yaml`, genererade med openapi-generator till `generated.se.sundsvall.*`, som i POC:ens `pom.xml`.
+- **Genererade modeller:**
+  - `party.yaml`, `citizen.yaml` och `legalentity.yaml` genereras med openapi-generator till
+    `generated.se.sundsvall.*`, som i POC:ens `pom.xml`.
+  - `party-overview-messages.yaml` är ett AsyncAPI-dokument. openapi-generator kan inte läsa AsyncAPI, så modellerna
+    genereras med ZenWave SDK (`zenwave-sdk-maven-plugin` med `asyncapi-jsonschema2pojo`, 2.8.1), som på grenen
+    `publish-events` i det här repot.
 - **Entiteter:** ingen Lombok, utan `create()`/`withX()` och `equals`/`hashCode`/`toString` som i POC:en.
 - **Lyssnaren:** ingen `@ConditionalOnProperty`, eftersom startern inte startar lyssnare när RabbitMQ är avstängt. Ingen
   `@EnableRabbit`, och ingen `MessageConverter` av egen.

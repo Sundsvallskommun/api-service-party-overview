@@ -16,7 +16,7 @@ Del av [arkitekturen för party-overview](README.md).
 | party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar som skapar kunder (C8) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
 | En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                     |
 | Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                   |
-| dept44-starter-rabbitmq är släppt.                                                                                        | C11 och alla publicerare                                                                                                                 |
+| Party har `POST /{municipalityId}/ENTERPRISE/partyIds` (P1, [beslut 32]).                                                 | Mappningen av organisationsnummer i meddelanden (C5) och i uppslaget (C7)                                                                |
 | Kontaktpersonsrollerna är satta via REST ([§12]).                                                                         | Kontaktpersoner på företag                                                                                                               |
 
 ## 13.3 Risker
@@ -37,11 +37,6 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Titlar och noteringar har tak ([§6.2]). Kön slår ihop ändringar per kund, så dokumentet byggs om högst
   en gång per relaykörning.
-
-- dept44-starter-rabbitmq är inte släppt (8.2.0-SNAPSHOT på `hydran-3527-rabbitmq-starter`).
-
-  **Hantering:** C11 och publicerarnas uppgifter väntar på releasen. Casedata måste dessutom uppgraderas från dept44
-  8.0.12. C1–C10, C12 och C13 kan byggas och driftsättas utan lyssnare.
 
 - Dead letter-köerna innehåller personuppgifter (legalId och namn) och har ingen TTL.
 
@@ -147,6 +142,7 @@ Del av [arkitekturen för party-overview](README.md).
 [§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
+[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: #132-förutsättningar-före-driftsättning
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare

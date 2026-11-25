@@ -4,7 +4,7 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 11.1 Gemensamt för alla publicerare
 
-1. **Beroende:** `dept44-starter-rabbitmq` och `Dept44RabbitPublisher`.
+1. **Beroende:** `dept44-starter-rabbitmq` och `Dept44RabbitPublisher`, som finns från dept44 8.2.0.
 2. **Outbox ([beslut 20]):**
    - Tabellen `party_overview_outbox` (`id`, `object_type`, `object_id`, `municipality_id`, `activities` som JSON,
      `version`, `created`) skrivs i samma transaktion som ändringen. `version` sätts bara vid en radering, eftersom
@@ -62,7 +62,9 @@ Del av [arkitekturen för party-overview](README.md).
   första ändringen), `namespace`.
 - **Parter:** Stakeholders: `externalId` som partyId om det är ett UUID, och `externalIdType` som partytyp.
   `externalIdType` är fritext per namespace, med värden som `PRIVATE`, `ENTERPRISE`, `EMPLOYEE` och `ADMINISTRATOR`.
-  Bara `PRIVATE` och `ENTERPRISE` mappas, utan hänsyn till skiftläge, och andra skickas utan id ([§11.1]). `role`, namn,
+  Bara `PRIVATE` och `ENTERPRISE` mappas, utan hänsyn till skiftläge. Stakeholders med `EMPLOYEE` eller `ADMINISTRATOR`
+  skickas inte, på samma sätt som handläggarna i Casedata. De kan ändå aldrig bli kunder, och deras uppgifter ska inte
+  gå över kön. Andra typer skickas utan id ([§11.1]). `role`, namn,
   adress och `contactChannels` följer med. Kanaltypen är fritext i SM och mappas utan hänsyn till skiftläge: `EMAIL`
   blir `EMAIL`, och `PHONE` och `SMS` blir `PHONE` ([§11.1]). Stakeholders utan partyId skickas med, eftersom de kan
   vara kontaktpersoner. `parameters` skickas aldrig.
@@ -106,16 +108,21 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   `startDate`/`endDate`, `sourceCreated` = `created`, `sourceModified` = `modified`. Ingen titel. Inget namespace, så
   engagemangen blir globala ([beslut 23]).
 - **Parter:** Stakeholders med `roles`, namn, adress och kontaktkanaler, där `phoneNumber` blir `PHONE` och
-  `emailAddress` blir `EMAIL`. `type` blir partytyp: `PERSON` blir `PRIVATE`, och `ORGANIZATION`, `ASSOCIATION`,
-  `MUNICIPALITY` och `REGION` blir `ENTERPRISE`. `OTHER` och null skickas utan id ([§11.1]). partyId om det finns,
-  annars `organizationNumber` som legalId med `ENTERPRISE`. `CONTACT_PERSON` skickas som en vanlig part, och
-  party-overview kopplar den till företagen ([§5.3]).
+  `emailAddress` blir `EMAIL` ([beslut 49]).
+  - Bara stakeholders med minst en partsroll skickas: `LESSEE`, `LESSOR`, `BUYER`, `SELLER`, `LEASEHOLDER`, `GRANTOR`,
+    `LAND_RIGHT_OWNER`, `PROPERTY_OWNER`, `PRIMARY_BILLING_PARTY` eller `CONTACT_PERSON`. Den som bara är `SIGNATORY`
+    eller har en `POWER_OF_ATTORNEY_*`-roll skickas inte. En skickad stakeholder har alla sina roller med sig.
+  - Stakeholders av typen `MUNICIPALITY` skickas aldrig, eftersom det är kommunen själv.
+  - `type` blir partytyp: `PERSON` blir `PRIVATE`, och `ORGANIZATION`, `ASSOCIATION` och `REGION` blir `ENTERPRISE`.
+    `OTHER` och null skickas utan id ([§11.1]).
+  - partyId om det finns, annars `organizationNumber` som legalId med `ENTERPRISE`. `CONTACT_PERSON` skickas som en
+    vanlig part, och party-overview kopplar den till företagen ([§5.3]).
 - **Grundladdning:** Sidvis intern genomgång utan bilagor, som skriver outbox-rader.
 
 ## 11.5 Casedata (`ERRAND`, källan `CASE_DATA`)
 
 Casedata har ungefär 5 000 ärenden. Det finns ingen outbox och ingen RabbitMQ idag, och tjänsten måste uppgraderas
-från dept44 8.0.12 till den version där dept44-starter-rabbitmq är släppt. Analysen är gjord på `origin/main`
+från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är gjord på `origin/main`
 (2026-10-19).
 
 - **Opt-in:** Egenskapen `integration.party-overview.namespaces` i `application.yml`, eftersom Casedata saknar
@@ -158,4 +165,5 @@ från dept44 8.0.12 till den version där dept44-starter-rabbitmq är släppt. A
 [beslut 23]: 00-beslutslogg.md#beslut-23-contract-och-party-assets-publicerar-utan-namespace
 [beslut 26]: 00-beslutslogg.md#beslut-26-supportmanagement-publicerar-inte-utkast
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
+[beslut 49]: 00-beslutslogg.md#beslut-49-contract-publicerar-bara-avtalsparter
 

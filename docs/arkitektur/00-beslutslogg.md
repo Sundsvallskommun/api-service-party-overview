@@ -40,7 +40,8 @@ Kunddata (namn, adress, kontaktuppgifter och kontaktpersoner) kommer från medde
 Noteringar ägs av party-overview och skapas, ändras och raderas via REST. En notering hör alltid till ett namespace, och
 det finns inga globala noteringar.
 
-**Valdes bort:** Noteringar från källsystem.
+**Valdes bort:** Noteringar från källsystem, t.ex. api-service-notes. Deras noteringar är ärendedata, inte
+envelope-data, och samlas inte in.
 
 **Skäl:** Noteringar är kundvyns egna anteckningar, och kravet är att en verksamhet bara ser sina egna.
 
@@ -60,7 +61,9 @@ namespacet plus de globala. Noteringar syns bara för det egna namespacet.
 
 **Valdes bort:** Att begränsa engagemang till eget namespace, eller att göra synligheten konfigurerbar.
 
-**Skäl:** Kundvyn ska ge helheten. Det som är känsligt stoppas redan hos publiceraren ([beslut 19]).
+**Skäl:** Kundvyn ska ge helheten. Engagemang kan synas för hela kommunen, eftersom det som är känsligt aldrig
+publiceras. SupportManagement publicerar bara namespaces som har slagit på det ([beslut 19]). Casedata publicerar inte
+sekretessmarkerade ärenden ([beslut 34]) och tills vidare bara `SBK_MEX` ([beslut 37]).
 
 ## Beslut 8: En engagemangsrad per kund
 
@@ -306,13 +309,15 @@ när någon av dem innehåller meddelanden, och Spring Boot Admin larmar då til
 **Skäl:** Inget meddelande får försvinna utan att någon har tittat på det. Spring Boot Admin med Slack-notifiering
 används redan.
 
-## Beslut 32: Organisationsnummer i URL:en mot Party
+## Beslut 32: Organisationsnummer skickas i kroppen mot Party
 
-Organisationsnummer skickas i URL:en mot Party, eftersom Party saknar batch för `ENTERPRISE`.
+Organisationsnummer mappas till partyId med en ny endpoint i Party, `POST /{municipalityId}/ENTERPRISE/partyIds`, med
+numren i kroppen. Den byggs i P1 ([§14]).
 
-**Valdes bort:** Att beställa en POST-endpoint i Party.
+**Valdes bort:** Den befintliga `GET /{municipalityId}/ENTERPRISE/{legalId}/partyId`, med numret i URL:en.
 
-**Skäl:** Det är befintlig funktionalitet och accepterat.
+**Skäl:** För en enskild firma är organisationsnumret ägarens personnummer, och Party tar emot det som legalId för
+`ENTERPRISE`. En URL hamnar i gatewayens och Party:s loggar, och personnummer ska aldrig stå i en URL ([beslut 24]).
 
 ## Beslut 33: Kontaktpersonsrollerna sätts via REST vid driftsättning
 
@@ -436,8 +441,7 @@ RabbitMQ:s health-indikator ingår i `/actuator/health` men inte i `readiness`.
 
 ## Beslut 46: Sökfrågan skickas i kroppen
 
-Kundsökningen är `POST …/customers/search` med frågan i kroppen. Anropet mot Party med organisationsnummer i URL:en
-undantas från dept44:s payload-loggning.
+Kundsökningen är `POST …/customers/search` med frågan i kroppen.
 
 **Valdes bort:** `GET` med frågan i URL:en.
 
@@ -469,6 +473,20 @@ flyttades tillbaka från dead letter-kön kom i fel ordning och tappade sina akt
 uppgifter innan statusen är känd. Ett eget värde visar att statusen är okänd, i stället för en skyddsnivå som personen
 kanske inte har.
 
+## Beslut 49: contract publicerar bara avtalsparter
+
+contract skickar bara stakeholders med minst en partsroll eller rollen `CONTACT_PERSON`, och aldrig stakeholders av
+typen `MUNICIPALITY` ([§11.4]). Den som bara skriver under (`SIGNATORY`) eller har fullmakt (`POWER_OF_ATTORNEY_*`)
+skickas inte.
+
+**Valdes bort:** Att skicka alla stakeholders, eller att göra `SIGNATORY` och fullmaktsrollerna till
+kontaktpersonsroller.
+
+**Skäl:** Kommunen själv kan vara part, t.ex. som `LESSOR`, och skulle då bli kund med ett engagemang per kontrakt. Den
+som bara skriver under eller har fullmakt företräder en part och är inte själv kund. Som kontaktpersonsroll skulle
+`SIGNATORY` hindra en privat hyresgäst som också skriver under från att bli kund, eftersom en part med
+kontaktpersonsroll aldrig blir kund ([beslut 15]).
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -476,6 +494,12 @@ kanske inte har.
 [§8.2]: 08-teknisk-logg.md#82-radering-av-den-tekniska-loggen
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
+[§11.4]: 11-publicerare.md#114-contract-contract
+[§14]: 14-uppgifter.md#p1--party-partyid-för-organisationsnummer-i-batch
+[beslut 15]: #beslut-15-party-overview-härleder-kontaktpersoner
 [beslut 19]: #beslut-19-supportmanagement-publicerar-bara-namespaces-med-opt-in
+[beslut 24]: #beslut-24-uppslag-på-personnummer-eller-organisationsnummer
+[beslut 34]: #beslut-34-casedata-publicerar-ärenden-och-sekretessärenden-som-delete
+[beslut 37]: #beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 48]: #beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 

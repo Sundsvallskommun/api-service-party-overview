@@ -110,7 +110,8 @@ Exempel:
 ```
 
 party-overview har en lokal kopia av formatets scheman i `src/main/resources/integrations/party-overview-messages.yaml`
-och genererar sina modeller från den, som för alla andra integrationer.
+och genererar sina modeller från den. Filen är ett AsyncAPI-dokument, som openapi-generator inte kan läsa, så modellerna
+genereras med ZenWave SDK ([§9]).
 
 ## 3.2 Topologi
 
@@ -289,4 +290,5 @@ köer inte påverkas.
 [§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [§7.2]: 07-integrationer.md#72-citizen-och-legalentity
+[§9]: 09-kodstruktur.md
 

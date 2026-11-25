@@ -4,19 +4,20 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 7.1 Party (api-service-party)
 
-|                       Användning                        |                                                                  Endpoint                                                                   |
-|---------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| Personnummer → partyId (meddelanden och uppslag)        | `POST /{municipalityId}/PRIVATE/partyIds` (batch, inget personnummer i URL:en)                                                              |
-| Organisationsnummer → partyId (meddelanden och uppslag) | `GET /{municipalityId}/ENTERPRISE/{legalId}/partyId`. Det finns ingen batch, så numret hamnar i URL:en, vilket är accepterat ([beslut 32]). |
-| Partytyp för ett partyId                                | `GET /{municipalityId}/PRIVATE/{partyId}/legalId`, och vid 404 samma anrop med `ENTERPRISE`. Svaret används bara för att avgöra typen.      |
+|                       Användning                        |                                                                Endpoint                                                                |
+|---------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| Personnummer → partyId (meddelanden och uppslag)        | `POST /{municipalityId}/PRIVATE/partyIds` (batch, inget personnummer i URL:en)                                                         |
+| Organisationsnummer → partyId (meddelanden och uppslag) | `POST /{municipalityId}/ENTERPRISE/partyIds` (batch, inget nummer i URL:en). Endpointen byggs i P1 ([beslut 32]).                      |
+| Partytyp för ett partyId                                | `GET /{municipalityId}/PRIVATE/{partyId}/legalId`, och vid 404 samma anrop med `ENTERPRISE`. Svaret används bara för att avgöra typen. |
 
 - Feign med `dismiss404` → `Optional`, `@CircuitBreaker` och OAuth2.
 - Förebilden är `api-service-party-assets`: `integration/party/PartyClient.java`, `PartyConfiguration.java` och
   `PartyTypeProvider.java`.
 - `PartyIntegration` lägger aldrig legalId i loggrader eller undantag, eftersom Party:s 404-detail innehåller det. Den
   ska inte kopieras från case-status, som gör just det.
-- Anropet med organisationsnumret i URL:en undantas från dept44:s payload-loggning med `logbook.excluded.paths`. Logbook
-  loggar annars hela URL:en för varje Feign-anrop. Kropparna är skyddade av allowlisten, men inte URL:en.
+- Varken personnummer eller organisationsnummer skickas i en URL. För en enskild firma är organisationsnumret ägarens
+  personnummer, och en URL hamnar både i dept44:s payload-logg och i gatewayens och Party:s loggar. Kropparna loggas bara
+  med de fält som står i allowlisten.
 
 ## 7.2 Citizen och LegalEntity
 
@@ -64,5 +65,5 @@ Förebilder:
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [beslut 6]: 00-beslutslogg.md#beslut-6-en-notering-på-en-okänd-kund-skapar-kunden
-[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-i-urlen-mot-party
+[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party
 

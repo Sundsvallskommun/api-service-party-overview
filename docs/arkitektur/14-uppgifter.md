@@ -3,8 +3,8 @@
 Del av [arkitekturen för party-overview](README.md).
 
 Varje uppgift går att slå ihop för sig. Acceptanskriterierna kan klistras in i en Jira-subtask. **C** är
-party-overview, **T** är topologin och **SM**, **PA**, **CT** och **CD** är publicerarna. Formatet (**F1**) ägs av
-beställaren och definieras senare.
+party-overview, **P** är api-service-party, **T** är topologin och **SM**, **PA**, **CT** och **CD** är publicerarna.
+Formatet (**F1**) ägs av beställaren och definieras senare.
 
 **Gäller alla uppgifter (Definition of Done):**
 
@@ -14,41 +14,44 @@ beställaren och definieras senare.
 - Inga TODO:s.
 - README är uppdaterad när konfiguration eller drift påverkas.
 
-| Steg | Id  |                             Uppgift                              |                          Beror på                           |
-|------|-----|------------------------------------------------------------------|-------------------------------------------------------------|
-| 1    | C1  | Projektgrund: skrota POC:en, beroenden, konfiguration            | —                                                           |
-| 2    | C2  | Datamodell, Flyway och schemaverifiering                         | C1                                                          |
-| 3    | C3  | Integrationer mot Party, Citizen och LegalEntity                 | C1                                                          |
-| 4    | C4  | Kontaktpersonsroller via REST                                    | C2                                                          |
-| 5    | C5  | Meddelandekärnan, inklusive skyddad identitet                    | C2, C3, C4, F1                                              |
-| 6    | C6  | Kundmeddelanden (`CUSTOMER`)                                     | C5                                                          |
-| 7    | C7  | Läs-API och uppslag för kund, kontakter, engagemang och historik | C2, C3                                                      |
-| 8    | C8  | Noteringar                                                       | C2, C3                                                      |
-| 9    | C9  | Kundradering via REST och API för teknisk logg                   | C2                                                          |
-| 10   | C10 | Skyddad identitet: nattlig kontroll                              | C3, C5                                                      |
-| 11   | T2  | Egen OpenSearch-container per miljö                              | —                                                           |
-| 12   | C12 | Sökindex: Hibernate Search, kö och relay                         | C2, T2                                                      |
-| 13   | C13 | Sök-endpoint                                                     | C12                                                         |
-| 14   | T1  | Köer och exchanges i rabbitmq-topology                           | F1                                                          |
-| 15   | C11 | RabbitMQ-lyssnare, larm för dead letters och `MessageIT`         | C5, C6, T1, release av startern, behörighet i Metakatalogen |
-| 16   | SM1 | SM: outbox, relay och publicering                                | F1, release av startern                                     |
-| 17   | SM2 | SM: grundladdning                                                | SM1                                                         |
-| 18   | CD1 | Casedata: outbox, relay och publicering                          | F1, release av startern                                     |
-| 19   | CD2 | Casedata: grundladdning                                          | CD1                                                         |
-| 20   | PA1 | party-assets: outbox, relay och publicering                      | F1, release av startern                                     |
-| 21   | PA2 | party-assets: grundladdning via outbox                           | PA1                                                         |
-| 22   | CT1 | contract: tidsstämplar och vem                                   | —                                                           |
-| 23   | CT2 | contract: outbox, relay och publicering                          | CT1, F1, release av startern                                |
-| 24   | CT3 | contract: grundladdning                                          | CT2                                                         |
+| Steg | Id  |                               Uppgift                                |                Beror på                |
+|------|-----|----------------------------------------------------------------------|----------------------------------------|
+| 1    | C1  | Projektgrund: skrota POC:en, beroenden, konfiguration                | —                                      |
+| 2    | C2  | Datamodell, Flyway och schemaverifiering                             | C1                                     |
+| 3    | P1  | Party: partyId för organisationsnummer i batch, med numren i kroppen | —                                      |
+| 4    | C3  | Integrationer mot Party, Citizen och LegalEntity                     | C1, P1                                 |
+| 5    | C4  | Kontaktpersonsroller via REST                                        | C2                                     |
+| 6    | C5  | Meddelandekärnan, inklusive skyddad identitet                        | C2, C3, C4, F1                         |
+| 7    | C6  | Kundmeddelanden (`CUSTOMER`)                                         | C5                                     |
+| 8    | C7  | Läs-API och uppslag för kund, kontakter, engagemang och historik     | C2, C3                                 |
+| 9    | C8  | Noteringar                                                           | C2, C3                                 |
+| 10   | C9  | Kundradering via REST och API för teknisk logg                       | C2                                     |
+| 11   | C10 | Skyddad identitet: nattlig kontroll                                  | C3, C5                                 |
+| 12   | T2  | Egen OpenSearch-container per miljö                                  | —                                      |
+| 13   | C12 | Sökindex: Hibernate Search, kö och relay                             | C2, T2                                 |
+| 14   | C13 | Sök-endpoint                                                         | C12                                    |
+| 15   | T1  | Köer och exchanges i rabbitmq-topology                               | F1                                     |
+| 16   | C11 | RabbitMQ-lyssnare, larm för dead letters och `MessageIT`             | C5, C6, T1, behörighet i Metakatalogen |
+| 17   | SM1 | SM: outbox, relay och publicering                                    | F1                                     |
+| 18   | SM2 | SM: grundladdning                                                    | SM1                                    |
+| 19   | CD1 | Casedata: outbox, relay och publicering                              | F1                                     |
+| 20   | CD2 | Casedata: grundladdning                                              | CD1                                    |
+| 21   | PA1 | party-assets: outbox, relay och publicering                          | F1                                     |
+| 22   | PA2 | party-assets: grundladdning via outbox                               | PA1                                    |
+| 23   | CT1 | contract: tidsstämplar och vem                                       | —                                      |
+| 24   | CT2 | contract: outbox, relay och publicering                              | CT1, F1                                |
+| 25   | CT3 | contract: grundladdning                                              | CT2                                    |
 
 ## C1 — Projektgrund
 
 **Bygg:**
 
 - Ta bort POC-koden (`integration/source`, `EventService`, `PartyOverviewService`, POC-entiteter och tester, `PartyOverviewIT`).
-- I `pom.xml`: byt `spring-boot-starter-amqp` mot `dept44-starter-rabbitmq` (SNAPSHOT tills den är släppt), och lägg
-  till `dept44-starter-feign`, `dept44-starter-scheduler` och `dept44-common-validators`.
-- Lägg in kodgeneringen för `party-overview-messages.yaml`, `party.yaml`, `citizen.yaml` och `legalentity.yaml`.
+- I `pom.xml`: uppgradera `dept44-service-parent` till 8.2.0, byt `spring-boot-starter-amqp` mot
+  `dept44-starter-rabbitmq`, och lägg till `dept44-starter-feign`, `dept44-starter-scheduler` och
+  `dept44-common-validators`.
+- Lägg in kodgeneringen enligt [§9]: `party.yaml`, `citizen.yaml` och `legalentity.yaml` med openapi-generator, och
+  AsyncAPI-dokumentet `party-overview-messages.yaml` med ZenWave SDK.
 - Lägg in `application.yml` och profilerna enligt [§12].
 - README skrivs om efter detta dokument.
 
@@ -79,11 +82,32 @@ beställaren och definieras senare.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
 
+## P1 — Party: partyId för organisationsnummer i batch
+
+Uppgiften görs i api-service-party ([beslut 32]).
+
+**Bygg:**
+
+- `POST /{municipalityId}/ENTERPRISE/partyIds`, som motsvarar `POST /{municipalityId}/PRIVATE/partyIds`. Kroppen är en
+  lista med legalId, och svaret är en map från legalId till partyId. Ett legalId som inte hittas saknas i svaret.
+- Samma validering som `GET /{municipalityId}/ENTERPRISE/{legalId}/partyId`: organisationsnummer, och personnummer för
+  enskild firma (`validateEnterpriseLegalId`).
+- Internt får numren slås upp ett i taget mot LegalEntity.
+
+**Acceptans:**
+
+- Ett organisationsnummer och ett personnummer för en enskild firma ger rätt partyId. Det verifieras med ett IT för
+  vart och ett, som `GetPartyIdIT.test03_getPartyIdEnterpriseForEnskildFirma` gör för GET-varianten.
+- Ett okänt nummer saknas i svaret, och resten av batchen besvaras.
+- Inget legalId finns i URL:en, i loggrader eller i Problem-detail.
+- `openapi.yaml` i api-service-party är regenererad, och party-overviews kopia av `party.yaml` uppdateras i C3.
+
 ## C3 — Integrationer mot Party, Citizen och LegalEntity
 
 **Bygg:**
 
-- `PartyClient`/`PartyIntegration` med `getPartyIds(PRIVATE, batch)`, `getPartyId(ENTERPRISE)` och `getPartyType`.
+- `PartyClient`/`PartyIntegration` med `getPartyIds(PRIVATE, batch)`, `getPartyIds(ENTERPRISE, batch)` från P1 och
+  `getPartyType`.
 - `CitizenClient`/`CitizenIntegration` med `getCitizen` och `getCitizens` (batch), som båda returnerar skyddsnivå och,
   för oskyddade personer, namn och adress ([§5.4]).
 - `LegalEntityClient`/`LegalEntityIntegration`.
@@ -102,8 +126,7 @@ beställaren och definieras senare.
 - 401 från Citizen ger en `ClientProblem` vars detail säger att behörigheten i Metakatalogen saknas.
 - Ingenting ur Citizens svar loggas.
 - Partytypen avgörs med `PRIVATE` först och sedan `ENTERPRISE`. Om ingen av dem hittas blir det `Optional.empty`.
-- Anropet med organisationsnummer i URL:en finns inte i loggern `se.sundsvall.dept44.payload`. Det verifieras med ett
-  test ([§7.1]).
+- Inget personnummer eller organisationsnummer finns i någon URL mot Party. Båda skickas i kroppen ([§7.1]).
 
 ## C4 — Kontaktpersonsroller via REST
 
@@ -391,7 +414,8 @@ beställaren och definieras senare.
 - `parameters` finns aldrig i meddelandet.
 - Kanaltyperna mappas enligt [§11.2], och kanaler med en annan typ skickas inte. Mappningen täcker de typvärden som finns
   i SM:s `contact_channel` i produktion.
-- Bara `externalIdType` `PRIVATE` och `ENTERPRISE` skickas som partytyp. Andra stakeholders skickas utan id.
+- Bara `externalIdType` `PRIVATE` och `ENTERPRISE` skickas som partytyp. Stakeholders med `EMPLOYEE` eller
+  `ADMINISTRATOR` skickas inte, och andra skickas utan id.
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
 - Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]). En ändring som committas medan relayn
   publicerar hamnar i nästa meddelande, med sin egen version.
@@ -412,7 +436,7 @@ beställaren och definieras senare.
 
 ## CD1 — Casedata: outbox, relay och publicering
 
-**Bygg:** enligt [§11.1] och [§11.5], inklusive uppgraderingen till den dept44-version där dept44-starter-rabbitmq är släppt.
+**Bygg:** enligt [§11.1] och [§11.5], inklusive uppgraderingen till dept44 8.2.0.
 
 **Acceptans:**
 
@@ -493,6 +517,8 @@ beställaren och definieras senare.
 - `phoneNumber` och `emailAddress` skickas som kanaler av typen `PHONE` respektive `EMAIL`, och bara när de har ett
   värde.
 - `type` mappas till partytyp enligt [§11.4]. En stakeholder med `OTHER` eller utan typ skickas utan id.
+- En stakeholder av typen `MUNICIPALITY`, och en som bara är `SIGNATORY` eller har en `POWER_OF_ATTORNEY_*`-roll,
+  skickas inte. En stakeholder med en partsroll skickas med alla sina roller.
 - Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]).
 
 ## CT3 — contract: grundladdning
@@ -538,4 +564,6 @@ beställaren och definieras senare.
 [beslut 31]: 00-beslutslogg.md#beslut-31-dead-letter-köer-utan-ttl-med-larm
 [beslut 38]: 00-beslutslogg.md#beslut-38-egen-opensearch-container-per-miljö
 [beslut 41]: 00-beslutslogg.md#beslut-41-tolkningen-av-citizens-skyddsflaggor
+[beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party
+[§9]: 09-kodstruktur.md
 
