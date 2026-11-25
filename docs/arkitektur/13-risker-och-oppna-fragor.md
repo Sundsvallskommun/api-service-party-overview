@@ -1,0 +1,146 @@
+# 13. Risker och öppna frågor
+
+Del av [arkitekturen för party-overview](README.md).
+
+## 13.1 Öppna frågor
+
+| # |                                                                                                  Fråga                                                                                                  |                        Förslag tills den är besvarad                        |
+|---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                         | [§3.1] är kravlistan. C5 och C11 kan inte avslutas innan formatet är klart. |
+| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37]).                |
+
+## 13.2 Förutsättningar före driftsättning
+
+|                                                       Förutsättning                                                       |                                                                Behövs för                                                                |
+|---------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar som skapar kunder (C8) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
+| En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                     |
+| Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                   |
+| dept44-starter-rabbitmq är släppt.                                                                                        | C11 och alla publicerare                                                                                                                 |
+| Kontaktpersonsrollerna är satta via REST ([§12]).                                                                         | Kontaktpersoner på företag                                                                                                               |
+
+## 13.3 Risker
+
+- Behörigheten för `ShowClassified=true` saknas eller försvinner. Då svarar Citizen 401, och alla meddelanden som skapar
+  nya privatkunder dead-letteras.
+
+  **Hantering:** Behörigheten kontrolleras före driftsättningen ([§13.2]). Larmet för dead letters gör att felet syns
+  direkt. Meddelandena flyttas tillbaka när behörigheten finns ([§7.2]).
+
+- OpenSearch-containern har inte samma drift och backup som ett riktigt kluster.
+
+  **Hantering:** Indexet byggs alltid om från databasen med `POST /search/reindex`, så att förlora det kostar bara en
+  reindexering.
+
+- Stora företagskunder ger stora sökdokument, eftersom alla engagemangsreferenser indexeras. Det tar tid att bygga om
+  dem.
+
+  **Hantering:** Titlar och noteringar har tak ([§6.2]). Kön slår ihop ändringar per kund, så dokumentet byggs om högst
+  en gång per relaykörning.
+
+- dept44-starter-rabbitmq är inte släppt (8.2.0-SNAPSHOT på `hydran-3527-rabbitmq-starter`).
+
+  **Hantering:** C11 och publicerarnas uppgifter väntar på releasen. Casedata måste dessutom uppgraderas från dept44
+  8.0.12. C1–C10, C12 och C13 kan byggas och driftsättas utan lyssnare.
+
+- Dead letter-köerna innehåller personuppgifter (legalId och namn) och har ingen TTL.
+
+  **Hantering:** Publicerarna skickar partyId när de kan. Bara drift och utvecklare har åtkomst. Larmet ([§12.1]) gör
+  att köerna töms snabbt.
+
+- Grundladdningen av SupportManagement (cirka 800 000 ärenden) går via en enda konsument.
+
+  **Hantering:** Prefetch 1 och 10–20 ms per meddelande ger 50–100 meddelanden/s, alltså 2–5 timmar. Det blir
+  långsammare när nya privatkunder kräver ett Citizen-anrop. Grundladdningen körs utanför kontorstid, och tiden mäts i
+  test först. Casedata (cirka 5 000) tar några minuter.
+
+- Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder delat med 100 anrop per natt.
+
+  **Hantering:** `refresh-age` och `batch-size` är konfigurerbara. Belastningen stäms av med den som förvaltar Citizen.
+
+- Om Citizen inte svarar står källans kö still medan ett meddelande som skapar en ny privatkund görs om, i cirka 8
+  minuter. Vid 5xx dead-letteras det sedan, och vid öppen circuit breaker läggs det tillbaka i kön ([§3.7]).
+
+  **Hantering:** Avsiktligt: ingen privatkund skapas utan känd skyddsstatus. Andra källors köer påverkas inte. Dead
+  letters flyttas tillbaka när Citizen svarar igen.
+
+- Envelope-data (t.ex. en ärendetitel) eller en notering kan innehålla skyddsvärda uppgifter om en skyddad kund.
+
+  **Hantering:** Det ansvaret ligger hos källsystemen och verksamheterna. Kunden visas som skyddad i varje vy, så den
+  som läser vet att uppgifterna är känsliga.
+
+- Den tekniska loggen växer utan gräns.
+
+  **Hantering:** Indexen klarar stora volymer. Rader kan raderas med `DELETE /{municipalityId}/technical-log` ([§8.2]).
+
+- Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först vid nästa nattliga
+  kontroll. Fram till dess kan ett meddelande hinna spara namn och adress.
+
+  **Hantering:** Fönstret är högst ett dygn, eftersom kontrollen körs varje natt. Källornas `protection` gäller direkt.
+
+- När opt-in stängs av för ett namespace i SM eller Casedata ligger dess engagemang kvar i party-overview.
+
+  **Hantering:** Publiceraren kör grundladdningsjobbet för namespacet med `DELETE` i stället för `UPDATE`. Det görs bara
+  vid behov och har ingen egen uppgift.
+
+- Datakvaliteten i Casedata: `personId` som inte är UUID, och ärenden utan `updated`.
+
+  **Hantering:** Räknas i produktion innan CD2 körs. Sådana parter skickas utan partyId ([§11.5]).
+
+- OpenSearch innehåller personuppgifter: namn, adress, kontaktuppgifter och noteringar.
+
+  **Hantering:** Åtkomsten till klustret och dess snapshots begränsas som för databasen. En raderad kund tas bort ur
+  indexet via kön. Loggar innehåller bara antal och `customer.id`.
+
+- Sökningen är tom medan reindexering pågår.
+
+  **Hantering:** Det tar några minuter och sker sällan, på begäran.
+
+- Under grundladdningen hinner relayn inte med, trots att den körs efter varje commit. Kön växer men slås ihop per kund.
+
+  **Hantering:** `search.relay.batch-size` är konfigurerbar. Efter grundladdningen kan reindexering köras, och den
+  tömmer kön på det som lades till före starten ([§6.2]).
+
+- Det är inte verifierat att Hibernate Search kastar ett fel när en explicit indexeringsplan misslyckas med `writeSync`.
+  Gör den inte det tas köraden bort trots att indexeringen misslyckades.
+
+  **Hantering:** En spike i C12 verifierar det innan relayn byggs vidare.
+
+- Det tar lång tid att radera en stor företagskund, eftersom alla rader försvinner i en transaktion.
+
+  **Hantering:** Accepteras. Kaskaden görs av databasen och låser bara kundens rader.
+
+- Namn och adress kan skilja sig mellan källor.
+
+  **Hantering:** "Nyast vinner" på `sourceModified` ger ett deterministiskt resultat. Källorna bör vårda sina uppgifter.
+
+- Ett meddelande som är äldre än lagrad version tappar sina aktiviteter.
+
+  **Hantering:** Single-active-consumer och outbox per objekt ger ordning. Det kan bara hända om ett meddelande läggs
+  tillbaka efter ett fel.
+
+- Index i Flyway och entiteter glider isär.
+
+  **Hantering:** `SchemaParityIT`.
+
+- En kund som raderats väcks till liv av ett nytt engagemang.
+
+  **Hantering:** Avsiktligt, eftersom källan är master. Vid radering enligt GDPR måste även källorna radera.
+
+- Det tar tid innan en ändring av kontaktpersonsrollerna slår igenom.
+
+  **Hantering:** Dokumenterat ([§5.3]). En grundladdning från källan räknar om allt.
+
+[§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
+[§3.7]: 03-meddelanden.md#37-felhantering
+[§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
+[§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
+[§6.2]: 06-rest-api.md#62-kundsökning-opensearch
+[§7.2]: 07-integrationer.md#72-citizen-och-legalentity
+[§8.2]: 08-teknisk-logg.md#82-radering-av-den-tekniska-loggen
+[§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
+[§12]: 12-drift.md
+[§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
+[§13.2]: #132-förutsättningar-före-driftsättning
+[beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
+
