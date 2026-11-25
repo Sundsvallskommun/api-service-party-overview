@@ -9,6 +9,7 @@ erDiagram
     customer ||--o{ engagement : "äger"
     customer ||--o{ contact : "äger"
     customer ||--o{ note : "äger"
+    customer ||--o{ asserted_protection : "har"
     engagement ||--o{ engagement_history : "har"
     engagement ||--o{ contact : "härleds från"
     contact ||--o{ contact_channel : "har"
@@ -43,6 +44,7 @@ erDiagram
 - Kolumner som slutar på `_id` men inte är FK och inte pekar på någon tabell i party-overview:
   - `municipality_id`
   - `party_id`: partens id i Party
+  - `registry_party_id`: det partyId vars skydd hämtas från folkbokföringen ([§5.4])
   - `object_id`: objektets id i källsystemet, `objectId` i [§3.1]
   - `message_id`: AMQP-egenskapen `message-id` ([§3.1]). Den finns bara i den tekniska loggen och knyter en ändring
     till sitt meddelande. dept44-starter-rabbitmq loggar samma id för varje meddelande, både hos publiceraren och i
@@ -65,25 +67,39 @@ erDiagram
 
 **`customer`**: en kund per kommun och partyId.
 
-|                        Kolumn                         |                  Typ                  |  Null  |                                                  Anmärkning                                                   |
-|-------------------------------------------------------|---------------------------------------|--------|---------------------------------------------------------------------------------------------------------------|
-| `id`                                                  | varchar(36)                           | nej    | PK                                                                                                            |
-| `municipality_id`                                     | varchar(8)                            | nej    |                                                                                                               |
-| `party_id`                                            | varchar(36)                           | nej    |                                                                                                               |
-| `party_type`                                          | varchar(16)                           | nej    | `PRIVATE` eller `ENTERPRISE`                                                                                  |
-| `name`                                                | varchar(255)                          | ja     | Alltid null om kunden är skyddad                                                                              |
-| `care_of`, `street`, `postal_code`, `city`, `country` | varchar(255), postal_code varchar(16) | ja     | Alltid null om kunden är skyddad                                                                              |
-| `profile_modified`                                    | datetime(6)                           | ja     | `sourceModified` för de namn- och adressuppgifter som är lagrade ([§5.2])                                     |
-| `protection_level`                                    | varchar(32)                           | nej    | Effektiv nivå: `NONE`, `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§5.4])                   |
-| `registry_protection`                                 | varchar(32)                           | ja     | Folkbokföringens nivå enligt Citizen, eller `UNKNOWN` när Citizen inte svarade. Alltid null för `ENTERPRISE`. |
-| `registry_checked`                                    | datetime(6)                           | ja     | När Citizen senast svarade. null så länge statusen är `UNKNOWN`.                                              |
-| `asserted_protection`                                 | varchar(32)                           | ja     | Nivån från det senast tillämpade `CUSTOMER`-meddelandet                                                       |
-| `created`, `modified`                                 | datetime(6)                           | nej/ja |                                                                                                               |
+|                        Kolumn                         |                  Typ                  |  Null  |                                                            Anmärkning                                                            |
+|-------------------------------------------------------|---------------------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------|
+| `id`                                                  | varchar(36)                           | nej    | PK                                                                                                                               |
+| `municipality_id`                                     | varchar(8)                            | nej    |                                                                                                                                  |
+| `party_id`                                            | varchar(36)                           | nej    |                                                                                                                                  |
+| `party_type`                                          | varchar(16)                           | nej    | `PRIVATE` eller `ENTERPRISE`                                                                                                     |
+| `name`                                                | varchar(255)                          | ja     | Alltid null om kunden är skyddad                                                                                                 |
+| `care_of`, `street`, `postal_code`, `city`, `country` | varchar(255), postal_code varchar(16) | ja     | Alltid null om kunden är skyddad                                                                                                 |
+| `profile_modified`                                    | datetime(6)                           | ja     | `sourceModified` för de namn- och adressuppgifter som är lagrade ([§5.2])                                                        |
+| `protection_level`                                    | varchar(32)                           | nej    | Effektiv nivå: `NONE`, `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§5.4])                                      |
+| `registry_party_id`                                   | varchar(36)                           | ja     | Den person vars skydd hämtas från folkbokföringen: kunden själv för `PRIVATE`, ägaren för en enskild firma, annars null ([§5.4]) |
+| `registry_protection`                                 | varchar(32)                           | ja     | Folkbokföringens nivå enligt Citizen, eller `UNKNOWN` när Citizen inte svarade. null när `registry_party_id` är null.            |
+| `registry_checked`                                    | datetime(6)                           | ja     | När Citizen senast svarade. null så länge statusen är `UNKNOWN`.                                                                 |
+| `created`, `modified`                                 | datetime(6)                           | nej/ja |                                                                                                                                  |
 
 Index:
 
 - `uq_customer_municipality_id_party_id (municipality_id, party_id)`
-- `idx_customer_party_type_registry_checked`: urvalet till den nattliga kontrollen av skyddsstatus
+- `idx_customer_registry_checked`: urvalet till den nattliga kontrollen av skyddsstatus
+
+**`asserted_protection`**: skyddet som en källa har angett i ett `CUSTOMER`-meddelande, en rad per kund och källa
+([beslut 53]).
+
+|        Kolumn         |     Typ     |  Null  |                    Anmärkning                    |
+|-----------------------|-------------|--------|--------------------------------------------------|
+| `id`                  | varchar(36) | nej    | PK                                               |
+| `customer_id`         | varchar(36) | nej    | FK `fk_asserted_protection_customer_id`, cascade |
+| `source`              | varchar(64) | nej    |                                                  |
+| `protection`          | varchar(32) | nej    | `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` |
+| `created`, `modified` | datetime(6) | nej/ja |                                                  |
+
+Index: `uq_asserted_protection_customer_id_source (customer_id, source)`. Ett `CUSTOMER UPDATE` utan `protection`
+tar bort källans rad.
 
 **`engagement`**: ett källobjekt sett från en kund ([beslut 8]).
 
@@ -130,19 +146,20 @@ Index: `idx_engagement_history_engagement_id_occurred_at`.
 
 **`contact`**: kontaktuppgifter som syns per namespace ([§5.3]).
 
-|     Kolumn      |     Typ      | Null |                                                Anmärkning                                                 |
-|-----------------|--------------|------|-----------------------------------------------------------------------------------------------------------|
-| `id`            | varchar(36)  | nej  | PK                                                                                                        |
-| `customer_id`   | varchar(36)  | nej  | FK `fk_contact_customer_id`, cascade                                                                      |
-| `engagement_id` | varchar(36)  | ja   | FK `fk_contact_engagement_id`, cascade. null betyder att uppgiften kommer från ett `CUSTOMER`-meddelande. |
-| `namespace`     | varchar(32)  | ja   | null betyder globalt                                                                                      |
-| `source`        | varchar(64)  | nej  |                                                                                                           |
-| `contact_type`  | varchar(32)  | nej  | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON`                                                |
-| `name`          | varchar(255) | ja   | Kontaktpersonens namn                                                                                     |
-| `role`          | varchar(64)  | ja   | Kontaktpersonens roll                                                                                     |
-| `created`       | datetime(6)  | nej  | Raderna ersätts som helhet och uppdateras aldrig.                                                         |
+|     Kolumn      |     Typ      | Null |                                                    Anmärkning                                                    |
+|-----------------|--------------|------|------------------------------------------------------------------------------------------------------------------|
+| `id`            | varchar(36)  | nej  | PK                                                                                                               |
+| `customer_id`   | varchar(36)  | nej  | FK `fk_contact_customer_id`, cascade                                                                             |
+| `engagement_id` | varchar(36)  | ja   | FK `fk_contact_engagement_id`, cascade. null betyder att uppgiften kommer från ett `CUSTOMER`-meddelande.        |
+| `namespace`     | varchar(32)  | ja   | null betyder globalt                                                                                             |
+| `source`        | varchar(64)  | nej  |                                                                                                                  |
+| `contact_type`  | varchar(32)  | nej  | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON`                                                       |
+| `party_id`      | varchar(36)  | ja   | Kontaktpersonens partyId, när det är känt. Med det hittas raderna när personen raderas eller får skydd ([§5.3]). |
+| `name`          | varchar(255) | ja   | Kontaktpersonens namn                                                                                            |
+| `role`          | varchar(64)  | ja   | Kontaktpersonens roll                                                                                            |
+| `created`       | datetime(6)  | nej  | Raderna ersätts som helhet och uppdateras aldrig.                                                                |
 
-Index: `idx_contact_customer_id_namespace` och `idx_contact_engagement_id`.
+Index: `idx_contact_customer_id_namespace`, `idx_contact_engagement_id` och `idx_contact_party_id`.
 
 **`contact_channel`**: `@ElementCollection` på `contact`.
 
@@ -266,4 +283,5 @@ Index: `idx_search_index_queue_queued`.
 [beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
 [beslut 18]: 00-beslutslogg.md#beslut-18-historiken-kommer-från-källans-aktiviteter
 [§3.6]: 03-meddelanden.md#36-kundradering
+[beslut 53]: 00-beslutslogg.md#beslut-53-skyddet-från-customer-meddelanden-lagras-per-källa
 

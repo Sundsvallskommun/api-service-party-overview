@@ -15,14 +15,15 @@ Del av [arkitekturen för party-overview](README.md).
      Hibernate flushar vid commit, efter att BEFORE_COMMIT-lyssnarna redan har körts, och då skrivs ingen rad.
    - Varje publiceringspunkt körs i en transaktion. Utan transaktion kastas händelsen tyst, eftersom en
      `@TransactionalEventListener` har `fallbackExecution = false` som förval. Där en publiceringspunkt inte har någon
-     transaktion, t.ex. SM:s kommunikation via REST, skrivs outbox-raden i stället direkt i en egen transaktion, som
+     transaktion, t.ex. `PR3Importer` i party-assets, skrivs outbox-raden i stället direkt i en egen transaktion, som
      SM:s `ProcessEventPublisher` gör.
    - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter samlade på raden.
 3. **Relay:**
    - Körs direkt efter commit och dessutom schemalagt med ShedLock.
    - Väntande rader grupperas per objekt i den ordning de skrevs. Relayn läser objektets **aktuella** tillstånd, bygger
      ett meddelande med alla väntande aktiviteter och publicerar `UPDATE`. Den publicerar `DELETE` när objektet är borta
-     eller inte ska synas: soft-deletat (SM), sekretessmarkerat (Casedata) eller i ett namespace utan opt-in.
+     eller inte ska synas: soft-deletat (SM), sekretessmarkerat (Casedata), i ett namespace utan opt-in eller med
+     åtkomstkontroll (SM), eller av en asset-typ som inte står på vitlistan (party-assets).
    - Relayn tar ett delat lås på objektets rad innan den läser raderna och tillståndet, så att de hör ihop. I MariaDB
      heter det `SELECT … LOCK IN SHARE MODE`, eftersom `FOR SHARE` ger syntaxfel i MariaDB, både i 10.6 och i 11.4. I
      JPA används `@Lock(PESSIMISTIC_READ)`, som Hibernates MariaDB-dialekt skriver om till `lock in share mode`. Utan låset kan en ändring committas mellan läsningarna. Tillståndet blir då version N+1 medan bara
@@ -61,12 +62,15 @@ Del av [arkitekturen för party-overview](README.md).
 ## 11.2 SupportManagement (`ERRAND`)
 
 - **Opt-in:** En ny egenskap i `namespace_config` slår på publiceringen per namespace. Namespaces utan den publicerar
-  inget.
-- **Publiceringspunkter:** Alla anrop till `publishToProcess` i `service/EventService.java`: i dag `createErrandEvent`,
-  `createErrandEventWithoutNotification`, `createProcessCommandEvent`, `createDecisionEvent` och
-  `publishDeletionToProcess`. Det täcker även ändringar från `EmailReaderWorker` och `MessageExchangeSyncService`. Ett
-  anrop ger flera events, men det blir en outbox-rad per ärende och transaktion. Mönster: `ProcessEventPublisher` och
-  `ProcessEventRelay`.
+  inget. Ett namespace med åtkomstkontroll (`accessControl = true`) kan inte slå på publiceringen, eftersom SM där
+  styr läsrätten per ärende med etiketter och trimmar fälten per roll ([beslut 51]). Slås åtkomstkontrollen på för ett
+  namespace som publicerar, behandlas det som att opt-in stängs av ([§13.3]).
+- **Publiceringspunkter:** De ställen där ärendet självt ändras: när det skapas, ändras (även parter, status och
+  klassning), raderas eller återställs. Det är de anrop till `publishToProcess` i `service/EventService.java` som
+  följer en sådan ändring. Kommunikation till och från ärendet, alltså e-post, sms och webbmeddelanden via REST,
+  `EmailReaderWorker`, `WebMessageCollectorWorker` och `MessageExchangeSyncService`, publiceras inte, så länge den inte
+  också ändrar ärendet ([beslut 55]). Ett anrop ger flera events, men det blir en outbox-rad per ärende och
+  transaktion. Mönster: `ProcessEventPublisher` och `ProcessEventRelay`.
 - **Radering:** Soft delete publiceras som `DELETE`. Restore publiceras som `UPDATE` med högre version, vilket väcker
   objektet till liv ([§3.4]). Hård radering och purge publiceras som `DELETE`.
 - **Version:** `ErrandEntity.version`. Det måste verifieras att en ändring som bara rör stakeholders ökar versionen. Gör
@@ -94,6 +98,11 @@ Del av [arkitekturen för party-overview](README.md).
 Grenen `publish-asset-events` publicerar redan events med en entity-listener och `@TransactionalEventListener` efter
 commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den byggs om enligt [§11.1]:
 
+- **Asset-typer:** bara typer som står på en vitlista i party-assets konfiguration
+  (`integration.party-overview.asset-types`) publiceras ([beslut 50]). Parkeringstillstånd för rörelsehindrade
+  (`PARKINGPERMIT` och `PARKING_PERMIT`) står inte på listan förrän dataskyddsombudet har svarat ([§13.1]), som för
+  Casedatas parkeringsärenden ([beslut 37]). Tas en typ bort från listan publiceras dess assets som `DELETE` vid nästa
+  grundladdning, och läggs en typ till publiceras de som `UPDATE`.
 - **Outbox:** Servicemetoderna och `PR3Importer` skickar en Spring-händelse, och en `BEFORE_COMMIT`-lyssnare skriver
   outbox-raden. `AssetEntityListener` kan inte skicka händelsen, eftersom dess callbacks körs när Hibernate flushar vid
   commit och då kommer efter BEFORE_COMMIT ([§11.1]). Det täcker `createAsset`, `updateAsset` (även originalet som blir
@@ -185,4 +194,8 @@ från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är
 [beslut 26]: 00-beslutslogg.md#beslut-26-supportmanagement-publicerar-inte-utkast
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 49]: 00-beslutslogg.md#beslut-49-contract-publicerar-bara-avtalsparter
+[§13.3]: 13-risker-och-oppna-fragor.md#133-risker
+[beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
+[beslut 51]: 00-beslutslogg.md#beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
+[beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
 

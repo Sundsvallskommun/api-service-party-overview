@@ -49,6 +49,8 @@ När en notering skapar en kund ([beslut 6]) sker följande:
    folkbokföringsadress. Har Citizen ingen post, eller svarar Citizen inte på party-overviews eget anrop, skapas kunden
    med `UNKNOWN`, utan namn och adress ([§5.4]).
 3. `ENTERPRISE`: LegalEntity ger namnet (`name`) och adressen (`postAddress`). `organizationNumber` i svaret används inte.
+   Svaret från Party:s typuppslag är organisationsnumret. Är det ett personnummer, alltså en enskild firma, får kunden
+   ägarens skydd från folkbokföringen som i [§5.4], och är ägaren skyddad sparas varken namn eller adress.
 4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU och låses ([§3.6]). Om ett meddelande hann skapa
    kunden under tiden behålls dess uppgifter, men skyddsnivån räknas om. Om kunden fanns men hann raderas under tiden
    skapas den med `UNKNOWN`, eftersom Citizen aldrig tillfrågades.

@@ -64,8 +64,9 @@ namespacet plus de globala. Noteringar syns bara för det egna namespacet.
 **Valdes bort:** Att begränsa engagemang till eget namespace, eller att göra synligheten konfigurerbar.
 
 **Skäl:** Kundvyn ska ge helheten. Engagemang kan synas för hela kommunen, eftersom det som är känsligt aldrig
-publiceras. SupportManagement publicerar bara namespaces som har slagit på det ([beslut 19]). Casedata publicerar inte
-sekretessmarkerade ärenden ([beslut 34]) och tills vidare bara `SBK_MEX` ([beslut 37]).
+publiceras. SupportManagement publicerar bara namespaces som har slagit på det ([beslut 19]) och aldrig namespaces med
+åtkomstkontroll ([beslut 51]). Casedata publicerar inte sekretessmarkerade ärenden ([beslut 34]) och tills vidare bara
+`SBK_MEX` ([beslut 37]). party-assets publicerar bara asset-typer på en vitlista ([beslut 50]).
 
 ## Beslut 8: En engagemangsrad per kund
 
@@ -177,7 +178,8 @@ SupportManagement publicerar bara ärenden från namespaces som har slagit på d
 
 **Valdes bort:** Att alltid publicera, eller att publicera utan titel.
 
-**Skäl:** SM har åtkomstkontroll per namespace, och party-overview får inte kringgå den.
+**Skäl:** SM har åtkomstkontroll per namespace, och party-overview får inte kringgå den. Namespaces med åtkomstkontroll
+per ärende publiceras inte alls ([beslut 51]).
 
 ## Beslut 20: Transaktionell outbox hos varje publicerare
 
@@ -266,8 +268,8 @@ SupportManagement publicerar inte utkast (`lifecycle = DRAFT`).
 ## Beslut 27: Skyddad identitet med tre nivåer
 
 Skyddad identitet ([§5.4]) är en egenskap på kunden med tre nivåer: `NONE`, `SECRECY_MARKING` och
-`PROTECTED_REGISTRATION`. Den effektiva nivån är den högsta av folkbokföringens (Citizen), CUSTOMER-meddelandenas och
-engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna kontaktuppgifter, och de
+`PROTECTED_REGISTRATION`. Den effektiva nivån är den högsta av folkbokföringens (Citizen), CUSTOMER-meddelandenas (en
+per källa, [beslut 53]) och engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna kontaktuppgifter, och de
 indexeras inte för sökning. När folkbokföringens status inte är känd används värdet `UNKNOWN`, som räknas som skyddat
 ([beslut 48]).
 
@@ -491,6 +493,65 @@ som bara skriver under eller har fullmakt företräder en part och är inte sjä
 `SIGNATORY` hindra en privat hyresgäst som också skriver under från att bli kund, eftersom en part med
 kontaktpersonsroll aldrig blir kund ([beslut 15]).
 
+## Beslut 50: party-assets publicerar bara asset-typer på en vitlista
+
+party-assets publicerar bara assets vars typ står på en vitlista i dess konfiguration. Parkeringstillstånd för
+rörelsehindrade står inte på listan förrän dataskyddsombudet har svarat ([§11.3]).
+
+**Valdes bort:** Att publicera alla asset-typer.
+
+**Skäl:** Ett parkeringstillstånd för rörelsehindrade är en hälsouppgift, och engagemang syns för hela kommunen.
+Casedatas parkeringsärenden hålls redan tillbaka ([beslut 37]), och party-assets får inte bli en väg runt det.
+
+## Beslut 51: Namespaces med åtkomstkontroll i SM publiceras inte
+
+Ett namespace i SupportManagement med `accessControl = true` kan inte slå på publiceringen till party-overview
+([§11.2]).
+
+**Valdes bort:** Att bara publicera ärenden utan åtkomstetiketter, och bara de fält som får läsas vid begränsad läsrätt.
+
+**Skäl:** I sådana namespaces styr SM läsrätten per ärende med etiketter och trimmar fälten per roll. party-overview
+visar engagemang för hela kommunen och kan inte återskapa den kontrollen.
+
+## Beslut 52: Kontaktpersoner kontrolleras mot skyddad identitet
+
+En kontaktperson med partyId kontrolleras mot sin skyddsnivå och sparas inte om den inte är `NONE`. Kontaktpersonens
+partyId sparas, så att raderna kan tas bort när personen raderas eller får skydd ([§5.3]).
+
+**Valdes bort:** Att skyddet bara gäller kunden och inte kontaktpersonen.
+
+**Skäl:** Vägledningen räknar arbetsgivare som en skyddsvärd uppgift, och en kontaktperson visar just kopplingen till
+ett företag. Utan partyId på raden skulle en radering enligt GDPR inte nå personens kontaktrader.
+
+## Beslut 53: Skyddet från `CUSTOMER`-meddelanden lagras per källa
+
+Varje källas skydd från ett `CUSTOMER`-meddelande lagras i en egen rad i `asserted_protection`, och den högsta gäller
+([§4.3]).
+
+**Valdes bort:** En kolumn på kunden, som det senaste meddelandet skriver över.
+
+**Skäl:** Med en kolumn skulle ett meddelande utan skydd från en källa ta bort skyddet som en annan källa har angett,
+och då skulle namn och adress sparas för en skyddad person.
+
+## Beslut 54: Enskilda firmor kontrolleras mot folkbokföringen
+
+För en enskild firma, där organisationsnumret är ägarens personnummer, hämtas ägarens skydd från folkbokföringen på
+samma sätt som för en privatkund, också i den nattliga kontrollen ([§5.4]).
+
+**Valdes bort:** Att bara kontrollera privatkunder.
+
+**Skäl:** En enskild firmas namn och adress är ofta ägarens, och en skyddad ägare ska inte bli synlig via sin firma.
+
+## Beslut 55: Kommunikation i SM publiceras inte
+
+SupportManagement publicerar bara när ärendet självt ändras. E-post, sms och webbmeddelanden till och från ärendet
+publiceras inte ([§11.2]).
+
+**Valdes bort:** Att publicera kommunikationen som aktiviteter i historiken.
+
+**Skäl:** Kundbilden visar ärendet, inte meddelandena som skickas till och från det. Kommunikationen ökar dessutom inte
+ärendets version, så den kunde ändå inte publiceras som en egen ändring.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -509,4 +570,10 @@ kontaktpersonsroll aldrig blir kund ([beslut 15]).
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§9]: 09-kodstruktur.md
 [beslut 6]: #beslut-6-en-notering-på-en-okänd-kund-skapar-kunden
+[§4.3]: 04-datamodell.md#43-tabellerna
+[§11.2]: 11-publicerare.md#112-supportmanagement-errand
+[§11.3]: 11-publicerare.md#113-party-assets-asset
+[beslut 50]: #beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
+[beslut 51]: #beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
+[beslut 53]: #beslut-53-skyddet-från-customer-meddelanden-lagras-per-källa
 

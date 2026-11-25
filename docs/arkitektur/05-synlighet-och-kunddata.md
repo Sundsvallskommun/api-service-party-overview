@@ -40,7 +40,7 @@ För varje kunds engagemangsrad ersätts kontaktuppgifterna (`contact` med `enga
 
 - en rad med `contact_type = CUSTOMER` med kundpartens egna `contactChannels`, om den har några, och
 - om kunden är `ENTERPRISE`: en rad med `contact_type = CONTACT_PERSON` för varje kontaktperson, med namn, den roll som
-  matchade och kontaktkanaler.
+  matchade, kontaktkanaler och kontaktpersonens partyId när det är känt.
 
 Alla rader får engagemangets namespace.
 
@@ -50,8 +50,20 @@ kommer först.
 En ändring av kontaktpersonsrollerna gäller från nästa meddelande om varje objekt. Befintliga rader räknas om vid nästa
 ändring i källan eller vid en grundladdning.
 
-För en skyddad kund sparas ingen rad med `contact_type = CUSTOMER` ([§5.4]). Kontaktpersoner på företag påverkas inte,
-eftersom skyddet gäller kunden och inte kontaktpersonen.
+För en skyddad kund sparas ingen rad med `contact_type = CUSTOMER` ([§5.4]).
+
+**Kontaktpersoner med skyddade personuppgifter** ([beslut 52]). En skyddad person ska inte heller synas som kontaktperson,
+eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är skyddsvärd.
+
+- En kontaktpersons legalId mappas till partyId på samma sätt som en kunds ([§3.3]).
+- En kontaktperson med partyId kontrolleras: finns personen som kund används kundens skyddsnivå, annars frågas Citizen
+  i samma batch som för nya privatkunder. Är nivån något annat än `NONE`, `UNKNOWN` inräknat, sparas inte
+  kontaktpersonen alls.
+- Kontaktpersonens partyId sparas på raden (`contact.party_id`). När personen raderas ([§3.6]), eller när personen som
+  kund får en skyddsnivå som inte är `NONE`, raderas personens kontaktrader hos alla företag i kommunen, och företagen
+  markeras för omindexering.
+- En kontaktperson som saknar både partyId och legalId kan inte kontrolleras och sparas som förut. Det står som risk i
+  [§13.3].
 
 ## 5.4 Skyddad identitet
 
@@ -88,16 +100,23 @@ Det som styr designen:
 
 **Nivåer och källor.** Kundens effektiva nivå, `customer.protection_level`, är den högsta av:
 
-|                      Källa                      |             Kolumn             |                      Uppdateras                       |
-|-------------------------------------------------|--------------------------------|-------------------------------------------------------|
-| Folkbokföringen via Citizen, bara för `PRIVATE` | `customer.registry_protection` | när kunden skapas, och varje natt                     |
-| `CUSTOMER`-meddelanden                          | `customer.asserted_protection` | när ett `CUSTOMER UPDATE` tillämpas                   |
-| Engagemangsmeddelanden                          | `engagement.party_protection`  | när objektet uppdateras. Försvinner med engagemanget. |
+|                               Källa                                |              Kolumn              |                              Uppdateras                              |
+|--------------------------------------------------------------------|----------------------------------|----------------------------------------------------------------------|
+| Folkbokföringen via Citizen, för `PRIVATE` och för enskilda firmor | `customer.registry_protection`   | när kunden skapas, och varje natt                                    |
+| `CUSTOMER`-meddelanden, en rad per källa                           | `asserted_protection.protection` | när ett `CUSTOMER UPDATE` tillämpas. Den högsta källans nivå gäller. |
+| Engagemangsmeddelanden                                             | `engagement.party_protection`    | när objektet uppdateras. Försvinner med engagemanget.                |
 
 Ordningen är `NONE` < `UNKNOWN` < `SECRECY_MARKING` < `PROTECTED_REGISTRATION`. Nivån räknas om i samma transaktion
 varje gång någon av källorna ändras. En ändrad nivå loggas som `PROTECTION_CHANGED` i den tekniska loggen. `UNKNOWN`
 kommer bara från folkbokföringen. En källas `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` går före den, eftersom den
 säger mer, men att en källa inte anger något skydd ändrar inte `UNKNOWN`.
+
+**Enskilda firmor** ([beslut 54]). För en enskild firma är organisationsnumret ägarens personnummer, och firmans namn och
+adress kan vara ägarens. När en `ENTERPRISE`-kund skapas tar party-overview reda på organisationsnumret: från
+meddelandet, eller från Party (`GET /{municipalityId}/ENTERPRISE/{partyId}/legalId`). Är det ett personnummer slås
+ägarens partyId upp via `PRIVATE/partyIds` och sparas som `registry_party_id`. Kunden får sedan folkbokföringens skydd
+precis som en privatkund, också i den nattliga kontrollen. Numret sparas aldrig. För en privatkund är
+`registry_party_id` kundens eget partyId, och för andra företag är den null.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -128,7 +147,7 @@ hanteringen nedan är densamma för båda nivåerna.
 Svaret från Citizen hålls bara i minnet. Namn och adress ur svaret används bara om personen är oskyddad, och ingenting
 ur svaret loggas.
 
-**Okänd skyddsstatus (`UNKNOWN`).** En privatkund skapas med `registry_protection = UNKNOWN` och
+**Okänd skyddsstatus (`UNKNOWN`).** En privatkund eller enskild firma skapas med `registry_protection = UNKNOWN` och
 `registry_checked = null` när folkbokföringens status inte går att få ([beslut 48]):
 
 - Citizen svarar inte, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker när ett meddelande skapar
@@ -168,10 +187,12 @@ nattliga kontrollen ersätter det.
    Det ansvaret ligger hos källsystemen och verksamheterna ([§13]).
 
 **När skyddet upphör** fylls namn och adress i igen. För privatkunder sker det från Citizens svar i den nattliga
-kontrollen. Kontaktuppgifter kommer tillbaka med nästa tillämpade meddelande från källan, eller vid en grundladdning.
+kontrollen, och för en enskild firma med nästa tillämpade meddelande från källan. Kontaktuppgifter kommer tillbaka med
+nästa tillämpade meddelande från källan, eller vid en grundladdning.
 
 **Nattlig kontroll.** `ProtectionRefreshScheduler` (`@Dept44Scheduled` med ShedLock) körs en gång per natt. Den hämtar
-alla privatkunder vars `registry_checked` saknas eller är äldre än körningens start ([beslut 28]). En gräns i form av en
+alla kunder som har `registry_party_id`, alltså privatkunder och enskilda firmor, och vars `registry_checked` saknas
+eller är äldre än körningens start ([beslut 28]). En gräns i form av en
 ålder, t.ex. ett dygn, skulle missa kunder som skapades eller kontrollerades under dagen före. Kunderna gås igenom med
 keyset på `id` i batchar om `protection.batch-size` (förval 100), så att en batch som misslyckas inte väljs igen i samma
 körning, via `POST /{municipalityId}/batch?ShowClassified=true`. Varje batch skrivs i en egen transaktion med READ
@@ -188,4 +209,8 @@ kunderna markeras för omindexering ([§6.2]).
 [beslut 41]: 00-beslutslogg.md#beslut-41-tolkningen-av-citizens-skyddsflaggor
 [§6.2]: 06-rest-api.md#62-kundsökning-opensearch
 [beslut 28]: 00-beslutslogg.md#beslut-28-skyddsstatus-från-citizen-vid-skapandet-och-varje-natt
+[beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
+[beslut 54]: 00-beslutslogg.md#beslut-54-enskilda-firmor-kontrolleras-mot-folkbokföringen
+[§13.3]: 13-risker-och-oppna-fragor.md#133-risker
+[§3.6]: 03-meddelanden.md#36-kundradering
 

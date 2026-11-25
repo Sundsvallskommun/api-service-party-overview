@@ -4,10 +4,10 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 13.1 Öppna frågor
 
-| # |                                                                                                  Fråga                                                                                                  |                        Förslag tills den är besvarad                        |
-|---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                         | [§3.1] är kravlistan. C5 och C11 kan inte avslutas innan formatet är klart. |
-| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37]).                |
+| # |                                                                                                                                                 Fråga                                                                                                                                                 |                        Förslag tills den är besvarad                        |
+|---|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. C5 och C11 kan inte avslutas innan formatet är klart. |
+| 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras, och party-assets parkeringstillstånd för rörelsehindrade (`PARKINGPERMIT`, `PARKING_PERMIT`)? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37], [beslut 50]).   |
 
 ## 13.2 Förutsättningar före driftsättning
 
@@ -149,6 +149,25 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras tills vidare. SM har en roll per stakeholder, så det gäller Casedata och contract, där en
   part kan ha flera roller.
 
+- Party slår upp organisationsnummer mot LegalEntity med numret i URL:en
+  (`GET /{municipalityId}/{organizationNumber}/guid`). För en enskild firma är numret ett personnummer, som då kan
+  hamna i Party:s och gatewayens loggar, också med P1.
+
+  **Hantering:** Accepteras. LegalEntity och Party:s anrop till den ligger utanför party-overview.
+
+- En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen och sparas med namn och
+  kanaler. En kontaktperson som får skydd efter att raden sparades, utan att själv vara kund, ligger kvar tills objektet
+  ändras i källan ([§5.3]).
+
+  **Hantering:** Accepteras. Publicerarna skickar partyId när de har det, och nästa ändring av objektet kontrollerar
+  kontaktpersonen igen.
+
+- För en enskild firma med ett tiosiffrigt organisationsnummer framgår inte århundradet, som `PRIVATE/partyIds` kräver
+  ([§5.4]).
+
+  **Hantering:** C3 verifierar i vilket format Party och LegalEntity ger en enskild firmas nummer, och hur århundradet
+  avgörs. Går ägaren inte att avgöra får kunden `UNKNOWN`.
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
@@ -166,4 +185,5 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: #132-förutsättningar-före-driftsättning
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
+[beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
 

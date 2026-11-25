@@ -145,18 +145,19 @@ MessageListener (alla köer)                          ingen transaktion
        1. mappa till ObjectChange och validera (@Validated)  ─ ogiltigt → dead letter direkt
        2. läs kontaktpersonsroller för (kommun, källa)
        3. dela upp parterna i kunder och kontaktpersoner (§5.3)
-       4. legalId → partyId via PartyIntegration (batch), bara för kundparter
+       4. legalId → partyId via PartyIntegration (batch), för kundparter och kontaktpersoner
                                                              ─ saknas i svaret → parten hoppas över (WARN utan PII)
-          (en kontaktpersons legalId används inte och kastas)
-       5. folkbokföringens skyddsstatus för PRIVATE-kundparter som inte finns i databasen
-          (CitizenIntegration, batch, ShowClassified=true, §5.4)
+          för nya ENTERPRISE-kunder: ägarens partyId om organisationsnumret är ett personnummer (§5.4)
+       5. folkbokföringens skyddsstatus för nya kunder med registry_party_id, och för kontaktpersoner
+          med partyId som inte finns som kunder (CitizenIntegration, batch, ShowClassified=true, §5.3, §5.4)
                                                              ─ svarar inte eller 5xx → UNKNOWN
        6. MessageWriter.apply(change)                         @Transactional(READ_COMMITTED), egen bean
             a. lås källobjektet (source_object: IODKU, sedan SELECT … FOR UPDATE)
             b. avgör enligt versionsmatrisen (§3.4)           ─ inaktuellt → bara teknisk logg
             c. lås alla berörda kunder i partyId-ordning, före alla kontroller: meddelandets kundparter
                (IODKU och FOR UPDATE) och kunderna med engagemang i objektet (bara FOR UPDATE)
-            d. tillämpa UPDATE eller DELETE (§3.5) och räkna om kundernas skyddsnivå (§5.4)
+            d. tillämpa UPDATE eller DELETE (§3.5) och räkna om kundernas skyddsnivå (§5.4).
+               Kontaktpersoner med en skyddsnivå som inte är NONE sparas inte (§5.3).
             e. skriv teknisk logg för varje berörd kund och markera kunden för sökindexering
                (search_index_queue, §6.2)
             f. radera kunder som saknar både engagemang och noteringar (§3.6)
@@ -228,7 +229,8 @@ och noteringar ([§3.6]).
 - Parten är alltid kunden och klassas inte på roller som i [§5.3]. Den behöver partyId eller ett legalId som går att
   mappa, annars ignoreras meddelandet.
 - Skapa kunden om den saknas.
-- Sätt `asserted_protection` till partens `protection` och räkna om skyddsnivån ([§5.4]).
+- Sätt källans rad i `asserted_protection` till partens `protection`, eller ta bort raden om `protection` saknas, och
+  räkna om skyddsnivån ([§5.4]). En annan källas skydd påverkas inte.
 - Om kunden är oskyddad:
   - Uppdatera namn och adress enligt "nyast vinner".
   - Ersätt kundens kontaktuppgifter från den här källan (rader med `engagement_id is null` och samma `source`). De får
@@ -259,6 +261,8 @@ En kund raderas i följande fall:
 - Raderingen görs sist i transaktionen, efter `source_object` och all omräkning. `clearAutomatically` kopplar loss alla
   laddade entiteter, så en ändring som görs på en entitet efter raderingen skrivs aldrig.
 - Den tekniska loggraden `CUSTOMER_DELETED` skrivs i samma transaktion som raderingen.
+- Med kunden raderas också personens kontaktrader hos andra företag i kommunen (`contact.party_id`, [§5.3]), och de
+  företagen markeras för omindexering.
 - Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
   partyId. Ett senare, äldre `CUSTOMER UPDATE` kan då skapa kunden igen.
 - Ett senare meddelande som nämner kunden skapar den på nytt. Det är avsiktligt, eftersom källsystemet är master.

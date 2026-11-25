@@ -80,7 +80,7 @@ party-overview, **P** är api-service-party, **T** är infrastrukturen (RabbitMQ
 - `SchemaVerificationTest` och `SchemaParityIT` är gröna. Om ett index tas bort i bara den ena källan blir
   `SchemaParityIT` röd. Det ska provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `engagement`, `engagement_history`, `contact`,
-  `contact_channel`, `note` och `note_history` för kunden. Raderna i `technical_log`, `source_object` och
+  `contact_channel`, `note`, `note_history` och `asserted_protection` för kunden. Raderna i `technical_log`, `source_object` och
   `search_index_queue` finns kvar.
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
@@ -119,7 +119,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 
 - Kodgenereringen för `party.yaml`, `citizen.yaml` och `legalentity.yaml` med openapi-generator ([§9]).
 - `PartyClient`/`PartyIntegration` med `getPartyIds(PRIVATE, batch)`, `getPartyIds(ENTERPRISE, batch)` från P1 och
-  `getPartyType`. legalId valideras mot dept44:s format innan det skickas ([§7.1]).
+  `getPartyType`. legalId valideras mot dept44:s format innan det skickas ([§7.1]). För en `ENTERPRISE`-part ger
+  typuppslaget också organisationsnumret, så att en enskild firma känns igen ([§5.4]). Numret sparas aldrig.
 - `CitizenClient`/`CitizenIntegration` med `getCitizen` och `getCitizens` (batch), som båda returnerar skyddsnivå och,
   för oskyddade personer, namn och adress ([§5.4]).
 - `LegalEntityClient`/`LegalEntityIntegration`.
@@ -138,6 +139,9 @@ Uppgiften görs i api-service-party ([beslut 32]).
   PII-maskningen är påslagen.
 - Utan behörighet i Metakatalogen svarar Citizen 401 och inte ett filtrerat svar. Det verifieras i testmiljön, eftersom
   [§5.4] bygger på det.
+- I testmiljön verifieras i vilket format Party ger en enskild firmas organisationsnummer, och hur århundradet avgörs
+  för ett tiosiffrigt nummer innan ägaren slås upp via `PRIVATE/partyIds`. Resultatet dokumenteras i README
+  ([§13.3]).
 - Citizen anropas alltid med `ShowClassified=true`. Flaggorna tolkas enligt tabellen i [§5.4], med ett testfall per rad.
   För en skyddad person returnerar integrationen varken namn eller adress.
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
@@ -182,6 +186,10 @@ Uppgiften görs i api-service-party ([beslut 32]).
   noteringar ger det dessutom `CUSTOMER_DELETED`. En kund med en notering finns kvar.
 - En kontaktpersonsroll ger en `CONTACT_PERSON`-kontakt på varje `ENTERPRISE`-kund och aldrig en egen kund. Ett objekt
   utan företagskund ger ingen kontakt.
+- En kontaktpersons legalId mappas till partyId, och partyId sparas på kontaktraden. En kontaktperson som är skyddad,
+  som kund eller enligt Citizen, eller vars status är `UNKNOWN`, sparas inte ([§5.3]).
+- En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer får ägarens partyId som `registry_party_id` och
+  ägarens skydd från Citizen. Ett vanligt organisationsnummer ger `registry_party_id = null` ([§5.4]).
 - En part med legalId mappas och tillämpas. Saknas legalId i Party:s svar, eller har det fel format, hoppas parten över
   medan övriga parter tillämpas, och inga engagemang raderas för kunder som inte längre är parter ([§3.3]). legalId
   finns inte i någon entitet.
@@ -230,8 +238,10 @@ Uppgiften görs i api-service-party ([beslut 32]).
 - `DELETE` raderar kunden även när källan aldrig har skickat `CUSTOMER UPDATE` för den, och när kunden har raderats och
   skapats på nytt av ett engagemang ([§3.4]). Ett `DELETE` utan part ger valideringsfel. Kundens rader i
   `source_object` raderas med den.
-- Partens `protection` sätts som `asserted_protection`, skyddsnivån räknas om, och en skyddad kund får varken namn,
-  adress eller kontaktuppgifter. `UPDATE` loggas som `CUSTOMER_UPDATED`.
+- Partens `protection` sparas som källans rad i `asserted_protection`, skyddsnivån räknas om, och en skyddad kund får
+  varken namn, adress eller kontaktuppgifter. `UPDATE` loggas som `CUSTOMER_UPDATED`.
+- Ett `UPDATE` utan `protection` från källa B tar bort B:s rad men lämnar källa A:s skydd orört, och kunden förblir
+  skyddad ([§4.3]).
 - Kundens kontaktrader från meddelandet får meddelandets namespace, eller blir globala om det saknas.
 - Parten i ett `CUSTOMER`-meddelande är alltid kunden och klassas inte på roller. Den behöver partyId eller ett legalId
   som går att mappa, annars ignoreras meddelandet.
@@ -270,7 +280,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 - `CREATED` och `UPDATED` skrivs till historiken med `performed_by` från `X-Sent-By`. Ett anrop utan `X-Sent-By` ger 400.
 - En notering på en okänd kund skapar kunden:
   - en `PRIVATE`-kund med skyddsstatus från Citizen, och med namn och adress bara om personen är oskyddad
-  - en `ENTERPRISE`-kund med namn och adress från LegalEntity
+  - en `ENTERPRISE`-kund med namn och adress från LegalEntity, och för en enskild firma med ägarens skydd från
+    Citizen, utan namn och adress om ägaren är skyddad
   - med `UNKNOWN`, utan namn och adress, när Citizen inte har någon post, eller när Party har avgjort typen men
     party-overviews anrop till Citizen misslyckas
 
@@ -300,7 +311,9 @@ Uppgiften görs i api-service-party ([beslut 32]).
 **Acceptans:**
 
 - `DELETE` på kund raderar kunden med allt den äger, inklusive dess rader i `source_object` för `CUSTOMER`, och skriver
-  `CUSTOMER_DELETED` med kanalen `REST` och `performed_by`. En okänd kund ger 404.
+  `CUSTOMER_DELETED` med kanalen `REST` och `performed_by`.
+- `DELETE` på kund raderar också personens kontaktrader hos företag (`contact.party_id`), även när personen bara är
+  kontaktperson, och markerar företagen för omindexering. 404 blir det bara när varken kund eller kontaktrader finns.
 - Båda `DELETE`-anropen kräver `X-Sent-By`, och ett anrop utan den ger 400.
 - Den tekniska loggen kan läsas efter raderingen, sorteras förvalt på `created,desc` och pagineras.
 - `DELETE` på den tekniska loggen utan något filter ger 400. Med `partyId`, med `createdBefore` och med båda raderas
@@ -317,12 +330,13 @@ Uppgiften görs i api-service-party ([beslut 32]).
 
 **Acceptans:**
 
-- Alla `PRIVATE`-kunder vars `registry_checked` saknas eller är äldre än körningens start tas med, även en kund som
-  skapades kl. 10 dagen före. Företagskunder tas aldrig med.
+- Alla kunder med `registry_party_id`, alltså privatkunder och enskilda firmor, vars `registry_checked` saknas eller är
+  äldre än körningens start tas med, även en kund som skapades kl. 10 dagen före. Andra företag tas aldrig med.
 - En batch som misslyckas väljs inte igen i samma körning.
 - En kund med `UNKNOWN` får folkbokföringens nivå när Citizen svarar, och namn och adress om personen är oskyddad.
   Svarar Citizen inte förblir kunden `UNKNOWN` och tas med nästa natt.
 - När en kund blir skyddad töms namn, adress och egna kontaktuppgifter, och kunden markeras för omindexering.
+  Personens kontaktrader hos företag raderas, och företagen markeras för omindexering ([§5.3]).
 - När skyddet upphör fylls namn och adress i från Citizens svar.
 - En batch där Citizen svarar 5xx lämnar kundernas `registry_checked` orört, och övriga batchar körs ändå.
 - ShedLock förhindrar att två körningar pågår samtidigt.
@@ -468,8 +482,10 @@ Uppgiften görs i api-service-party ([beslut 32]).
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
 - Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]). En ändring som committas medan relayn
   publicerar hamnar i nästa meddelande, med sin egen version.
-- E-post, sms och webbmeddelanden som skickas via SM:s REST-API ger en outbox-rad och en aktivitet, fast anropen saknar
-  transaktion ([§11.1]).
+- E-post, sms och webbmeddelanden till och från ett ärende ger ingen outbox-rad, så länge ärendet självt inte ändras
+  ([beslut 55]).
+- Ett namespace med `accessControl = true` kan inte slå på publiceringen. Slås åtkomstkontrollen på för ett namespace
+  som publicerar, stängs publiceringen av ([beslut 51]).
 - Utkast publiceras inte, och ett inskickat utkast publiceras som `UPDATE` ([beslut 26]). Hård radering och purge
   publiceras som `DELETE` med versionen från outbox-raden.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
@@ -535,6 +551,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 **Acceptans:**
 
 - Alla ändringspunkter i [§11.3] ger en outbox-rad, även PR3-importen och originalet som blir `REPLACED`.
+- Bara asset-typer på vitlistan publiceras. Parkeringstillstånd (`PARKINGPERMIT`, `PARKING_PERMIT`) står inte på listan
+  och publiceras aldrig ([beslut 50]).
 - Versionen är `AssetEntity.version`.
 - `performedBy` sätts även vid delete.
 - Händelsen skickas av servicemetoderna och `PR3Importer`, inte av `AssetEntityListener`. Ett IT visar att
@@ -641,4 +659,8 @@ Uppgiften görs i api-service-party ([beslut 32]).
 [§3.7]: 03-meddelanden.md#37-felhantering
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [beslut 26]: 00-beslutslogg.md#beslut-26-supportmanagement-publicerar-inte-utkast
+[§13.3]: 13-risker-och-oppna-fragor.md#133-risker
+[beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
+[beslut 51]: 00-beslutslogg.md#beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
+[beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
 
