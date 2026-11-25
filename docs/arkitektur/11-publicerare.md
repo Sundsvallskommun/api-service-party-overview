@@ -31,6 +31,13 @@ Del av [arkitekturen för party-overview](README.md).
      och när raden för N+1 publiceras senare har den samma version. party-overview tolkar den som en rättning, och dess
      aktiviteter hamnar aldrig i historiken ([§3.4]). Låset hålls tills brokern har bekräftat, och en skrivning till
      objektet väntar under tiden.
+   - Relayn körs med READ COMMITTED, som `MessageWriter` ([§3.3]), och låset är transaktionens första sats. Vilka
+     objekt som har väntande rader läses utanför transaktionen. Raderna läses utan lås och tas bort på id. Med
+     MariaDB:s förval REPEATABLE READ läser en vanlig fråga ögonblicksbilden från transaktionens första läsning.
+     Relayn kan då få den nya versionen genom låset men bara de gamla raderna. Raderna låses inte, eftersom Hibernate
+     kan skriva outbox-raden innan objektet uppdateras, och en relay som håller objektet och sedan låser raderna kan
+     då hamna i deadlock med en skrivare. SM:s `ProcessEventRelay` låser sina rader och är därför inget mönster för
+     den delen.
    - Raderna tas bort först när brokern har bekräftat meddelandet. En rad som misslyckas blockerar senare rader för
      samma objekt.
    - En health-indikator blir `DOWN` när den äldsta väntande raden är äldre än en konfigurerbar gräns, som
@@ -199,4 +206,5 @@ från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är
 [beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
 [beslut 51]: 00-beslutslogg.md#beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
 [beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
+[§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 

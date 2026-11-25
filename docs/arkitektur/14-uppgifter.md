@@ -467,7 +467,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Bara `externalIdType` `PRIVATE` och `ENTERPRISE` skickas som partytyp. Stakeholders med `EMPLOYEE` eller
   `ADMINISTRATOR` skickas inte, och andra skickas utan id.
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
-- Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]). En ändring som committas medan relayn
+- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
+  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
+  meddelande med den nya versionen och båda ändringarnas aktiviteter. En ändring som committas medan relayn
   publicerar hamnar i nästa meddelande, med sin egen version.
 - E-post, sms och webbmeddelanden till och från ett ärende ger ingen outbox-rad, så länge ärendet självt inte ändras
   ([beslut 55]).
@@ -510,7 +512,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - `CELLPHONE` och `PHONE` skickas som kanaltypen `PHONE`, och `EMAIL` som `EMAIL`.
 - Titeln, `display_name` följt av `caseTitleAddition`, ryms inom 512 tecken ([§3.1]).
 - `organizationNumber` skickas utan bindestreck ([§3.1]). Ett värde som ändå inte valideras skickas inte.
-- Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]).
+- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
+  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
+  meddelande med den nya versionen och båda ändringarnas aktiviteter.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - Casedata exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - `ProcessService.updateProcess` anropas i exakt samma fall som tidigare.
@@ -547,7 +551,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - En ny asset publiceras med `sourceModified = created`.
 - `PR3Importer` skickar händelsen inne i en transaktion ([§11.1]).
 - En radering publiceras som `DELETE` med versionen från outbox-raden.
-- Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]).
+- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
+  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
+  meddelande med den nya versionen och båda ändringarnas aktiviteter.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - party-assets exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 
@@ -593,7 +599,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare.
 - Ett kontrakt utan `modified` publiceras med `sourceModified` = `1970-01-01T00:00:00Z` ([§11.4]).
 - `Identifier` fångas när `X-Sent-By` finns och blir `performedBy`. Ett anrop utan headern fungerar som tidigare.
 - En radering publiceras som `DELETE` med versionen från outbox-raden.
-- Relayn låser objektraden innan den läser raderna och tillståndet ([§11.1]).
+- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
+  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
+  meddelande med den nya versionen och båda ändringarnas aktiviteter.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - contract exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 
