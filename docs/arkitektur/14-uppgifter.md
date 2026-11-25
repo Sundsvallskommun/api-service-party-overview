@@ -142,8 +142,13 @@ beställaren och definieras senare.
   legalId finns inte i någon entitet.
 - En kund som förekommer två gånger blir en rad, och rollerna slås ihop.
 - Ett nyare `sourceModified` ersätter namn och adress, men ett äldre gör det inte.
-- En ny privatkund får sin skyddsstatus från Citizen innan den skapas. Om Citizen svarar 5xx skapas ingen kund, och
-  meddelandet retryas.
+- En ny privatkund får sin skyddsstatus från Citizen innan den skapas. Om Citizen inte svarar, svarar 5xx eller har en
+  öppen circuit breaker skapas kunden med `UNKNOWN`, utan namn, adress och egna kontaktuppgifter, och meddelandet
+  tillämpas utan omförsök. 401 från Citizen dead-letteras ([§5.4]).
+- `UNKNOWN` från folkbokföringen ger den effektiva nivån `UNKNOWN`, men en källas `SECRECY_MARKING` eller
+  `PROTECTED_REGISTRATION` går före. En kund med `UNKNOWN` indexeras bara med engagemangens referenser.
+- README och javadoc för `ProtectionLevel` beskriver alla fyra värden. För `UNKNOWN` står när värdet uppstår, att
+  kunden hanteras som skyddad och att den nattliga kontrollen ersätter det ([§5.4]).
 - En part med `protection` ger `engagement.party_protection`, och kunden räknas som skyddad. Namn, adress och egna
   kontaktuppgifter sparas inte, och befintliga töms. Skyddet upphör när inget engagemang längre anger det och
   folkbokföringen inte gör det heller.
@@ -185,7 +190,9 @@ beställaren och definieras senare.
 **Acceptans:**
 
 - Kontakter visas för det egna namespacet och de globala, aldrig för andra namespaces. Dubbletter slås ihop.
-- En skyddad kund returneras med `protectionLevel`, men utan namn, adress och kontaktkanaler.
+- En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adress och kontaktkanaler.
+- `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
+  hanteras som skyddad ([§5.4]).
 - Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Om Party inte känner numret,
   eller om kunden saknas, blir det 404. Numret finns aldrig i svar, loggrader eller Problem-detail.
 - Engagemang från alla namespaces visas. `engagementNamespace` och `objectType` filtrerar. Förvald sortering är
@@ -209,6 +216,7 @@ beställaren och definieras senare.
   - en `PRIVATE`-kund med skyddsstatus från Citizen, och med namn och adress bara om personen är oskyddad
   - en `ENTERPRISE`-kund med namn och adress från LegalEntity
   - utan namn och adress när Citizen inte har någon post
+  - med `UNKNOWN`, utan namn och adress, när Citizen inte svarar. Noteringen skapas ändå.
 
   Kunden loggas som `CUSTOMER_CREATED` med kanalen `REST`.
 
@@ -244,13 +252,16 @@ beställaren och definieras senare.
 
 **Acceptans:**
 
-- Bara `PRIVATE`-kunder vars `registry_checked` är äldre än `refresh-age` tas med. Företagskunder tas aldrig med.
+- Bara `PRIVATE`-kunder vars `registry_checked` saknas eller är äldre än `refresh-age` tas med. Företagskunder tas
+  aldrig med.
+- En kund med `UNKNOWN` får folkbokföringens nivå när Citizen svarar, och namn och adress om personen är oskyddad.
+  Svarar Citizen inte förblir kunden `UNKNOWN` och tas med nästa natt.
 - När en kund blir skyddad töms namn, adress och egna kontaktuppgifter, och kunden indexeras om utan dem.
 - När skyddet upphör fylls namn och adress i från Citizens svar.
 - En batch där Citizen svarar 5xx lämnar kundernas `registry_checked` orört, och övriga batchar körs ändå.
 - ShedLock förhindrar att två körningar pågår samtidigt.
 - Ett test med fler kunder än `batch-size` visar att alla behandlas.
-- Kunder med `registry_checked = null` tas med. En kund som kontrollerades förra nattens körning tas med i nästa.
+- En kund som kontrollerades förra nattens körning tas med i nästa.
 - Batchens kunder låses i partyId-ordning, och transaktionen körs med READ COMMITTED.
 
 ## C12 — Sökindex: Hibernate Search, kö och relay

@@ -86,8 +86,8 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
 - **Vem:** `Identifier` sparas med typ, även vid delete.
 - **Envelope:** `reference` = `assetId`, `title`, `category` = `type`, `status`, `validFrom` = `issued`, `validTo`,
   `sourceModified` = `updated`, annars `created`. Äldre rader saknar båda och får en fast tidpunkt,
-  `1970-01-01T00:00:00Z`, så att de aldrig räknas som nyast. Inget namespace, så engagemangen blir globala ([beslut
-  23]).
+  `1970-01-01T00:00:00Z`, så att de aldrig räknas som nyast. Inget namespace, så engagemangen blir globala
+  ([beslut 23]).
 - **Parter:** Exakt ett: `partyId` och `partyType`, utan kontaktuppgifter.
 - **Grundladdning:** `POST /{municipalityId}/asset-events/republish` skriver outbox-rader i batchar i stället för att
   publicera direkt.
@@ -119,8 +119,8 @@ från dept44 8.0.12 till den version där dept44-starter-rabbitmq är släppt. A
 (2026-10-19).
 
 - **Opt-in:** Egenskapen `integration.party-overview.namespaces` i `application.yml`, eftersom Casedata saknar
-  `namespace_config`. Namespaces utan opt-in skriver inga outbox-rader. Bara `SBK_MEX` slås på tills vidare ([beslut
-  37], [§13.1]).
+  `namespace_config`. Namespaces utan opt-in skriver inga outbox-rader. Bara `SBK_MEX` slås på tills vidare
+  ([beslut 37], [§13.1]).
 - **Sekretess:** Ett ärende med `confidential = true` publiceras som `DELETE`. När flaggan tas bort publiceras `UPDATE`
   med högre version, och ärendet kommer tillbaka ([§3.4]).
 - **Publiceringspunkter:** `ErrandService` (`create`, `update`, `delete`), `StatusService.addToErrand` och

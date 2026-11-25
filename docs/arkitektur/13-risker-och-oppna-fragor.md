@@ -58,11 +58,11 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** `refresh-age` och `batch-size` är konfigurerbara. Belastningen stäms av med den som förvaltar Citizen.
 
-- Om Citizen inte svarar står källans kö still medan ett meddelande som skapar en ny privatkund görs om, i cirka 8
-  minuter. Vid 5xx dead-letteras det sedan, och vid öppen circuit breaker läggs det tillbaka i kön ([§3.7]).
+- Om Citizen inte svarar skapas nya privatkunder med skyddsstatusen `UNKNOWN`. De visas utan namn och adress tills den
+  nattliga kontrollen har fått svar från Citizen ([§5.4]).
 
-  **Hantering:** Avsiktligt: ingen privatkund skapas utan känd skyddsstatus. Andra källors köer påverkas inte. Dead
-  letters flyttas tillbaka när Citizen svarar igen.
+  **Hantering:** Avsiktligt ([beslut 48]). Kunden behandlas som skyddad tills statusen är känd, så inga uppgifter sparas
+  för tidigt, och köerna står inte still medan Citizen är nere.
 
 - Envelope-data (t.ex. en ärendetitel) eller en notering kan innehålla skyddsvärda uppgifter om en skyddad kund.
 
@@ -131,8 +131,13 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Dokumenterat ([§5.3]). En grundladdning från källan räknar om allt.
 
+- En part som har både en kontaktpersonsroll och en annan roll, t.ex. `APPLICANT` och `CONTACT_PERSON`, blir bara
+  kontaktperson och aldrig kund ([beslut 15]). Saknar objektet en företagskund ignoreras parten helt.
+
+  **Hantering:** Accepteras tills vidare. SM har en roll per stakeholder, så det gäller Casedata och contract, där en
+  part kan ha flera roller.
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
-[§3.7]: 03-meddelanden.md#37-felhantering
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [§6.2]: 06-rest-api.md#62-kundsökning-opensearch
@@ -141,6 +146,8 @@ Del av [arkitekturen för party-overview](README.md).
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
+[beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
+[beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: #132-förutsättningar-före-driftsättning
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 

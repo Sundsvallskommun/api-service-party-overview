@@ -11,8 +11,8 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   sortering och paginering, raderingen av "kunder som inte längre är parter", radering av teknisk logg med `LIMIT`,
   urvalet till den nattliga skyddskontrollen. Ett samtidighetstest där två trådar skapar samma kund (`NOT_SUPPORTED`,
   `TransactionTemplate` och latch) och resultatet blir en kund utan undantag.
-- **Servicetester** (Mockito): Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna och Citizens flaggor
-  ([§5.4]), att namn, adress och egna kontaktuppgifter töms och inte sparas när kunden är skyddad, att de fylls i igen
+- **Servicetester** (Mockito): Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna, Citizens flaggor
+  och `UNKNOWN` ([§5.4]), att namn, adress och egna kontaktuppgifter töms och inte sparas när kunden är skyddad, att de fylls i igen
   när skyddet upphör, och `PROTECTION_CHANGED`. Uppslag på personnummer. `DeadLetterHealthIndicator` (tom kö, kö med
   meddelanden, kö som saknas). Hela versionsmatrisen, tabelldrivet med alla celler i [§3.4]. Klassningen av parter
   ([§5.3]), "nyast vinner", historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden men inte

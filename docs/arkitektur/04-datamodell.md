@@ -44,8 +44,9 @@ erDiagram
   - `municipality_id`
   - `party_id`: partens id i Party
   - `object_id`: objektets id i källsystemet, `objectId` i [§3.1]
-  - `message_id` och `last_message_id`: AMQP-egenskapen `message-id` ([§3.1]) för det meddelande som skapade respektive
-    senast skrev raden. Med den kan raden spåras till den tekniska loggen och till dead letter-kön.
+  - `message_id`: AMQP-egenskapen `message-id` ([§3.1]). Den finns bara i den tekniska loggen och knyter en ändring
+    till sitt meddelande. dept44-starter-rabbitmq loggar samma id för varje meddelande, både hos publiceraren och i
+    party-overview ([beslut 47]).
   - `request_id`: `x-request-id`
 - Tidsstämplar är `datetime(6)` med `@TimeZoneStorage(NORMALIZE)`, sätts i `@PrePersist`/`@PreUpdate` och trunkeras
   till millisekunder.
@@ -63,20 +64,20 @@ erDiagram
 
 **`customer`**: en kund per kommun och partyId.
 
-|                        Kolumn                         |                  Typ                  |  Null  |                                    Anmärkning                                    |
-|-------------------------------------------------------|---------------------------------------|--------|----------------------------------------------------------------------------------|
-| `id`                                                  | varchar(36)                           | nej    | PK                                                                               |
-| `municipality_id`                                     | varchar(8)                            | nej    |                                                                                  |
-| `party_id`                                            | varchar(36)                           | nej    |                                                                                  |
-| `party_type`                                          | varchar(16)                           | nej    | `PRIVATE` eller `ENTERPRISE`                                                     |
-| `name`                                                | varchar(255)                          | ja     | Alltid null om kunden är skyddad                                                 |
-| `care_of`, `street`, `postal_code`, `city`, `country` | varchar(255), postal_code varchar(16) | ja     | Alltid null om kunden är skyddad                                                 |
-| `profile_modified`                                    | datetime(6)                           | ja     | `sourceModified` för de namn- och adressuppgifter som är lagrade ([§5.2])        |
-| `protection_level`                                    | varchar(32)                           | nej    | Effektiv nivå: `NONE`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§5.4]) |
-| `registry_protection`                                 | varchar(32)                           | ja     | Folkbokföringens nivå enligt Citizen. Alltid null för `ENTERPRISE`.              |
-| `registry_checked`                                    | datetime(6)                           | ja     | När Citizen senast tillfrågades                                                  |
-| `asserted_protection`                                 | varchar(32)                           | ja     | Nivån från det senast tillämpade `CUSTOMER`-meddelandet                          |
-| `created`, `modified`                                 | datetime(6)                           | nej/ja |                                                                                  |
+|                        Kolumn                         |                  Typ                  |  Null  |                                                  Anmärkning                                                   |
+|-------------------------------------------------------|---------------------------------------|--------|---------------------------------------------------------------------------------------------------------------|
+| `id`                                                  | varchar(36)                           | nej    | PK                                                                                                            |
+| `municipality_id`                                     | varchar(8)                            | nej    |                                                                                                               |
+| `party_id`                                            | varchar(36)                           | nej    |                                                                                                               |
+| `party_type`                                          | varchar(16)                           | nej    | `PRIVATE` eller `ENTERPRISE`                                                                                  |
+| `name`                                                | varchar(255)                          | ja     | Alltid null om kunden är skyddad                                                                              |
+| `care_of`, `street`, `postal_code`, `city`, `country` | varchar(255), postal_code varchar(16) | ja     | Alltid null om kunden är skyddad                                                                              |
+| `profile_modified`                                    | datetime(6)                           | ja     | `sourceModified` för de namn- och adressuppgifter som är lagrade ([§5.2])                                     |
+| `protection_level`                                    | varchar(32)                           | nej    | Effektiv nivå: `NONE`, `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§5.4])                   |
+| `registry_protection`                                 | varchar(32)                           | ja     | Folkbokföringens nivå enligt Citizen, eller `UNKNOWN` när Citizen inte svarade. Alltid null för `ENTERPRISE`. |
+| `registry_checked`                                    | datetime(6)                           | ja     | När Citizen senast svarade. null så länge statusen är `UNKNOWN`.                                              |
+| `asserted_protection`                                 | varchar(32)                           | ja     | Nivån från det senast tillämpade `CUSTOMER`-meddelandet                                                       |
+| `created`, `modified`                                 | datetime(6)                           | nej/ja |                                                                                                               |
 
 Index:
 
@@ -102,7 +103,6 @@ Index:
 | `valid_from`, `valid_to` | date          | ja     |                                                                                     |
 | `source_created`         | datetime(6)   | ja     |                                                                                     |
 | `source_modified`        | datetime(6)   | nej    | Sorteringsnyckel. `modified` ändras av varje grundladdning och duger inte till det. |
-| `last_message_id`        | varchar(36)   | nej    | Meddelandet som senast skrev raden ([§4.2])                                         |
 | `created`, `modified`    | datetime(6)   | nej/ja |                                                                                     |
 
 Index:
@@ -123,7 +123,6 @@ Index:
 | `description`                       | varchar(1024)             | ja   |                                                   |
 | `performed_by_type`, `performed_by` | varchar(32), varchar(255) | ja   |                                                   |
 | `occurred_at`                       | datetime(6)               | nej  |                                                   |
-| `message_id`                        | varchar(36)               | nej  | Meddelandet som bar aktiviteten ([§4.2])          |
 | `created`                           | datetime(6)               | nej  |                                                   |
 
 Index: `idx_engagement_history_engagement_id_occurred_at`.
@@ -140,7 +139,6 @@ Index: `idx_engagement_history_engagement_id_occurred_at`.
 | `contact_type`  | varchar(32)  | nej  | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON`                                                |
 | `name`          | varchar(255) | ja   | Kontaktpersonens namn                                                                                     |
 | `role`          | varchar(64)  | ja   | Kontaktpersonens roll                                                                                     |
-| `message_id`    | varchar(36)  | nej  | Meddelandet som skapade raden ([§4.2])                                                                    |
 | `created`       | datetime(6)  | nej  | Raderna ersätts som helhet och uppdateras aldrig.                                                         |
 
 Index: `idx_contact_customer_id_namespace` och `idx_contact_engagement_id`.
@@ -168,8 +166,8 @@ Index: `idx_contact_customer_id_namespace` och `idx_contact_engagement_id`.
 Index: `idx_note_customer_id_namespace_created`.
 
 **`note_history`**: samma kolumner som `engagement_history`, med `note_id` (FK `fk_note_history_note_id`, cascade) i
-stället för `engagement_id`. `type` är `CREATED` eller `UPDATED`, `performed_by` kommer från `X-Sent-By` och
-`message_id` saknas. De gemensamma kolumnerna ligger i en `@MappedSuperclass AbstractHistoryEntity`.
+stället för `engagement_id`. `type` är `CREATED` eller `UPDATED`, och `performed_by` kommer från `X-Sent-By`. De
+gemensamma kolumnerna ligger i en `@MappedSuperclass AbstractHistoryEntity`.
 
 Index: `idx_note_history_note_id_occurred_at`.
 
@@ -184,7 +182,6 @@ Index: `idx_note_history_note_id_occurred_at`.
 | `object_id`           | varchar(255) | nej. Objektets id i källsystemet, och för `CUSTOMER` kundens partyId ([§4.2]). |
 | `version`             | bigint       | nej                                                                            |
 | `deleted`             | bit          | nej                                                                            |
-| `last_message_id`     | varchar(36)  | nej. Meddelandet som senast skrev raden ([§4.2]).                              |
 | `created`, `modified` | datetime(6)  | nej/ja                                                                         |
 
 Index: `uq_source_object_municipality_id_object_type_source_object_id`.
@@ -197,7 +194,7 @@ Index: `uq_source_object_municipality_id_object_type_source_object_id`.
 | `municipality_id`  | varchar(8)   | nej  |                                                                   |
 | `party_id`         | varchar(36)  | nej  |                                                                   |
 | `channel`          | varchar(16)  | nej  | `MESSAGE`, `REST` eller `SCHEDULER`                               |
-| `message_id`       | varchar(36)  | ja   |                                                                   |
+| `message_id`       | varchar(36)  | ja   | Vid kanalen `MESSAGE` ([§4.2])                                    |
 | `request_id`       | varchar(255) | ja   | Kapas till 255 tecken, eftersom headern inte har någon längdgräns |
 | `source`           | varchar(64)  | ja   |                                                                   |
 | `object_type`      | varchar(32)  | ja   |                                                                   |
@@ -249,6 +246,7 @@ Index: `idx_search_index_queue_queued`.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.5]: 03-meddelanden.md#35-tillämpning
+[beslut 47]: 00-beslutslogg.md#beslut-47-meddelandets-id-finns-bara-i-den-tekniska-loggen
 [§4.2]: #42-gemensamt-för-alla-tabeller
 [§4.3]: #43-tabellerna
 [§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace

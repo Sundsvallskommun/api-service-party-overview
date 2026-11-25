@@ -149,6 +149,7 @@ MessageListener (alla köer)                          ingen transaktion
           (en kontaktpersons legalId används inte och kastas)
        5. folkbokföringens skyddsstatus för PRIVATE-kundparter som inte finns i databasen
           (CitizenIntegration, batch, ShowClassified=true, §5.4)
+                                                             ─ svarar inte eller 5xx → UNKNOWN
        6. MessageWriter.apply(change)                         @Transactional(READ_COMMITTED), egen bean
             a. lås källobjektet (source_object: IODKU, sedan SELECT … FOR UPDATE)
             b. avgör enligt versionsmatrisen (§3.4)           ─ inaktuellt → bara teknisk logg
@@ -198,14 +199,14 @@ MessageListener (alla köer)                          ingen transaktion
    - Skapa kunden om den saknas (`CUSTOMER_CREATED`). En ny privatkund får folkbokföringens skyddsstatus från steg 5 i
      [§3.3].
 2. Gör upsert av engagemangsraden per kund, nycklad på `(municipality_id, object_type, source, object_id, customer_id)`:
-   - envelope-fälten, roller, namespace, `party_protection` (partens `protection`) och `last_message_id`
+   - envelope-fälten, roller, namespace och `party_protection` (partens `protection`)
    - `ENGAGEMENT_CREATED` om raden är ny, annars `ENGAGEMENT_UPDATED`
 3. Räkna om kundens skyddsnivå ([§5.4]). Om kunden är oskyddad uppdateras namn och adress enligt "nyast vinner" ([§5.2]).
    Radens kontaktuppgifter ersätts ([§5.3]), men för en skyddad kund sparas ingen rad med kundens egna kontaktuppgifter.
 4. Skriv meddelandets `activities` som historik på raden, men bara om raden är ny eller om `v > s`.
 5. Radera engagemangsrader för kunder som inte längre är parter (`ENGAGEMENT_REMOVED`), och räkna om skyddsnivån för
    dem som har engagemang kvar.
-6. Sätt `source_object.version = v`, `deleted = false` och `last_message_id`.
+6. Sätt `source_object.version = v` och `deleted = false`.
 7. Radera de kunder från steg 5 som saknar både engagemang och noteringar ([§3.6]).
 
 En kund som förekommer flera gånger i `parties` blir en enda rad, och rollerna slås ihop.
@@ -263,7 +264,9 @@ Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
 |-------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
 | Valideringsfel (`ConstraintViolationException`), okänd objekttyp eller kanaltyp, saknad version | Dead letter direkt                                                                                              |
 | Party svarar 404 på ett legalId                                                                 | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `objectId`, men utan legalId. |
-| 5xx från Party eller Citizen (`ServerProblem`)                                                  | Omförsök i cirka 8 minuter, sedan dead letter                                                                   |
+| 5xx från Party (`ServerProblem`)                                                                | Omförsök i cirka 8 minuter, sedan dead letter                                                                   |
+| Citizen svarar inte, svarar 5xx eller har öppen circuit breaker                                 | Inget fel. Nya privatkunder får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                   |
+| Citizen svarar 401                                                                              | Dead letter direkt (`ClientProblem`), så att larmet går. Behörigheten i Metakatalogen saknas ([§7.2]).          |
 | Databasen svarar inte, öppen circuit breaker                                                    | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                       |
 | Deadlock eller lock timeout (`TransientDataAccessException`)                                    | Omförsök                                                                                                        |
 | `DataIntegrityViolationException`                                                               | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                   |
@@ -285,4 +288,5 @@ köer inte påverkas.
 [§11.1]: 11-publicerare.md#111-gemensamt-för-alla-publicerare
 [§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
+[§7.2]: 07-integrationer.md#72-citizen-och-legalentity
 

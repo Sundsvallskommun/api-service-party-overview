@@ -13,9 +13,9 @@ Del av [arkitekturen för party-overview](README.md).
    databasen, eftersom varje FK under `customer` har `on delete cascade`. Undantaget är den tekniska loggen och
    versionsregistret, som saknar FK och inte innehåller några kunduppgifter ([§4.3]).
 5. **Spårbarhet.** Alla tabeller har `created`, och de tabeller som uppdateras har även `modified`. Rader som skrivs
-   via REST har `created_by`/`modified_by`. Engagemang, kontakter och versionsregistret har id:t på meddelandet som
-   senast skrev dem. Varje ändring av en kund eller dess engagemang, vare sig den kom via meddelande, REST eller
-   den nattliga kontrollen, syns i den tekniska loggen. Noteringar har en egen historik.
+   via REST har `created_by`/`modified_by`. Varje ändring av en kund eller dess engagemang, vare sig den kom via
+   meddelande, REST eller den nattliga kontrollen, syns i den tekniska loggen med id:t på meddelandet eller anropet
+   bakom den ([beslut 47]). Noteringar har en egen historik.
 6. **Skyddad identitet går före allt annat.** För en kund med skyddade personuppgifter lagras inga namn, adresser
    eller egna kontaktuppgifter, och kunden går bara att hitta på referenser som ärendenummer. Skyddet visas på kunden i
    varje svar ([§5.4]).
@@ -24,4 +24,5 @@ Del av [arkitekturen för party-overview](README.md).
 
 [§4.3]: 04-datamodell.md#43-tabellerna
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
+[beslut 47]: 00-beslutslogg.md#beslut-47-meddelandets-id-finns-bara-i-den-tekniska-loggen
 

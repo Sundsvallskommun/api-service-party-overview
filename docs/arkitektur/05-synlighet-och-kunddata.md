@@ -93,8 +93,9 @@ Det som styr designen:
 | `CUSTOMER`-meddelanden                          | `customer.asserted_protection` | när ett `CUSTOMER UPDATE` tillämpas                   |
 | Engagemangsmeddelanden                          | `engagement.party_protection`  | när objektet uppdateras. Försvinner med engagemanget. |
 
-Ordningen är `NONE` < `SECRECY_MARKING` < `PROTECTED_REGISTRATION`. Nivån räknas om i samma transaktion varje gång
-någon av källorna ändras. En ändrad nivå loggas som `PROTECTION_CHANGED` i den tekniska loggen.
+Ordningen är `NONE` < `UNKNOWN` < `SECRECY_MARKING` < `PROTECTED_REGISTRATION`. Nivån räknas om i samma transaktion
+varje gång någon av källorna ändras. En ändrad nivå loggas som `PROTECTION_CHANGED` i den tekniska loggen. `UNKNOWN`
+kommer bara från folkbokföringen, och en känd nivå från en källa går före den, eftersom den säger mer.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -121,9 +122,29 @@ hanteringen nedan är densamma för båda nivåerna.
 Svaret från Citizen hålls bara i minnet. Namn och adress ur svaret används bara om personen är oskyddad, och ingenting
 ur svaret loggas.
 
-En privatkund kan ibland skapas utan känd skyddsstatus. Det händer om kunden fanns när statusen kontrollerades men hann
-raderas innan meddelandet skrevs. Kunden får då `registry_checked = null`, och den behandlas som skyddad tills den
-nattliga kontrollen har körts. Inga namn, adresser eller kontaktuppgifter sparas under tiden.
+**Okänd skyddsstatus (`UNKNOWN`).** En privatkund skapas med `registry_protection = UNKNOWN` och
+`registry_checked = null` när folkbokföringens status inte går att få ([beslut 48]):
+
+- Citizen svarar inte, svarar 5xx eller har en öppen circuit breaker när kunden skapas, av ett meddelande eller av en
+  notering ([§7.2]). Meddelandet eller noteringen tillämpas ändå, så att källans kö inte står still och noteringen inte
+  misslyckas medan Citizen är nere.
+- Kunden fanns när statusen kontrollerades, men hann raderas innan meddelandet skrevs.
+
+Så länge statusen är okänd gäller följande:
+
+- `UNKNOWN` räknas som skyddat. Inga namn, adresser eller egna kontaktuppgifter sparas, och kunden indexeras bara med
+  engagemangens referenser.
+- Den nattliga kontrollen tar alltid med kunden. När Citizen svarar ersätts `UNKNOWN` med folkbokföringens nivå, och är
+  personen oskyddad fylls namn och adress i från svaret. Kontaktuppgifterna kommer tillbaka med nästa tillämpade
+  meddelande från källan.
+- Frontend visar `UNKNOWN` som okänd skyddsstatus och hanterar kunden som skyddad.
+
+401 från Citizen ger inte `UNKNOWN`. Den betyder att behörigheten i Metakatalogen saknas, vilket är ett
+konfigurationsfel, och meddelandet dead-letteras så att larmet går ([§7.2]).
+
+**Dokumentation.** README, javadoc för enumen `ProtectionLevel` och OpenAPI-specens beskrivning av `protectionLevel`
+beskriver alla fyra värden. För `UNKNOWN` står när värdet uppstår, att kunden ska hanteras som skyddad och att den
+nattliga kontrollen ersätter det.
 
 **Hantering när kunden är skyddad** (`protection_level ≠ NONE`):
 
@@ -133,7 +154,7 @@ nattliga kontrollen har körts. Inga namn, adresser eller kontaktuppgifter spara
    noteringar. Den går därför bara att hitta på en referens, som ett ärendenummer, på partyId eller med uppslag på
    personnummer ([§6]).
 3. API:et returnerar `protectionLevel` på kunden, och namn, adress och kontaktkanaler är tomma. Frontend ska visa
-   skyddet tydligt i varje vy som rör kunden och skilja nivåerna åt.
+   skyddet tydligt i varje vy som rör kunden och skilja nivåerna åt, också `UNKNOWN`.
 4. Engagemang, historik och noteringar finns kvar. Envelope-data och noteringar ska inte innehålla skyddsvärda uppgifter.
    Det ansvaret ligger hos källsystemen och verksamheterna ([§13]).
 
@@ -153,6 +174,7 @@ räknas om. Sedan indexeras de ändrade kunderna.
 [§6]: 06-rest-api.md
 [§7.2]: 07-integrationer.md#72-citizen-och-legalentity
 [§13]: 13-risker-och-oppna-fragor.md
+[beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: 13-risker-och-oppna-fragor.md#132-förutsättningar-före-driftsättning
 [beslut 41]: 00-beslutslogg.md#beslut-41-tolkningen-av-citizens-skyddsflaggor
 

@@ -261,7 +261,8 @@ SupportManagement publicerar inte utkast (`lifecycle = DRAFT`).
 Skyddad identitet ([§5.4]) är en egenskap på kunden med tre nivåer: `NONE`, `SECRECY_MARKING` och
 `PROTECTED_REGISTRATION`. Den effektiva nivån är den högsta av folkbokföringens (Citizen), CUSTOMER-meddelandenas och
 engagemangsmeddelandenas. Är kunden skyddad lagras varken namn, adress eller kundens egna kontaktuppgifter, och de
-indexeras inte för sökning.
+indexeras inte för sökning. När folkbokföringens status inte är känd används värdet `UNKNOWN`, som räknas som skyddat
+([beslut 48]).
 
 **Valdes bort:** Att lagra uppgifterna och bara dölja dem i API:et, eller att bara lita på publicerarnas flagga.
 
@@ -443,6 +444,31 @@ undantas från dept44:s payload-loggning.
 **Skäl:** En sökfråga kan innehålla namn, adresser och personnummer. dept44:s payload-logg sparar hela URL:en, även
 query-strängen, och en URL kan också hamna i gatewayens loggar. En kropp loggas bara med de fält som står i allowlisten.
 
+## Beslut 47: Meddelandets id finns bara i den tekniska loggen
+
+Meddelandets `message-id` lagras bara i `technical_log.message_id`. Engagemang, historik, kontakter och
+versionsregistret har inget meddelande-id ([§4.2]).
+
+**Valdes bort:** `message_id` och `last_message_id` på varje rad som ett meddelande skriver.
+
+**Skäl:** Den tekniska loggen har redan id:t för varje meddelande och kund, även för inaktuella meddelanden, och
+dept44-starter-rabbitmq loggar samma id för varje meddelande hos både publiceraren och party-overview. Kolumnerna på
+datatabellerna gav ingen spårbarhet utöver det.
+
+## Beslut 48: Okänd skyddsstatus när Citizen inte svarar
+
+Om Citizen inte svarar, svarar 5xx eller har en öppen circuit breaker när en privatkund skapas, får kunden
+skyddsstatusen `UNKNOWN` och behandlas som skyddad tills den nattliga kontrollen har fått svar ([§5.4]). Meddelandet
+eller noteringen tillämpas ändå. 401 dead-letteras som tidigare, eftersom det är ett konfigurationsfel. README, javadoc
+och OpenAPI-specen beskriver värdet.
+
+**Valdes bort:** Att göra om meddelandet tills Citizen svarar, och att sedan dead-lettera det.
+
+**Skäl:** Med single-active-consumer stod hela källans kö still i cirka 8 minuter per meddelande, och meddelanden som
+flyttades tillbaka från dead letter-kön kom i fel ordning och tappade sina aktiviteter. Med `UNKNOWN` sparas ändå inga
+uppgifter innan statusen är känd. Ett eget värde visar att statusen är okänd, i stället för en skyddsnivå som personen
+kanske inte har.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -451,4 +477,5 @@ query-strängen, och en URL kan också hamna i gatewayens loggar. En kropp logga
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [beslut 19]: #beslut-19-supportmanagement-publicerar-bara-namespaces-med-opt-in
+[beslut 48]: #beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 

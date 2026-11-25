@@ -36,15 +36,17 @@ När en notering skapar en kund ([beslut 6]) sker följande:
 
 1. `PartyIntegration` avgör partytypen. Om ingen typ hittas blir svaret 404 och ingen notering skapas.
 2. `PRIVATE`: Citizen ger skyddsstatus, och om personen är oskyddad även namn (`givenname` plus `lastname`) och
-   folkbokföringsadress. Har Citizen ingen post skapas kunden utan namn och adress.
+   folkbokföringsadress. Har Citizen ingen post skapas kunden utan namn och adress. Svarar Citizen inte skapas kunden
+   med `UNKNOWN`, utan namn och adress ([§5.4]).
 3. `ENTERPRISE`: LegalEntity ger namnet (`name`) och adressen (`postAddress`). `organizationNumber` i svaret används inte.
 4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU. Om ett meddelande hann skapa kunden under tiden
    behålls dess uppgifter, men skyddsnivån räknas om.
 
 Fel från Citizen hanteras olika beroende på var anropet görs:
 
-- *I meddelandeflödet:* 5xx retryas, och en öppen circuit breaker räknas som avbrott ([§3.7]). Ingen ny privatkund skapas
-  utan känd skyddsstatus.
+- *I meddelandeflödet och när en notering skapar kunden:* om Citizen inte svarar, svarar 5xx eller har en öppen circuit
+  breaker skapas nya privatkunder med `UNKNOWN` ([§5.4]). Felet kastas inte vidare, så meddelandet görs inte om och
+  källans kö står inte still ([§3.7]). Felet loggas med antalet berörda kunder, men utan partyId.
 - *I den nattliga kontrollen:* en batch som misslyckas loggas, och dess kunder tas med nästa natt.
 - *401:* betyder att behörigheten i Metakatalogen saknas. Det är ett konfigurationsfel. I meddelandeflödet blir det en
   `ClientProblem`, och meddelandet dead-letteras så att larmet går ([§12.1]). README beskriver åtgärden: registrera
