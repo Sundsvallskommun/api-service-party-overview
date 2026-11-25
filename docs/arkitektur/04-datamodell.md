@@ -41,8 +41,9 @@ erDiagram
 
 ## 4.2 Gemensamt för alla tabeller
 
-- `id varchar(36)`, UUID från `@UuidGenerator`. Undantagen är kollektionstabellen `contact_channel`,
-  `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, och `shedlock`.
+- `id varchar(36)`, UUID från `@UuidGenerator` ([beslut 63]). Undantagen är `contact_channel`, som har primärnyckeln
+  `(contact_id, type, value)`, `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, och
+  `shedlock`.
 - `municipality_id varchar(8)` finns på `customer` och på de tabeller som läses utan att gå via en kund: `engagement`
   (uppslag per källobjekt, [§3.5]), `source_object`, `technical_log`, `contact_person_role` och `search_index_queue`.
   Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn. `contact` nås också på `party_id` när en
@@ -50,7 +51,9 @@ erDiagram
 - `namespace varchar(32)` finns på `engagement`, `contact` och `note` ([§5.1]).
 - En adress har samma kolumner i `customer_address`, `contact` och `enterprise_workplace_address`:
   `address_type varchar(32)`, `care_of`, `street`, `city` och `country varchar(255)` samt `postal_code varchar(16)`.
-  Alla tre entiteterna använder samma `@Embeddable` ([§5.2]).
+  Alla tre entiteterna använder samma `@Embeddable`, med nullbara kolumner, `equals` och `hashCode` ([§5.2]).
+  `customer_address` och `enterprise_workplace_address` gör `address_type` obligatorisk med `@AttributeOverride`. En
+  inbäddad adress vars kolumner alla är null läses som null, och det betyder att kontaktraden saknar adress.
 - Kolumner som slutar på `_id` men inte är FK och inte pekar på någon tabell i party-overview:
   - `municipality_id`
   - `party_id`: partens partyId, som är Citizens `personId` för en person och LegalEntitys id för ett företag
@@ -65,32 +68,38 @@ erDiagram
 - Varje FK under `customer` har `on delete cascade`. I entiteterna motsvaras det av `@ManyToOne(fetch = LAZY)`,
   `@ForeignKey(name = …)` och `@OnDelete(action = CASCADE)` på barnet, medan föräldern inte har någon kollektion. På
   `@ElementCollection` sitter `@OnDelete` på kollektionen. Om Hibernate inte genererar kaskaden för kollektionstabellen,
-  vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne` och en egen
-  `id`-kolumn. Valet görs i C2, och tabellen i [§4.3] uppdateras då. `enterprise_profile` har `@OneToOne(fetch = LAZY)`
+  vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne` och samma
+  primärnyckel. Valet görs i C2. `enterprise_profile` har `@OneToOne(fetch = LAZY)`
   med `@MapsId`, så att kundens id också är profilens, och profilens barn har sina FK mot profilen.
 - Index, unika nycklar och FK har samma namn i `@Table`/`@ForeignKey` och i Flyway: `uq_<tabell>_<kolumner>`,
   `idx_<tabell>_<kolumner>` och `fk_<tabell>_<kolumn>`. Ett namn får vara högst 64 tecken, som är MariaDB:s gräns för
   identifierare. Den enda nyckel som skulle gå över gränsen, engagemangets unika nyckel, namnges därför efter vad den
   betyder ([§4.3]).
 - Enum-kolumner lagras som `varchar` och har inga check-constraints, så att ett nytt värde inte kräver en migrering.
+- `text`-kolumner mappas med `@Column(columnDefinition = "text")`, så att `schema.sql` och Flyway får samma typ.
+- Barnrader ersätts mitt i en transaktion med en bulk-delete med `flushAutomatically = true` men utan
+  `clearAutomatically`, och de nya raderna skrivs med nya id:n. Det gäller kundens adresser, engagemangens kontakter
+  och profilens arbetsställen och förfaranden, vars egna barn tas bort av databasens kaskad. En skrivande transaktion
+  laddar aldrig barnraderna. `clearAutomatically` används bara när kunden raderas, sist i transaktionen ([§3.6]).
+  Profilen själv uppdateras på den hanterade entiteten, så att `created` ligger kvar och `modified` sätts.
 
 ## 4.3 Tabellerna
 
 **`customer`**: en kund per kommun och partyId.
 
-|        Kolumn         |     Typ      |  Null  |                                                                                                                Anmärkning                                                                                                                |
-|-----------------------|--------------|--------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `id`                  | varchar(36)  | nej    | PK                                                                                                                                                                                                                                       |
-| `municipality_id`     | varchar(8)   | nej    |                                                                                                                                                                                                                                          |
-| `party_id`            | varchar(36)  | nej    |                                                                                                                                                                                                                                          |
-| `party_type`          | varchar(16)  | nej    | `PRIVATE` eller `ENTERPRISE`                                                                                                                                                                                                             |
-| `name`                | varchar(255) | ja     | Alltid null om kunden är skyddad                                                                                                                                                                                                         |
-| `profile_modified`    | datetime(6)  | ja     | `sourceModified` för det namn och de adresser som är lagrade ([§5.2])                                                                                                                                                                    |
-| `protection_level`    | varchar(32)  | nej    | Effektiv nivå: `NONE`, `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§5.4])                                                                                                                                              |
-| `registry_party_id`   | varchar(36)  | ja     | Den person vars skydd hämtas från folkbokföringen: kunden själv för `PRIVATE`, ägaren för en enskild firma. null för andra företag, och när det inte gick att avgöra om ett företag är en enskild firma eller vem som äger den ([§5.4]). |
-| `registry_protection` | varchar(32)  | ja     | Folkbokföringens nivå enligt Citizen, eller `UNKNOWN` när den inte gick att få. null för ett företag som inte är en enskild firma.                                                                                                       |
-| `registry_checked`    | datetime(6)  | ja     | När folkbokföringens nivå senast avgjordes. null så länge statusen är `UNKNOWN`.                                                                                                                                                         |
-| `created`, `modified` | datetime(6)  | nej/ja |                                                                                                                                                                                                                                          |
+|         Kolumn          |     Typ      |  Null  |                                                                                                                Anmärkning                                                                                                                |
+|-------------------------|--------------|--------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `id`                    | varchar(36)  | nej    | PK                                                                                                                                                                                                                                       |
+| `municipality_id`       | varchar(8)   | nej    |                                                                                                                                                                                                                                          |
+| `party_id`              | varchar(36)  | nej    |                                                                                                                                                                                                                                          |
+| `party_type`            | varchar(16)  | nej    | `PRIVATE` eller `ENTERPRISE`                                                                                                                                                                                                             |
+| `name`                  | varchar(255) | ja     | Alltid null om kunden är skyddad                                                                                                                                                                                                         |
+| `name_address_modified` | datetime(6)  | ja     | `sourceModified` för det namn och de adresser som är lagrade ([§5.2])                                                                                                                                                                    |
+| `protection_level`      | varchar(32)  | nej    | Effektiv nivå: `NONE`, `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§5.4])                                                                                                                                              |
+| `registry_party_id`     | varchar(36)  | ja     | Den person vars skydd hämtas från folkbokföringen: kunden själv för `PRIVATE`, ägaren för en enskild firma. null för andra företag, och när det inte gick att avgöra om ett företag är en enskild firma eller vem som äger den ([§5.4]). |
+| `registry_protection`   | varchar(32)  | ja     | Folkbokföringens nivå enligt Citizen, eller `UNKNOWN` när den inte gick att få. null för ett företag som inte är en enskild firma.                                                                                                       |
+| `registry_checked`      | datetime(6)  | ja     | När anropet till Citizen startade, för det svar som gäller. null när Citizen inte svarade. Ett svar skrivs bara om anropet startade senare ([§5.4]).                                                                                     |
+| `created`, `modified`   | datetime(6)  | nej/ja |                                                                                                                                                                                                                                          |
 
 Index:
 
@@ -144,6 +153,7 @@ skyddad kund har ingen. Raden och dess barn ersätts som helhet.
 | `business_description`                                                  | text                         | ja     |                                                                                      |
 | `email`, `phone_number`                                                 | varchar(255)                 | ja     |                                                                                      |
 | `fetched`                                                               | datetime(6)                  | nej    | När anropet till LegalEntity startade. Bara en senare hämtning skriver över.         |
+| `content_hash`                                                          | varchar(64)                  | nej    | SHA-256 av den mappade profilen. En oförändrad profil skrivs inte om ([§5.5]).       |
 | `created`, `modified`                                                   | datetime(6)                  | nej/ja |                                                                                      |
 
 **`enterprise_workplace`**: företagets arbetsställen ([§5.5]).
@@ -257,7 +267,8 @@ Index: `idx_engagement_history_engagement_id_occurred_at`.
 
 Index: `idx_contact_customer_id_namespace`, `idx_contact_engagement_id` och `idx_contact_party_id`.
 
-**`contact_channel`**: `@ElementCollection` på `contact`.
+**`contact_channel`**: `@ElementCollection` på `contact`, som en `Set`. Primärnyckeln är `(contact_id, type, value)`,
+och en kanal som förekommer flera gånger sparas en gång.
 
 |    Kolumn    |     Typ      |                       Null                       |
 |--------------|--------------|--------------------------------------------------|
@@ -330,7 +341,7 @@ ett objekt, t.ex. en kunds rader för `CUSTOMER`, med nyckelns början.
 | `created`          | datetime(6)  | nej  |                                                                   |
 
 Index: `idx_technical_log_municipality_id_party_id_created` och `idx_technical_log_created`, som används vid gallring
-och manuell radering på datum ([§8.2]). radering på datum ([§8.2]).
+och manuell radering på datum ([§8.2]).
 
 **`contact_person_role`**: konfiguration ([beslut 15]).
 
@@ -347,15 +358,16 @@ Index: `uq_contact_person_role_municipality_id_source_role`.
 **`search_index_queue`**: kunder som ska indexeras om eller tas bort ur sökindexet ([§6.2]). Tabellen har ingen FK, så
 att en raderad kund finns kvar i kön tills den har tagits bort ur indexet.
 
-|      Kolumn       |     Typ     | Null |                   Anmärkning                   |
-|-------------------|-------------|------|------------------------------------------------|
-| `customer_id`     | varchar(36) | nej  | PK. Flera markeringar av samma kund slås ihop. |
-| `municipality_id` | varchar(8)  | nej  |                                                |
-| `version`         | bigint      | nej  | Ökas vid varje ny markering                    |
-| `attempts`        | int         | nej  | Antal misslyckade försök, förval 0             |
-| `queued`          | datetime(6) | nej  |                                                |
+|      Kolumn       |     Typ     | Null |                                           Anmärkning                                            |
+|-------------------|-------------|------|-------------------------------------------------------------------------------------------------|
+| `customer_id`     | varchar(36) | nej  | PK. Flera markeringar av samma kund slås ihop.                                                  |
+| `municipality_id` | varchar(8)  | nej  |                                                                                                 |
+| `version`         | bigint      | nej  | Ökas vid varje ny markering                                                                     |
+| `attempts`        | int         | nej  | Antal misslyckade försök, förval 0                                                              |
+| `priority`        | bit         | nej  | Satt när markeringen gäller skydd eller radering ([§6.2]). Sänks aldrig av en senare markering. |
+| `queued`          | datetime(6) | nej  |                                                                                                 |
 
-Index: `idx_search_index_queue_queued`.
+Index: `idx_search_index_queue_priority_queued (priority, queued)`.
 
 **`shedlock`**: standardtabellen för dept44-starter-scheduler.
 
@@ -396,4 +408,5 @@ Index: `idx_search_index_queue_queued`.
 [beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
 [§6.1]: 06-rest-api.md#61-endpoints
 [beslut 61]: 00-beslutslogg.md#beslut-61-noteringar-ändras-med-optimistisk-låsning
+[beslut 63]: 00-beslutslogg.md#beslut-63-primärnycklar-är-slumpmässiga-uuid
 

@@ -28,14 +28,15 @@ En kund kan ha flera adresser, var och en med en typ ([beslut 57]):
 | `POPULATION_REGISTRATION_ADDRESS` | folkbokföringsadress | Citizen, för en privatkund                  |
 
 - Namn och adresser sätts från kundparten i varje tillämpat meddelande som har namn eller adresser. Det gäller bara om
-  `customer.profile_modified` är null eller ≤ meddelandets `sourceModified`. När det sker sätts `profile_modified` till
-  `sourceModified`.
+  `customer.name_address_modified` är null eller ≤ meddelandets `sourceModified`. När det sker sätts
+  `name_address_modified` till `sourceModified`.
 - Uppgifterna ersätts som helhet: kundens adresser raderas och meddelandets skrivs. Kunden har alltså namnet och
   adresserna från det senaste meddelandet, och ett meddelande som har namn men saknar adresser tömmer adresserna.
-- Identiska adresser, med samma typ och samma fält, sparas en gång. En adress där alla fält utom typen är tomma sparas
-  inte. Adresserna returneras i typernas ordning i tabellen ovan och sedan sorterade på gatuadress.
+- Adressfälten trimmas, och tomma fält blir null. Identiska adresser, med samma typ och samma fält, sparas en gång, och
+  en adress där alla fält utom typen är tomma sparas inte. Adresserna returneras i typernas ordning i tabellen ovan och
+  sedan sorterade på gatuadress och `id`.
 - En oskyddad kund som skapas av en notering får sina uppgifter från Citizen eller LegalEntity, med
-  `profile_modified = now()` ([§7.2]). Detsamma gäller när den nattliga kontrollen fyller i namn och
+  `name_address_modified = now()` ([§7.2]). Detsamma gäller när den nattliga kontrollen fyller i namn och
   folkbokföringsadress för en privatkund ([§5.4]).
 - För en skyddad kund sparas inga namn eller adresser alls ([§5.4]).
 
@@ -57,9 +58,10 @@ För varje kunds engagemangsrad ersätts kontaktuppgifterna (`contact` med `enga
 
 Alla rader får engagemangets namespace.
 
-Kontaktpersonens adress är partens första adress av typen `POSTAL_ADDRESS`, annars den första av typen
-`VISITING_ADDRESS` och annars den första av typen `INVOICE_ADDRESS` ([beslut 57]). Raden med
-`contact_type = CUSTOMER` har ingen adress, eftersom kundens adresser ligger på kunden ([§5.2]).
+Kontaktpersonens adress väljs efter att adresserna har trimmats och tomma adresser tagits bort, som i [§5.2]. Det är
+partens första adress av typen `POSTAL_ADDRESS`, annars den första av typen `VISITING_ADDRESS` och annars den första
+av typen `INVOICE_ADDRESS` ([beslut 57]). Raden med `contact_type = CUSTOMER` har ingen adress, eftersom kundens
+adresser ligger på kunden ([§5.2]).
 
 Vid läsning slås identiska kontakter ihop: samma typ, namn, roll, adress och samma uppsättning kanaler. Det som ändrats
 senast kommer först.
@@ -80,11 +82,13 @@ kontaktperson, eftersom kopplingen till ett företag, t.ex. en arbetsgivare, är
 - Kontaktpersonens partyId sparas på raden (`contact.party_id`). Personens kontaktrader hos alla företag i kommunen
   raderas när personen raderas, på vilket av sätten i [§3.6] som helst, och när en kund skapas med, eller får,
   en skyddsnivå som inte är `NONE`.
-- Raderna hittas på `contact.party_id`, och kommunen avgörs via `contact.customer_id`. Varje berört företag loggas som
-  `CONTACT_REMOVED` och markeras för omindexering ([§8.1]).
+- Raderna hittas på `contact.party_id`, och kommunen avgörs via `contact.customer_id`. Är det folkbokföringen som ger
+  personen skydd (`registry_protection` är `SECRECY_MARKING` eller `PROTECTED_REGISTRATION`) raderas raderna i alla
+  kommuner, också där personen inte är kund, eftersom skyddet gäller personen och inte kommunen. Varje berört företag
+  loggas som `CONTACT_REMOVED` och markeras för omindexering ([§8.1]).
 - Den nattliga kontrollen gör samma radering för varje kund i batchen vars nivå inte är `NONE` ([§5.4]). En kontaktrad
   som ett meddelande skrev samtidigt som personen skapades som skyddad kund, innan det fanns en kundrad att låsa, ligger
-  då kvar högst ett dygn.
+  då kvar tills ändringskön eller den nattliga kontrollen raderar den, alltså högst ett dygn ([§5.5]).
 - En kontaktperson som saknar både partyId och legalId kan inte kontrolleras och sparas med namn, kanaler och adress.
   Det står som risk i [§13.3].
 
@@ -176,7 +180,7 @@ hanteringen nedan är densamma för båda nivåerna.
 Svaret från Citizen hålls bara i minnet. Namn och adress ur svaret används bara om personen är oskyddad, och ingenting
 ur svaret loggas.
 
-**Okänd skyddsstatus (`UNKNOWN`).** En kund får `registry_protection = UNKNOWN` och `registry_checked = null` när
+**Okänd skyddsstatus (`UNKNOWN`).** En kund får `registry_protection = UNKNOWN` när
 folkbokföringens status inte går att få ([beslut 48]):
 
 - Citizen svarar inte, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker när ett meddelande skapar en
@@ -211,7 +215,7 @@ nattliga kontrollen ersätter det.
 
 **Hantering när kunden är skyddad** (`protection_level ≠ NONE`):
 
-1. `name` och `profile_modified` töms, och kundens adresser, rader med `contact_type = CUSTOMER` och företagsprofil
+1. `name` och `name_address_modified` töms, och kundens adresser, rader med `contact_type = CUSTOMER` och företagsprofil
    raderas ([§5.5]). Så länge skyddet gäller sparas inga sådana uppgifter, varken från meddelanden, från Citizen eller
    från LegalEntity.
 2. Kunden indexeras i OpenSearch bara med engagemangens referenser, utan namn, adresser, kontaktuppgifter, titlar och
@@ -226,20 +230,27 @@ nattliga kontrollen ersätter det.
 kontrollen, och för en enskild firma med nästa tillämpade meddelande från källan. Kontaktuppgifter kommer tillbaka med
 nästa tillämpade meddelande från källan, eller vid en grundladdning.
 
+**Ordningen mellan svar.** Skyddet hämtas utanför transaktionen och skrivs under kundens lås, av meddelandeflödet, den
+nattliga kontrollen och ändringskön ([§5.5]). Ett äldre svar kan därför komma fram efter ett nyare. `registry_checked`
+är tidpunkten då anropet till Citizen startade, för det svar som gäller, och ett svar skrivs bara om dess anrop
+startade senare. Annars lämnas nivån, namnet och adresserna orörda. När Citizen inte svarar ändras inte
+`registry_checked`, och för en ny kund är den då null.
+
 **Nattlig kontroll.** `ProtectionRefreshScheduler` (`@Dept44Scheduled` med ShedLock) körs en gång per natt.
 
-- Den hämtar alla kunder som har `registry_party_id` eller `registry_protection = UNKNOWN`, alltså privatkunder,
-  enskilda firmor och företag med okänd status, och vars `registry_checked` saknas eller är äldre än körningens start
-  ([beslut 28]).
+- Den hämtar två slags kunder ([beslut 28]):
+  - kunder som har `registry_party_id` eller `registry_protection = UNKNOWN`, alltså privatkunder, enskilda firmor
+    och företag med okänd status, och vars `registry_checked` saknas eller är äldre än körningens start
+  - oskyddade företagskunder som saknar företagsprofil, vars profil hämtas från LegalEntity ([§5.5])
 - Kunderna gås igenom med keyset på `id` i batchar om `protection.batch-size` (förval 100), så att en batch som
   misslyckas inte väljs igen i samma körning. Nästan alla kunder tas med varje natt, så urvalet går i primärnyckelns
   ordning och har inget eget index.
 - För en kund utan `registry_party_id` görs först uppslaget av organisationsnumret och ägaren, som när kunden skapas.
   Sedan hämtas skyddet med `POST /{municipalityId}/batch?ShowClassified=true`.
-- Varje batch skrivs i en egen transaktion med READ COMMITTED ([§3.3]). Batchens kunder låses i partyId-ordning, som i
-  meddelandeflödet, och nivån räknas om. De ändrade kunderna markeras för omindexering ([§6.2]), och kontaktrader
+- Varje batch skrivs i en egen transaktion med READ COMMITTED ([§3.3]). Batchens kunder låses med `FOR UPDATE` i
+  partyId-ordning, som i meddelandeflödet, och en kund som har hunnit raderas hoppas över och skapas inte på nytt.
+  Nivån räknas om. De ändrade kunderna markeras för omindexering ([§6.2]), och kontaktrader
   raderas enligt [§5.3]. En batch som faller på deadlock görs om ([§3.6]).
-- Kontrollen tar också med oskyddade företagskunder som saknar företagsprofil, och hämtar profilen ([§5.5]).
 - Ändringskön startar samma kontroll direkt för en person som har ändrats ([§5.5]).
 
 ## 5.5 Företagsuppgifter
@@ -269,10 +280,10 @@ koder räknas fram ur arbetsställenas. LegalEntity ger bara arbetsställenas ko
 arbetsställe och räknar fram företagets när profilen läses och indexeras:
 
 - En kod med tomt `sniId` sparas inte. LegalEntity ger ett sådant element först för varje arbetsställe.
-- Varje kod tas med en gång. Huvudarbetsställets koder (`mainWorkplace = true`) kommer först, i LegalEntitys ordning.
-  Sedan kommer övriga koder, ordnade efter storleksklassen, som tal, hos det största arbetsställe som har koden och
-  därefter
-  efter kod.
+- Varje kod tas med en gång. Koderna från huvudarbetsstället (`mainWorkplace = true`) kommer först, i LegalEntitys
+  ordning. Saknas huvudarbetsställe hoppas steget över, och finns flera tas de i LegalEntitys ordning.
+- Sedan kommer övriga koder, ordnade efter storleksklassen hos det största arbetsställe som har koden, störst först, och
+  därefter efter kod. Storleksklassen jämförs som tal, och en klass som saknas eller inte är ett tal räknas som minst.
 - Koden på plats 1 är företagets huvudnäring, och dess namn är företagets bransch.
 
 För SCA Forest Products, med tio arbetsställen, ger det 70100, 72190, 86212 och 91012, och branschen "Verksamheter som
@@ -302,10 +313,15 @@ och ett värde som är längre än kolumnen kortas.
 - när ändringskön säger att företaget har ändrats (se nedan)
 - i den nattliga kontrollen, för en oskyddad företagskund som saknar profil ([§5.4])
 
-Profilen ersätts som helhet under kundens lås, och bara om kunden är oskyddad efter låset. `fetched` är tidpunkten då
-anropet till LegalEntity startade, och en profil skrivs bara om den är nyare än den sparade. Anropen görs utanför
-transaktionen, så två flöden kan skriva i omvänd ordning mot den de hämtade i. Då vinner den senaste hämtningen. En
-profil som skrivs av ändringskön eller den nattliga kontrollen loggas som `PROFILE_UPDATED` ([§8.1]).
+Profilen skrivs under kundens lås, och bara om kunden är oskyddad efter låset. Ändringskön och den nattliga kontrollen
+låser kunden med `FOR UPDATE`, och en kund som har hunnit raderas hoppas över och skapas inte på nytt. `fetched` är
+tidpunkten då anropet till LegalEntity startade, och en profil skrivs bara om den är nyare än den sparade. Anropen görs
+utanför transaktionen, så två flöden kan skriva i omvänd ordning mot den de hämtade i. Då vinner den senaste
+hämtningen.
+
+`content_hash` är en SHA-256 av den mappade profilen med arbetsställen och förfaranden. Är den oförändrad flyttas bara
+`fetched` fram, utan loggrad och utan omindexering. Annars ersätts profilen som helhet, och en profil som skrivs av
+ändringskön eller den nattliga kontrollen loggas som `PROFILE_UPDATED` ([§8.1]).
 
 **Skyddad identitet.** En företagskund med en nivå som inte är `NONE` har ingen profil, eftersom en enskild firmas
 profil är uppgifter om ägaren. Profilen raderas i samma transaktion som kunden får en sådan nivå. När skyddet upphör
@@ -320,11 +336,13 @@ lite metadata. party-overview kräver följande av ett meddelande:
 | Partens partyId                   | **krav**. Aldrig personnummer eller organisationsnummer, så att kön inte innehåller dem.               |
 | Partens typ, företag eller person | **krav**                                                                                               |
 | Vad som har hänt                  | **krav**. Används för att kasta händelser som inte berör party-overview, när händelsetyperna är kända. |
-| Ett unikt id per meddelande       | **krav**, för spårbarhet. Det sparas i den tekniska loggen som `message_id` ([§4.3]).                  |
+| Ett unikt id per meddelande       | **krav**, ett UUID, för spårbarhet. Det sparas i den tekniska loggen som `message_id` ([§4.3]).        |
 
 Det mesta i kön berör inte party-overview. `RegistryChangeListener` slår därför först upp partyId:t i index: kunderna
 med partyId:t (`idx_customer_party_id`), de enskilda firmor som personen äger (`idx_customer_registry_party_id`) och
 personens kontaktrader (`idx_contact_party_id`). Ett meddelande som inte berör något av dem kastas utan anrop.
+Ett meddelande med fel format dead-letteras direkt. Loggrader från ändringskön har kanalen `MESSAGE` och meddelandets
+id, men ingen källa och ingen objekttyp.
 
 Ett meddelande om ett **företag** som är kund uppdaterar profilen:
 
@@ -332,15 +350,20 @@ Ett meddelande om ett **företag** som är kund uppdaterar profilen:
   för kunden i varje kommun, i en transaktion per kund.
 - Det är LegalEntitys svar och inte meddelandet som avgör profilen. Därför spelar meddelandenas ordning och dubbletter
   ingen roll, och kön behöver ingen single-active-consumer.
-- 404 från LegalEntity lämnar profilen orörd och loggas på WARN med partyId:t.
+- 404 från LegalEntity lämnar profilen orörd och loggas som `PROFILE_NOT_FOUND` i den tekniska loggen ([§8.1]).
+  WARN-raden i loggen har inget id.
 
 Ett meddelande om en **person** startar kontrollen av skyddad identitet direkt, i stället för nästa natt ([§5.4]):
 
 - Citizen `POST /{municipalityId}/batch?ShowClassified=true` anropas en gång för personen, utanför transaktionen.
 - Personen som kund, och varje enskild firma som personen äger, kontrolleras sedan som i den nattliga kontrollen, i en
-  transaktion per kund. Nivån räknas om, och blir kunden skyddad töms dess uppgifter och personens kontaktrader raderas.
-- Är personen kontaktperson utan att vara kund, och är nivån något annat än `NONE`, raderas personens kontaktrader
-  ([§5.3]).
+  transaktion per kund ([§5.4]). Nivån räknas om, och blir kunden skyddad töms dess uppgifter och personens
+  kontaktrader raderas ([§5.3]).
+- Ger Citizen `SECRECY_MARKING` eller `PROTECTED_REGISTRATION`, eller har Citizen ingen post för personen, raderas
+  personens kontaktrader i alla kommuner, också där personen inte är kund.
+
+Meddelandet har ingen kommun, men både Citizen och LegalEntity tar en kommun i sökvägen. Anropet görs med kommunen för
+den första träffen i id-ordning, eftersom svaret är detsamma för alla kommuner.
 
 När LegalEntity eller Citizen inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om, och till sist
 dead-letteras det och larmet går ([§12.1]). Den nattliga kontrollen finns kvar som skyddsnät.

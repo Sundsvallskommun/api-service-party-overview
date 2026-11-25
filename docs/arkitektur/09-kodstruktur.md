@@ -44,7 +44,8 @@ se.sundsvall.partyoverview
   dept44-starterns loggning och request-id. Med en enda `@RabbitListener` för alla köer delar köerna en konsumenttråd,
   och ett omförsök på en källa stoppar alla ([§3.7]). Ingen `@ConditionalOnProperty` på lyssnaren, eftersom startern
   inte startar lyssnare när RabbitMQ är avstängt. Ingen `@EnableRabbit`, och ingen `MessageConverter` av egen.
-  Ändringskön har ett annat format och en egen klass, `RegistryChangeListener`, med en egen container ([§5.5]).
+  Ändringskön har ett annat format och en egen klass, `RegistryChangeListener`, med en egen container ([§5.5]). Den
+  finns bara när `integration.registry-changes.queue` har ett värde, så att tjänsten startar innan kön finns.
 - **`DeadLetterHealthIndicator`:** villkorad med `@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, samma
   tolkning som startern. `@ConditionalOnBean(ConnectionFactory.class)` fungerar inte på en komponent som tjänsten själv
   skannar in, eftersom villkoret utvärderas innan auto-konfigurationens `ConnectionFactory` finns. Då skulle

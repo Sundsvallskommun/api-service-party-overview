@@ -6,21 +6,25 @@ Del av [arkitekturen för party-overview](README.md).
 
 Ett meddelande kan ge flera rader per kund, t.ex. `ENGAGEMENT_REMOVED` följt av `CUSTOMER_DELETED`.
 
-|        Utfall        |                                                                          När                                                                           |
-|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CUSTOMER_CREATED`   | Kunden skapades, via meddelande eller notering                                                                                                         |
-| `CUSTOMER_UPDATED`   | Ett `CUSTOMER UPDATE` tillämpades                                                                                                                      |
-| `CUSTOMER_DELETED`   | Kunden raderades ([§3.6])                                                                                                                              |
-| `ENGAGEMENT_CREATED` | Kunden fick ett nytt engagemang                                                                                                                        |
-| `ENGAGEMENT_UPDATED` | Ett befintligt engagemang uppdaterades. Det gäller även en rättning med samma version.                                                                 |
-| `ENGAGEMENT_REMOVED` | Objektet raderades, eller kunden är inte längre part i det                                                                                             |
-| `IGNORED_STALE`      | Meddelandet var äldre än det lagrade och ändrade ingenting                                                                                             |
-| `PROTECTION_CHANGED` | Kundens effektiva skyddsnivå ändrades ([§5.4]). Den nya nivån står i raden.                                                                            |
-| `CONTACT_REMOVED`    | En kontaktpersons rader hos kunden raderades, eftersom personen raderades eller fick skydd ([§5.3]). Raden har kundens partyId, inte kontaktpersonens. |
-| `PROFILE_UPDATED`    | Företagsprofilen skrevs av ändringskön eller den nattliga kontrollen ([§5.5])                                                                          |
+|        Utfall        |                                                                                            När                                                                                             |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `CUSTOMER_CREATED`   | Kunden skapades, via meddelande eller notering                                                                                                                                             |
+| `CUSTOMER_UPDATED`   | Ett `CUSTOMER UPDATE` tillämpades                                                                                                                                                          |
+| `CUSTOMER_DELETED`   | Kunden raderades ([§3.6])                                                                                                                                                                  |
+| `ENGAGEMENT_CREATED` | Kunden fick ett nytt engagemang                                                                                                                                                            |
+| `ENGAGEMENT_UPDATED` | Ett befintligt engagemang uppdaterades. Det gäller även en rättning med samma version.                                                                                                     |
+| `ENGAGEMENT_REMOVED` | Objektet raderades, eller kunden är inte längre part i det                                                                                                                                 |
+| `IGNORED_STALE`      | Meddelandet var äldre än det lagrade och ändrade ingenting                                                                                                                                 |
+| `PROTECTION_CHANGED` | Kundens effektiva skyddsnivå ändrades ([§5.4]). Den nya nivån står i raden.                                                                                                                |
+| `CONTACT_REMOVED`    | En kontaktpersons rader hos kunden raderades, eftersom personen raderades eller fick skydd ([§5.3]). Raden har kundens partyId, inte kontaktpersonens, och kontaktradens källa i `source`. |
+| `PROFILE_UPDATED`    | Företagsprofilen skrevs av ändringskön eller den nattliga kontrollen ([§5.5])                                                                                                              |
+| `PROFILE_NOT_FOUND`  | LegalEntity känner inte företaget som ändringskön angav, och profilen lämnades orörd ([§5.5])                                                                                              |
 
 Vid `UPDATE` skrivs `IGNORED_STALE` för meddelandets kundparter. En `DELETE` för `ERRAND`, `ASSET` och `CONTRACT` saknar
 parter, så där skrivs det för de kunder som har engagemang i objektet. Ett `CUSTOMER DELETE` har kunden som enda part.
+
+Rader från ändringskön har kanalen `MESSAGE` och meddelandets id, men ingen källa, objekttyp, operation eller version.
+Rader från den nattliga kontrollen har kanalen `SCHEDULER` och inget av dem ([§5.5]).
 
 Meddelanden som dead-letteras syns inte här ([§3.7]). Ett meddelande där ingen part kunde knytas till ett partyId ger
 ingen rad, eftersom loggen förs per kund.
@@ -30,10 +34,14 @@ ingen rad, eftersom loggen förs per kund.
 Den tekniska loggen gallras efter en lagringstid ([beslut 60]). Den raderas inte med kunden ([beslut 11]).
 
 - `TechnicalLogRetentionScheduler` (`@Dept44Scheduled` med ShedLock) körs varje natt och raderar rader vars `created`
-  är äldre än `technical-log.retention` (förval `P5Y`) via `idx_technical_log_created`.
+  är äldre än `technical-log.retention` via `idx_technical_log_created`. Lagringstiden binds som `java.time.Period`
+  (förval `P5Y`), och gränsen räknas som `OffsetDateTime.now(clock).minus(retention)`, eftersom ett `Period` med år
+  inte går att dra från ett `Instant`.
 - Rader kan också raderas med `DELETE /{municipalityId}/technical-log`, filtrerad på `partyId`, `createdBefore` eller
-  båda. Det används t.ex. för en enskild persons begäran enligt GDPR.
-- Båda raderar i batchar (`LIMIT`) med en transaktion per batch, så att låsen hålls korta.
+  båda. `createdBefore` är en tidpunkt med zon enligt ISO 8601. Det används t.ex. för en enskild persons begäran enligt
+  GDPR.
+- Båda raderar i batchar om `technical-log.delete-batch-size` (förval 1 000) med `LIMIT` och en transaktion per batch,
+  så att låsen hålls korta.
 
 Inget annat gallras automatiskt:
 

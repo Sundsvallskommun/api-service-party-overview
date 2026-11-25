@@ -67,15 +67,17 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Det ansvaret ligger hos källsystemen och verksamheterna. Kunden visas som skyddad i varje vy, så den
   som läser vet att uppgifterna är känsliga.
 
-- Den tekniska loggen växer utan gräns.
+- Den tekniska loggen växer under lagringstiden, som är fem år som förval.
 
-  **Hantering:** Indexen klarar stora volymer. Rader kan raderas med `DELETE /{municipalityId}/technical-log` ([§8.2]).
+  **Hantering:** Indexen klarar stora volymer, och gallringen raderar äldre rader varje natt ([§8.2]).
 
-- Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först vid nästa nattliga
-  kontroll. Fram till dess kan ett meddelande hinna spara namn och adress.
+- Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först när ändringskön säger att
+  personen har ändrats, eller vid nästa nattliga kontroll. Fram till dess kan ett meddelande hinna spara namn och
+  adress.
 
-  **Hantering:** Fönstret är högst ett dygn, eftersom kontrollen tar med alla privatkunder och enskilda firmor varje
-  natt ([§5.4]). Ingen publicerare skickar i dag `protection`, så skyddet kommer bara från folkbokföringen ([§11.1]).
+  **Hantering:** Med ändringskön är fönstret några minuter, och utan den högst ett dygn, eftersom kontrollen tar med
+  alla privatkunder och enskilda firmor varje natt ([§5.4], [§5.5]). Ingen publicerare skickar i dag `protection`, så
+  skyddet kommer bara från folkbokföringen ([§11.1]).
 
 - När opt-in stängs av för ett namespace i SM eller Casedata, eller en asset-typ tas bort från party-assets vitlista,
   ligger engagemangen kvar i party-overview.
@@ -90,7 +92,8 @@ Del av [arkitekturen för party-overview](README.md).
   objektet, och för avslutade objekt kommer ingen.
 
   **Hantering:** Varje sådant fel loggas på WARN med källan och antalet berörda kunder och kontaktpersoner ([§7.2]).
-  Efter ett avbrott körs grundladdningen om för de källor som berördes. README beskriver det.
+  Efter ett avbrott körs grundladdningen om för de källor som berördes, också de källor som står i `source` på
+  `CONTACT_REMOVED`-raderna från avbrottet ([§8.1]). README beskriver det.
 
 - En reindexering som avbryts, t.ex. av en omstart, lämnar ett halvbyggt index.
 
@@ -171,8 +174,8 @@ Del av [arkitekturen för party-overview](README.md).
   Anropet undantas från party-overviews payload-logg, och PII-maskningen är påslagen ([§7.1]).
 
 - En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen och sparas med namn, kanaler och
-  adress. En kontaktperson som får skydd efter att raden sparades, utan att själv vara kund, ligger kvar tills objektet
-  ändras i källan ([§5.3]).
+  adress. En kontaktperson utan id som får skydd efter att raden sparades ligger kvar tills objektet ändras i källan
+  ([§5.3]). En kontaktperson med partyId kontrolleras när ändringskön säger att personen har ändrats ([§5.5]).
 
   **Hantering:** Accepteras. Publicerarna skickar partyId när de har det, och nästa ändring av objektet kontrollerar
   kontaktpersonen igen.
@@ -234,4 +237,5 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 62]: 00-beslutslogg.md#beslut-62-meddelandeformaten-följer-cloudevents
 [§3.6]: 03-meddelanden.md#36-kundradering
 [beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
+[§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
 

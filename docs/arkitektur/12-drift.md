@@ -16,7 +16,7 @@ integration:
     CONTRACT: api-fabriken.party-overview.contract
     CASE_DATA: api-fabriken.party-overview.case-data
   registry-changes:
-    queue: …                     # ändringskön för företag och personer (§5.5), som inte finns ännu
+    queue:                       # ändringskön (§5.5). Utan värde finns varken lyssnaren eller dess larm.
   dead-letter-suffix: .dlq       # DLQ = kö + suffix, används av health-indikatorn
   citizen:
     url: …
@@ -27,6 +27,7 @@ logbook:
     paths: "**/guid"             # LegalEntitys uppslag med organisationsnumret i URL:en (§7.1)
 technical-log:
   retention: P5Y                 # gallring (§8.2), bestäms med arkivfunktionen och dataskyddsombudet
+  delete-batch-size: 1000
 protection:
   batch-size: 100
 search:
@@ -50,6 +51,10 @@ scheduler:
     shedlock-lock-at-most-for: PT5M
     maximum-execution-time: PT5M
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 4                  # en tråd per schemalagt jobb, så att relayn inte väntar på den nattliga kontrollen
   data:
     web:
       pageable:
@@ -57,6 +62,9 @@ spring:
   jpa:
     properties:
       hibernate:
+        jdbc:
+          batch_size: 50         # profilens arbetsställen skrivs i batchar
+        order_inserts: true
         search:
           enabled: false         # true per miljö när OpenSearch finns
           backend:
@@ -91,9 +99,8 @@ spring:
 
 ## 12.1 Larm för dead letter-köer
 
-- `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas och ändringsköns dead
-  letter-kö och
-  läser antalet meddelanden.
+- `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas dead letter-kö, och av
+  ändringsköns när `integration.registry-changes.queue` har ett värde, och läser antalet meddelanden.
 - Indikatorn finns bara när RabbitMQ är påslaget (`@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, [§9]).
   Med `dept44.rabbitmq.enabled=false` finns ingen `ConnectionFactory`, och tjänsten ska ändå starta (C1).
 - Indikatorn blir `DOWN`, med köernas namn och antal i detaljerna, när någon kö inte är tom. Spring Boot Admin

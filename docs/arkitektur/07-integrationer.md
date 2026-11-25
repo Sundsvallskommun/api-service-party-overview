@@ -40,7 +40,7 @@ Citizen och LegalEntity, utan api-service-party ([beslut 56]).
 
 ## 7.2 Citizen och LegalEntity
 
-Citizen används på fyra ställen. Klienten genereras från den version som är i produktion när C3 byggs. I dag finns
+Citizen används på fem ställen. Klienten genereras från den version som är i produktion när C3 byggs. I dag finns
 specifikationen för v3 i `api-service-messaging/src/main/resources/integrations/citizen-v3.yml`. Alla anrop som ger
 personuppgifter görs med `ShowClassified=true`, vilket kräver behörighet i Metakatalogen ([§5.4]), och svaret tolkas
 enligt [§5.4].
@@ -50,6 +50,7 @@ enligt [§5.4].
 | Personnummer → partyId ([§7.1])                                                   | `POST /{municipalityId}/guid/batch` |
 | Skyddsstatus för nya kunder och kontaktpersoner i ett meddelande ([§3.3], steg 5) | `POST /{municipalityId}/batch`      |
 | Nattlig kontroll av skyddsstatus ([§5.4])                                         | `POST /{municipalityId}/batch`      |
+| Skyddsstatus för en person som ändringskön säger har ändrats ([§5.5])             | `POST /{municipalityId}/batch`      |
 | Partytyp, namn, adress och skyddsstatus när en notering skapar kunden             | `GET /{municipalityId}/{personId}`  |
 
 LegalEntity v2 ger namn, adresser, organisationsnummer och företagsprofilen med

@@ -17,13 +17,12 @@ Del av [arkitekturen för party-overview](README.md).
    `CUSTOMER` raderas med kunden ([§3.6]) och vars övriga rader inte innehåller några kunduppgifter ([§4.3]), och
    personens kontaktrader hos företag, som tjänsten raderar via `contact.party_id` ([§5.3]). Vid en radering direkt i
    databasen raderas de för sig, och README beskriver hur.
-5. **Spårbarhet.** Tabellerna har `created`, utom kollektionstabellen `contact_channel` och `search_index_queue`, som
-   har `queued`. De tabeller som uppdateras har även `modified`. Noteringar har `created_by`/`modified_by` och
-   kontaktpersonsroller `created_by`, och för andra ändringar via REST står anroparen i den tekniska loggens
-   `performed_by`.
-   Varje ändring av en kund eller dess engagemang, vare sig den kom via
-   meddelande, REST eller den nattliga kontrollen, syns i den tekniska loggen med id:t på meddelandet eller anropet
-   bakom den ([beslut 47]). Noteringar har en egen historik.
+5. **Spårbarhet.** Tabellerna har `created`, utom kollektionstabellen `contact_channel`, `search_index_queue`, som
+   har `queued`, och profilens barntabeller, som ersätts med profilen. De tabeller som uppdateras har även `modified`.
+   Noteringar har `created_by`/`modified_by` och kontaktpersonsroller `created_by`, och för andra ändringar via REST
+   står anroparen i den tekniska loggens `performed_by`. Varje ändring av en kund eller dess engagemang, vare sig den
+   kom via meddelande, REST, ändringskön eller ett schemalagt jobb, syns i den tekniska loggen med id:t på meddelandet
+   eller anropet bakom den ([beslut 47]). Noteringar har en egen historik.
 6. **Skyddad identitet går före allt annat.** För en kund med skyddade personuppgifter lagras inga namn, adresser
    eller egna kontaktuppgifter, och kunden går bara att hitta på referenser som ärendenummer. Skyddet visas på kunden i
    varje svar ([§5.4]).

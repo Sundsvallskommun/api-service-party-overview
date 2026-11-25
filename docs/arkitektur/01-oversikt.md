@@ -16,7 +16,7 @@ flowchart LR
     QPA --> PO
     QCT --> PO
     QCD --> PO
-    QREG[[ändringskö för företag och personer]] -->|företag som ändrats| PO
+    QREG[[ändringskö för företag och personer]] -->|företag och personer som ändrats| PO
     PO --> DB[(MariaDB)]
     PO -->|sökindex via kö + relay| OS[(OpenSearch)]
     PO -->|personnummer → partyId; skyddsstatus; partytyp, namn/adress när en notering skapar kunden| CIT[Citizen]
@@ -28,11 +28,11 @@ flowchart LR
     FE -->|detaljer om ett objekt| CD
 ```
 
-|      Del       |                                                                    Ansvar                                                                     |
-|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| Publicerare    | Äger sina objekt. Varje ändring publiceras som hela objektets tillstånd (`UPDATE`) eller som `DELETE`. Kan publicera om allt (grundladdning). |
-| RabbitMQ       | En exchange per publicerare och en kö per källa för party-overview. Varje kö har en dead letter-kö. Topologin deklareras i rabbitmq-topology. |
-| party-overview | Gör upsert av kunder och engagemang, för historik och teknisk logg, äger noteringarna och exponerar kundvyn via REST.                         |
-| OpenSearch     | Sökindex för fritextsökning bland kunderna. MariaDB är master, och indexet kan alltid byggas om därifrån.                                     |
-| Frontend       | Bygger kundvyn från party-overview och hämtar detaljer om ett objekt från källsystemet med `source` och `objectId`.                           |
+|      Del       |                                                                                             Ansvar                                                                                             |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Publicerare    | Äger sina objekt. Varje ändring publiceras som hela objektets tillstånd (`UPDATE`) eller som `DELETE`. Kan publicera om allt (grundladdning).                                                  |
+| RabbitMQ       | En exchange per publicerare och en kö per källa för party-overview, och en kö för ändringar av företag och personer. Varje kö har en dead letter-kö. Topologin deklareras i rabbitmq-topology. |
+| party-overview | Gör upsert av kunder och engagemang, för historik och teknisk logg, äger noteringarna och exponerar kundvyn via REST.                                                                          |
+| OpenSearch     | Sökindex för fritextsökning bland kunderna. MariaDB är master, och indexet kan alltid byggas om därifrån.                                                                                      |
+| Frontend       | Bygger kundvyn från party-overview och hämtar detaljer om ett objekt från källsystemet med `source` och `objectId`.                                                                            |
 

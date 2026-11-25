@@ -28,7 +28,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 9    | C9  | Kundradering via REST och API för teknisk logg       | C5                             |
 | 10   | C10 | Skyddad identitet: nattlig kontroll                  | C3, C5                         |
 | 11   | T2  | Egen OpenSearch-container per miljö                  | —                              |
-| 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, T2                         |
+| 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, C3, T2                     |
 | 13   | C13 | Sök-endpoint                                         | C5, C12                        |
 | 14   | T1  | Köer och exchanges i rabbitmq-topology               | —                              |
 | 15   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                     |
@@ -66,9 +66,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Tjänsten startar inte om `integration.sources` är tom eller om en källa saknar kö.
 - `management.health.rabbit.enabled` är borttagen ur `application.yml`.
 - dept44:s PII-maskning är påslagen med alla kategorier.
+- `spring.task.scheduling.pool.size` är minst antalet schemalagda jobb ([§12]). Ett test med två schemalagda metoder
+  visar att den ena körs medan den andra pågår.
 - Ingen POC-kod finns kvar, och `openapi.yaml` är regenererad utan POC:ens endpoint.
 - `SentBy` ger värdet för `joe01doe; type=adAccount` och ger 400 för en saknad header, för `joe01doe` utan `type=` och
-  för ett värde på 256 tecken. Enhetstest.
+  för ett värde på 256 tecken. `Anna Berg; type=custom` ger `AnnaBerg` med typen `CUSTOM`, och `type=adaccount` ger
+  typen `CUSTOM` ([§6]). Enhetstest.
 
 ## C2 — Datamodell, Flyway och schemaverifiering
 
@@ -78,7 +81,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Entiteter, `AbstractHistoryEntity`, adressens `@Embeddable`, enums och `RolesConverter`.
 - Repositories med grundfrågorna: IODKU och låsning av `source_object` och `customer`, och markeringen i
   `search_index_queue` ([§6.2]). Frågorna för ett visst flöde läggs till i uppgiften som bygger flödet.
-- Valet av modell för `contact_channel` ([§4.2]). Blir den en entitet uppdateras tabellen i [§4.3].
+- Valet av modell för `contact_channel` ([§4.2]), med primärnyckeln `(contact_id, type, value)` i båda fallen.
+- `DeadlockRetry`, som gör om en hel transaktion högst tre gånger vid `PessimisticLockingFailureException`, utanför
+  transaktionen ([§3.6]). C4, C8, C9 och C10 använder den.
 - `schema.sql`, `truncate.sql`, `CascadeIT` och `SchemaParityIT`.
 
 **Acceptans:**
@@ -96,6 +101,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
+- `DeadlockRetry` gör om en transaktion som faller på deadlock och kastar felet efter tre misslyckade försök. Det testas
+  med en `CannotAcquireLockException` i första försöket.
+- Adressens `@Embeddable` har nullbara kolumner, och `address_type` är `not null` i `customer_address` och
+  `enterprise_workplace_address` via `@AttributeOverride`. `text`-kolumnerna har `columnDefinition = "text"` ([§4.2]).
 
 ## C3 — Integrationer mot Citizen och LegalEntity
 
@@ -109,7 +118,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `LegalEntityClient`/`LegalEntityIntegration` med:
   - `getPartyId` (`GET /{municipalityId}/{organizationNumber}/guid`) för organisationsnummer → partyId ([§7.1])
   - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, postadress, besöksadress och
-    organisationsnummer, och företagsprofilen, där `EnterpriseProfileMapper` räknar fram SNI-koderna ([§5.5], [§7.2])
+    organisationsnummer, och företagsprofilen med arbetsställen och förfaranden, mappad av `EnterpriseProfileMapper`
+    ([§5.5], [§7.2])
+- `CompanySniCodes`, en ren funktion som räknar fram företagets SNI-koder ur arbetsställenas sparade rader ([§5.5]).
+  C7 och C12 använder den.
 - Partytypen för ett partyId avgörs med `getCitizen` och `getLegalEntity` ([§7.2]). En enskild firma känns igen på att
   organisationsnumret är ett personnummer ([§5.4]). Numret sparas aldrig.
 - legalId valideras mot formatet i [§3.1], per partytyp och med kontrollsiffran, innan det skickas ([§7.1]).
@@ -166,6 +178,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   - storleksklassen `8` "200–499 anställda", juridisk form `49` och kommunen för företagets säte `2281`
   - besöksadressen "SKEPPARPLATSEN 1" och en postadress med bara postnummer och ort
   - att tomma strängar blir null
+- `CompanySniCodes` ger 70100, 72190, 86212 och 91012, i den ordningen, för arbetsställena i SCA-stubben. Enhetstester
+  täcker ett företag utan huvudarbetsställe, ett med två, och ett arbetsställe utan storleksklass eller med en som inte
+  är ett tal, som räknas som minst.
 - `officers` och `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar
   loggas. Profilen har inget organisationsnummer.
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
@@ -182,6 +197,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Acceptans:**
 
 - `PUT` ersätter källans roller som en helhet. En tom lista tar bort alla.
+- Ett `PUT` som faller på deadlock görs om med `DeadlockRetry` från C2.
 - En okänd källa, alltså en som saknas i `integration.sources`, ger 400. En tom eller blank roll ger 400.
 - `created_by` sätts från `X-Sent-By`, och ett anrop utan den headern ger 400.
 - Resource-test, failure-test och IT (happy case).
@@ -239,6 +255,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Ett nyare `sourceModified` ersätter namn och adresser som helhet, men ett äldre gör det inte. Ett nyare meddelande
   med färre adresser tar bort de övriga, och ett med namn men utan adresser tömmer adresserna ([§5.2]).
 - Identiska adresser i ett meddelande sparas en gång, och en adress där alla fält utom typen är tomma sparas inte.
+- En part med en tom postadress följd av en besöksadress ger en kontaktperson med besöksadressen ([§5.3]).
+- En kund som blir skyddad i samma meddelande som den har adresser får `name = null` och inga adresser efter commit.
+  Barnraderna ersätts utan att kunden kopplas loss ([§4.2]).
 - En ny privatkund får sin skyddsstatus från Citizen innan den skapas. Om Citizen inte svarar, svarar 5xx, 429 eller
   408, har en öppen circuit breaker eller saknar en post för personen, skapas kunden med `UNKNOWN`, utan namn, adresser
   och egna kontaktuppgifter, och meddelandet tillämpas utan omförsök. 401 från Citizen kastas som `ClientProblem`
@@ -315,7 +334,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Företagets SNI-koder räknas fram ur arbetsställenas enligt [§5.5]. Med stubben för SCA Forest Products från C3 blir
   de 70100, 72190, 86212 och 91012, i den ordningen.
 - Arbetsställena returneras sidvis, med huvudarbetsstället först och sedan efter namn, var och en med sina adresser och
-  SNI-koder. En privatkund, en skyddad kund och ett företag utan profil ger en tom sida, och en okänd kund ger 404.
+  SNI-koder. Ett arbetsställe utan namn kommer sist. En privatkund, en skyddad kund och ett företag utan profil ger en
+  tom sida, och en okänd kund ger 404.
 - En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, men utan namn, adresser och kontaktkanaler.
 - `protectionLevel` i OpenAPI-specen beskriver alla fyra värden, och att `UNKNOWN` betyder okänd skyddsstatus som ska
   hanteras som skyddad ([§5.4]).
@@ -326,6 +346,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Engagemang från alla namespaces visas. `engagementNamespace` och `objectType` filtrerar. Förvald sortering är
   `sourceModified,desc`, och paginering med `size > 100` begränsas till 100.
 - Ett engagemang som tillhör en annan kund ger 404.
+- Ett sorteringsfält som inte är tillåtet ger 400, och sidorna är stabila när sorteringsnyckeln är lika ([§6.1]).
+- Testerna för profilen och arbetsställena lägger in sina rader direkt i databasen, med värdena från SCA-stubben i C3.
 - Frågorna använder indexen i [§4.3]. Det verifieras med `EXPLAIN` i ett repository-test för engagemangslistan och
   kontaktfrågan.
 
@@ -335,7 +357,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 - `NoteResource`, `NoteService` och `note_history`.
 - Att en notering skapar kunden enligt [§7.2].
-- Varje skrivning av en notering låser kunden först och körs med READ COMMITTED ([§3.6]). Omförsök vid deadlock.
+- Varje skrivning av en notering låser kunden först och körs med READ COMMITTED ([§3.6]), med `DeadlockRetry` från C2.
 
 **Acceptans:**
 
@@ -343,9 +365,13 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `POST` sätter `created_by` till värdet i `X-Sent-By`, och `PATCH` sätter `modified_by` men ändrar aldrig
   `created_by`. Båda returneras som `createdBy` och `modifiedBy` ([§4.3]).
 - `CREATED` och `UPDATED` skrivs till historiken med `performed_by` och `performed_by_type` från `X-Sent-By`.
-- `GET`, `POST` och `PATCH` returnerar noteringens version som `ETag`. `PATCH` och `DELETE` utan `If-Match` ger 428,
-  och med en annan version än den sparade 412, utan att något ändras ([beslut 61]). Samtidighetstest: två `PATCH` med
-  samma version ger en lyckad ändring och en 412.
+- `GET`, `POST` och `PATCH` returnerar noteringens version som en stark `ETag`, t.ex. `"3"`, och `PATCH` returnerar
+  den nya versionen ([§6.1]).
+- `PATCH` och `DELETE` utan `If-Match`, eller med `If-Match: *`, ger 428. Med en annan version än den sparade, eller
+  ett värde som inte går att tolka, ger de 412, och ingenting ändras ([beslut 61]). `W/"3"` godtas som `"3"`, och en
+  lista med flera ETags godtas om en av dem stämmer.
+- Samtidighetstest: två `PATCH` med samma version ger en lyckad ändring och en 412, aldrig 500.
+- `PATCH` med `subject: null` lämnar ämnet orört.
 - `POST`, `PATCH` och `DELETE` utan `X-Sent-By`, med en header utan `type=` och med ett värde över 255 tecken ger 400,
   och ingenting sparas ([§6]).
 - En notering på en okänd kund skapar kunden:
@@ -375,8 +401,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - En notering som skapar en kund med en skyddsnivå som inte är `NONE` raderar personens kontaktrader hos företag
   ([§5.3]).
 
-- En skrivning som faller på deadlock görs om, och efter tre misslyckade försök kastas felet. Det testas med en
-  `CannotAcquireLockException` som stubbas i första försöket ([§3.6]).
+- En skrivning som faller på deadlock görs om med `DeadlockRetry` från C2 ([§3.6]).
 
 ## C9 — Kundradering via REST och API för teknisk logg
 
@@ -395,15 +420,19 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   annan kommun lämnas orörda. 404 blir det bara när varken kund eller kontaktrader finns.
 - `DELETE` på kund låser kundens rader i `source_object` för `CUSTOMER` före kunden ([§3.6]). Samtidighetstest: ett
   `CUSTOMER UPDATE` för samma kund tillämpas samtidigt, och båda blir klara utan att någon av dem misslyckas.
-- En radering som faller på deadlock görs om, som i C8.
+- En radering som faller på deadlock görs om med `DeadlockRetry` från C2.
 - Båda `DELETE`-anropen kräver `X-Sent-By`, och ett anrop utan den ger 400.
 - Den tekniska loggen kan läsas efter raderingen, sorteras förvalt på `created,desc` och pagineras.
 - `DELETE` på den tekniska loggen utan något filter ger 400. Med `partyId`, med `createdBefore` och med båda raderas
   exakt de rader som matchar.
 - Raderingen görs i batchar med `LIMIT`, med en transaktion per batch. Det testas med fler rader än en batch.
-- Gallringen raderar rader vars `created` är äldre än lagringstiden och lämnar yngre rader orörda. Förvalet är `P5Y`,
-  och ett annat värde i konfigurationen gäller. Gallringen använder `idx_technical_log_created`, vilket verifieras med
-  `EXPLAIN`, och ShedLock förhindrar att två körningar pågår samtidigt.
+- Gallringen raderar rader vars `created` är äldre än lagringstiden och lämnar yngre rader orörda ([§8.2]).
+  `technical-log.retention` binds som `Period`, förvalet är `P5Y`, och ett annat värde i konfigurationen gäller.
+  Gränsen räknas från en injicerad `Clock`, och testet flyttar klockan över gränsen.
+- Gallringen använder `idx_technical_log_created`, vilket verifieras med `EXPLAIN`, och ShedLock förhindrar att två
+  körningar pågår samtidigt.
+- `createdBefore` tar en tidpunkt med zon enligt ISO 8601, och ett annat format ger 400. Raderingen sker i batchar om
+  `technical-log.delete-batch-size`, och testet sätter den lägre än antalet rader.
 
 ## C10 — Skyddad identitet: nattlig kontroll
 
@@ -418,7 +447,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 - Alla kunder med `registry_party_id` eller `registry_protection = UNKNOWN` vars `registry_checked` saknas eller är
   äldre än körningens start tas med, även en kund som skapades kl. 10 dagen före. Ett företag med känd status som inte
-  är en enskild firma tas aldrig med.
+  är en enskild firma, och som har en profil, tas aldrig med ([§5.4]).
+- Två kontroller av samma kund som skrivs i omvänd ordning ger nivån från det anrop som startade senast. Det äldre
+  svaret ändrar varken nivå, namn eller adresser ([§5.4]).
+- En person vars nivå från folkbokföringen blir `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` förlorar sina
+  kontaktrader i alla kommuner, också där personen inte är kund ([§5.3]).
 - Urvalet går i primärnyckelns ordning. `EXPLAIN` i ett repository-test visar en range-läsning på `PRIMARY` utan
   filesort.
 - En batch som misslyckas väljs inte igen i samma körning.
@@ -437,7 +470,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Varje kund i batchen vars nivå inte är `NONE` får sina kontaktrader hos företag raderade, även när nivån inte
   ändrades.
 - När skyddet upphör för en privatkund fylls namn och folkbokföringsadress i från Citizens svar.
-- En batch som faller på deadlock görs om, som i C8.
+- En batch som faller på deadlock görs om med `DeadlockRetry` från C2.
 - En batch där Citizen svarar 5xx lämnar kundernas `registry_checked` orört, och övriga batchar körs ändå.
 - ShedLock förhindrar att två körningar pågår samtidigt.
 - Ett test med fler kunder än `batch-size` visar att alla behandlas.
@@ -477,6 +510,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   - ökar `attempts` på en rad vars dokument inte går att bygga, och fortsätter med de andra raderna
   - avslutar körningen efter `search.relay.max-run-time`
 - `OpenSearchHealthIndicator` blir `DOWN` när någon rad har `attempts ≥ 5` och ingår inte i `readiness`.
+- En markering från `PROTECTION_CHANGED`, `CONTACT_REMOVED` eller `CUSTOMER_DELETED` sätter `priority`, och relayn tar
+  de prioriterade raderna före äldre rader utan prioritet ([§6.2]). En senare markering utan prioritet tar inte bort
+  den.
+- `POST /search/reindex` utan `X-Sent-By` ger 400.
 - Reindexeringen svarar 202, 409 om låset redan är taget och 503 om sökningen är avstängd. Den pausar relayn medan den
   pågår, och låset förlängs med `KeepAliveLockProvider`.
 - Reindexeringen tar bort köns rader som lades till före starten, även de med `attempts ≥ 5`, och
@@ -780,7 +817,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 - `RegistryChangeListener` med en egen listener-container för `integration.registry-changes.queue` ([§9], [§12]).
 - Mappningen från köns format (F2) till partyId, partens typ och händelsetyp ([§5.5]).
-- Ändringskön i `DeadLetterHealthIndicator`.
+- Ändringskön i `DeadLetterHealthIndicator`. Lyssnaren och kontrollen av dead letter-kön finns bara när
+  `integration.registry-changes.queue` har ett värde ([§12.1]).
 
 **Acceptans:**
 
@@ -790,10 +828,15 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Ett företag som är skyddat i en kommun får ingen profil där.
 - Två meddelanden om samma företag i omvänd ordning, och samma meddelande två gånger, ger samma profil som det
   senaste anropet till LegalEntity.
-- 404 från LegalEntity lämnar profilen orörd och loggar WARN med partyId:t. När LegalEntity inte svarar, eller svarar
-  5xx, 429 eller 408, görs meddelandet om, och efter `x-delivery-limit` hamnar det i dead letter-kön. 429 och 408 görs
-  om till ett avbrott, som när partyId slås upp ([§3.7]).
+- 404 från LegalEntity lämnar profilen orörd, skriver `PROFILE_NOT_FOUND` i den tekniska loggen och loggar WARN utan
+  id ([§8.1]).
+- När LegalEntity inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om, och efter `x-delivery-limit`
+  hamnar det i dead letter-kön. 429 och 408 görs om till ett avbrott, som när partyId slås upp ([§3.7]).
 - Ett meddelande om en person ger inget anrop till LegalEntity (C15 kontrollerar personen).
+- Ett meddelande utan partyId eller partens typ, eller vars id inte är ett UUID, dead-letteras direkt ([§5.5]).
+- En profil med samma `content_hash` som den sparade flyttar bara fram `fetched`, utan loggrad och utan omindexering.
+- Anropet till LegalEntity görs med kommunen för den första träffen i id-ordning.
+- Tjänsten startar, och `DeadLetterHealthIndicator` är `UP`, när `integration.registry-changes.queue` saknar värde.
 - `DeadLetterHealthIndicator` blir `DOWN` när ändringsköns dead letter-kö inte är tom.
 - `MessageIT` ([§10]) får ett fall med LegalEntity stubbad med svaret för SCA Forest Products: ett meddelande om
   företaget ger profilen enligt C3, och kunden markeras för omindexering.
@@ -815,6 +858,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - En enskild firma vars ägare har fått skydd får ägarens nivå och förlorar sin företagsprofil.
 - En kontaktperson som inte är kund och har fått skydd får sina kontaktrader raderade, och företagen loggas som
   `CONTACT_REMOVED` ([§5.3]).
+- En person som är kund i kommun A och kontaktperson hos ett företag i kommun B, där personen inte är kund, och som
+  får skyddad folkbokföring förlorar också kontaktraden i B ([§5.3]).
+- Ett svar från Citizen som är äldre än det som redan har skrivits ändrar ingenting ([§5.4]).
 - En person som är kund i två kommuner ger ett anrop till Citizen och en kontroll per kommun, i en transaktion per
   kund.
 - När Citizen inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om och hamnar till sist i dead letter-kön.
