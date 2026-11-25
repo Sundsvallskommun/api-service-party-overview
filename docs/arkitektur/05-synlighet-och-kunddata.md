@@ -22,7 +22,8 @@ Frågan för kontakter, `customer_id = ? and (namespace = ? or namespace is null
   `sourceModified`.
 - Uppgifterna ersätts som helhet. Ett meddelande som har namn men saknar adress tömmer alltså adressen.
 - En oskyddad kund som skapas av en notering får sina uppgifter från Citizen eller LegalEntity, med
-  `profile_modified = now()` ([§7.2]).
+  `profile_modified = now()` ([§7.2]). Detsamma gäller när den nattliga kontrollen fyller i namn och adress för en
+  privatkund ([§5.4]).
 - För en skyddad kund sparas inga namn- eller adressuppgifter alls ([§5.4]).
 
 ## 5.3 Kunder, kontaktpersoner och kontaktuppgifter
@@ -95,7 +96,8 @@ Det som styr designen:
 
 Ordningen är `NONE` < `UNKNOWN` < `SECRECY_MARKING` < `PROTECTED_REGISTRATION`. Nivån räknas om i samma transaktion
 varje gång någon av källorna ändras. En ändrad nivå loggas som `PROTECTION_CHANGED` i den tekniska loggen. `UNKNOWN`
-kommer bara från folkbokföringen, och en känd nivå från en källa går före den, eftersom den säger mer.
+kommer bara från folkbokföringen. En källas `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` går före den, eftersom den
+säger mer, men att en källa inte anger något skydd ändrar inte `UNKNOWN`.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -113,7 +115,11 @@ party-overview frågar alltid med `ShowClassified=true` och tolkar svaret så h�
 | `J`                                                               | valfritt     | `PROTECTED_REGISTRATION` |
 | inte `J`                                                          | `J`          | `SECRECY_MARKING`        |
 | inte `J`                                                          | inte `J`     | `NONE`                   |
-| Citizen har ingen post (204), eller personen saknas i batchsvaret |              | `NONE`                   |
+| Citizen har ingen post (204), eller personen saknas i batchsvaret |              | `UNKNOWN`                |
+
+Ingen post tolkas som okänd status och inte som `NONE`. Utan `ShowClassified=true`, eller med en behörighet som
+filtrerar i stället för att ge 401, saknas just de skyddade personerna i svaret, och då ska de inte räknas som
+oskyddade. C3 verifierar att en saknad behörighet ger 401.
 
 Citizens dokumentation säger inte uttryckligen vilken flagga som betyder vad. Tolkningen bygger på namngivningen, och
 den verifieras mot testpersoner i C3. En felaktig tolkning skulle bara ändra vilken nivå som visas, eftersom
@@ -125,10 +131,13 @@ ur svaret loggas.
 **Okänd skyddsstatus (`UNKNOWN`).** En privatkund skapas med `registry_protection = UNKNOWN` och
 `registry_checked = null` när folkbokföringens status inte går att få ([beslut 48]):
 
-- Citizen svarar inte, svarar 5xx eller har en öppen circuit breaker när kunden skapas, av ett meddelande eller av en
-  notering ([§7.2]). Meddelandet eller noteringen tillämpas ändå, så att källans kö inte står still och noteringen inte
-  misslyckas medan Citizen är nere.
-- Kunden fanns när statusen kontrollerades, men hann raderas innan meddelandet skrevs.
+- Citizen svarar inte, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker när ett meddelande skapar
+  kunden. Meddelandet tillämpas ändå, så att källans kö inte står still medan Citizen är nere.
+- Citizen har ingen post för personen (se tabellen ovan).
+- Party har avgjort partytypen när en notering skapar kunden, men party-overviews eget anrop till Citizen misslyckas.
+  Kan Party inte avgöra typen, t.ex. för att Party i sin tur inte når Citizen, blir svaret 503 och ingen notering
+  skapas ([§7.2]).
+- Kunden fanns när statusen kontrollerades, men hann raderas innan meddelandet eller noteringen skrevs.
 
 Så länge statusen är okänd gäller följande:
 
@@ -162,12 +171,12 @@ nattliga kontrollen ersätter det.
 kontrollen. Kontaktuppgifter kommer tillbaka med nästa tillämpade meddelande från källan, eller vid en grundladdning.
 
 **Nattlig kontroll.** `ProtectionRefreshScheduler` (`@Dept44Scheduled` med ShedLock) körs en gång per natt. Den hämtar
-privatkunder vars `registry_checked` saknas eller är äldre än `protection.refresh-age`. Förvalet är `PT20H`, så att
-varje körning når alla som kontrollerades natten före. Med `P1D` skulle en kund som kontrollerades några sekunder efter
-02:00 inte vara äldre än gränsen nästa natt, och då kontrolleras den bara varannan natt. Kunderna tas i batchar om
-`protection.batch-size` (förval 100) via `POST /{municipalityId}/batch?ShowClassified=true`. Varje batch skrivs i en
-egen transaktion med READ COMMITTED ([§3.3]). Batchens kunder låses i partyId-ordning, som i meddelandeflödet, och nivån
-räknas om. Sedan indexeras de ändrade kunderna.
+alla privatkunder vars `registry_checked` saknas eller är äldre än körningens start ([beslut 28]). En gräns i form av en
+ålder, t.ex. ett dygn, skulle missa kunder som skapades eller kontrollerades under dagen före. Kunderna gås igenom med
+keyset på `id` i batchar om `protection.batch-size` (förval 100), så att en batch som misslyckas inte väljs igen i samma
+körning, via `POST /{municipalityId}/batch?ShowClassified=true`. Varje batch skrivs i en egen transaktion med READ
+COMMITTED ([§3.3]). Batchens kunder låses i partyId-ordning, som i meddelandeflödet, och nivån räknas om. De ändrade
+kunderna markeras för omindexering ([§6.2]).
 
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [§5.4]: #54-skyddad-identitet
@@ -177,4 +186,6 @@ räknas om. Sedan indexeras de ändrade kunderna.
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: 13-risker-och-oppna-fragor.md#132-förutsättningar-före-driftsättning
 [beslut 41]: 00-beslutslogg.md#beslut-41-tolkningen-av-citizens-skyddsflaggor
+[§6.2]: 06-rest-api.md#62-kundsökning-opensearch
+[beslut 28]: 00-beslutslogg.md#beslut-28-skyddsstatus-från-citizen-vid-skapandet-och-varje-natt
 

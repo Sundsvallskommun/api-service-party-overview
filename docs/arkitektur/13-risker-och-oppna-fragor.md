@@ -17,7 +17,7 @@ Del av [arkitekturen för party-overview](README.md).
 | En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                     |
 | Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                   |
 | Party har `POST /{municipalityId}/ENTERPRISE/partyIds` (P1, [beslut 32]).                                                 | Mappningen av organisationsnummer i meddelanden (C5) och i uppslaget (C7)                                                                |
-| Kontaktpersonsrollerna är satta via REST ([§12]).                                                                         | Kontaktpersoner på företag                                                                                                               |
+| Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                |
 
 ## 13.3 Risker
 
@@ -51,7 +51,7 @@ Del av [arkitekturen för party-overview](README.md).
 
 - Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder delat med 100 anrop per natt.
 
-  **Hantering:** `refresh-age` och `batch-size` är konfigurerbara. Belastningen stäms av med den som förvaltar Citizen.
+  **Hantering:** `batch-size` är konfigurerbar. Belastningen stäms av med den som förvaltar Citizen.
 
 - Om Citizen inte svarar skapas nya privatkunder med skyddsstatusen `UNKNOWN`. De visas utan namn och adress tills den
   nattliga kontrollen har fått svar från Citizen ([§5.4]).
@@ -71,12 +71,29 @@ Del av [arkitekturen för party-overview](README.md).
 - Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först vid nästa nattliga
   kontroll. Fram till dess kan ett meddelande hinna spara namn och adress.
 
-  **Hantering:** Fönstret är högst ett dygn, eftersom kontrollen körs varje natt. Källornas `protection` gäller direkt.
+  **Hantering:** Fönstret är högst ett dygn, eftersom kontrollen tar med alla privatkunder varje natt ([§5.4]). Ingen
+  publicerare skickar i dag `protection`, så skyddet kommer bara från folkbokföringen ([§11.1]).
 
 - När opt-in stängs av för ett namespace i SM eller Casedata ligger dess engagemang kvar i party-overview.
 
-  **Hantering:** Publiceraren kör grundladdningsjobbet för namespacet med `DELETE` i stället för `UPDATE`. Det görs bara
-  vid behov och har ingen egen uppgift.
+  **Hantering:** Publiceraren kör grundladdningsjobbet för namespacet, och relayn publicerar `DELETE` för objekten,
+  eftersom namespacet saknar opt-in ([§11.1], SM2, CD2). Slås opt-in på igen kommer ett objekt tillbaka först när
+  dess version har ökat, eftersom tombstonen har samma version ([§3.4]).
+
+- En reindexering som avbryts, t.ex. av en omstart, lämnar ett halvbyggt index.
+
+  **Hantering:** Låset släpps inom fem minuter ([§6.2]). README beskriver att reindexeringen då körs igen.
+
+- Varje namespace ger upp till tre fält i sökindexet (`contacts_ns_`, `phones_ns_` och `notes_ns_`). OpenSearch
+  tillåter förvalt 1 000 fält per index, och noteringarnas namespace väljs av anroparen.
+
+  **Hantering:** Antalet namespaces är några tiotal. `index.mapping.total_fields.limit` höjs i indexinställningarna om
+  det behövs, och ett mappningsfel syns som `attempts ≥ 5` i `OpenSearchHealthIndicator`.
+
+- En kund som bara har noteringar syns för alla verksamheter, och den tekniska loggen visar vem som skapade den. Den
+  som kan anropa API:t kan också ta reda på en persons skyddsstatus genom att skapa en notering och läsa kunden.
+
+  **Hantering:** Åtkomsten till API:t avgör vem som kan göra det ([beslut 30]).
 
 - Datakvaliteten i Casedata: `personId` som inte är UUID, och ärenden utan `updated`.
 
@@ -133,15 +150,18 @@ Del av [arkitekturen för party-overview](README.md).
   part kan ha flera roller.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
+[§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [§6.2]: 06-rest-api.md#62-kundsökning-opensearch
 [§7.2]: 07-integrationer.md#72-citizen-och-legalentity
 [§8.2]: 08-teknisk-logg.md#82-radering-av-den-tekniska-loggen
+[§11.1]: 11-publicerare.md#111-gemensamt-för-alla-publicerare
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
+[beslut 30]: 00-beslutslogg.md#beslut-30-de-administrativa-endpoints-ligger-i-samma-api
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§13.2]: #132-förutsättningar-före-driftsättning

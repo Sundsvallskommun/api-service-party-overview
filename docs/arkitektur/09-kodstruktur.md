@@ -20,7 +20,7 @@ se.sundsvall.partyoverview
 │  ├─ db/                       repositories
 │  │  ├─ model/                 entiteter, AbstractHistoryEntity, enums, RolesConverter
 │  │  └─ search/                CustomerDocumentBinder, SearchAnalysisConfigurer, OpenSearchHealthIndicator
-│  ├─ rabbitmq/                 MessageListener, SourceProperties (kö → källa), DeadLetterHealthIndicator
+│  ├─ rabbitmq/                 MessageListener, SourceProperties (källa → kö), DeadLetterHealthIndicator
 │  ├─ party/                    PartyClient, PartyIntegration, configuration/
 │  ├─ citizen/                  CitizenClient, CitizenIntegration, configuration/
 │  └─ legalentity/              LegalEntityClient, LegalEntityIntegration, configuration/
@@ -37,9 +37,18 @@ se.sundsvall.partyoverview
     genereras med ZenWave SDK (`zenwave-sdk-maven-plugin` med `asyncapi-jsonschema2pojo`, 2.8.1), som på grenen
     `publish-events` i det här repot.
 - **Entiteter:** ingen Lombok, utan `create()`/`withX()` och `equals`/`hashCode`/`toString` som i POC:en.
-- **Lyssnaren:** ingen `@ConditionalOnProperty`, eftersom startern inte startar lyssnare när RabbitMQ är avstängt. Ingen
-  `@EnableRabbit`, och ingen `MessageConverter` av egen.
+- **Lyssnaren:** en klass, `MessageListener`, men en listener-container per kö. Endpointerna registreras med
+  `RabbitListenerConfigurer`, en per post i `integration.sources`, så att de ligger i Springs listener-register och får
+  dept44-starterns loggning och request-id. Med en enda `@RabbitListener` för alla köer delar köerna en konsumenttråd,
+  och ett omförsök på en källa stoppar alla ([§3.7]). Ingen `@ConditionalOnProperty` på lyssnaren, eftersom startern
+  inte startar lyssnare när RabbitMQ är avstängt. Ingen `@EnableRabbit`, och ingen `MessageConverter` av egen.
+- **`DeadLetterHealthIndicator`:** villkorad med `@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, samma
+  tolkning som startern. `@ConditionalOnBean(ConnectionFactory.class)` fungerar inte på en komponent som tjänsten själv
+  skannar in, eftersom villkoret utvärderas innan auto-konfigurationens `ConnectionFactory` finns. Då skulle
+  indikatorn aldrig skapas.
 - **Kommentarer och javadoc** beskriver vad koden gör, inte hur den kom till. Kontrakt som anroparen behöver känna till,
   som transaktionsgränser och felvägar, står med.
 - **Inga TODO:s** och ingen bortkommenterad kod.
+
+[§3.7]: 03-meddelanden.md#37-felhantering
 

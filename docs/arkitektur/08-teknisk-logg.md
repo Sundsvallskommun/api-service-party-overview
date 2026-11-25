@@ -31,7 +31,8 @@ Inget gallras automatiskt ([beslut 11] och [beslut 12]):
   `createdBefore` eller båda. Det används t.ex. för en enskild persons begäran enligt GDPR, eller för att rensa gamla rader.
 - Raderingen görs i batchar (`LIMIT`) med en transaktion per batch, så att låsen hålls korta.
 - Historik och kontakter raderas aldrig separat. De följer sina engagemang och sin kund.
-- Tombstones i `source_object` sparas för alltid.
+- Tombstones i `source_object` sparas för alltid, utom raderna för `CUSTOMER`, som innehåller partyId och raderas med
+  kunden ([§3.6]).
 
 [§3.6]: 03-meddelanden.md#36-kundradering
 [§3.7]: 03-meddelanden.md#37-felhantering

@@ -6,6 +6,9 @@ Del av [arkitekturen för party-overview](README.md).
 dept44:
   rabbitmq:
     enabled: true
+  logback:
+    pii-masking:
+      enabled: true              # alla kategorier, även uuid, enligt dept44:s PII-policy (§2)
 integration:
   sources:                       # källa → kö
     SUPPORT_MANAGEMENT: api-fabriken.party-overview.support-management
@@ -20,14 +23,14 @@ integration:
   legalentity:
     url: …
 protection:
-  refresh-age: PT20H # kortare än ett dygn, så att varje natt når förra nattens kunder (§5.4)
   batch-size: 100
 search:
   timeout: PT5S
   relay:
     batch-size: 500
+    max-run-time: PT4M           # under relayns shedlock-lock-at-most-for (§6.2)
   reindex:
-    lock-at-most-for: PT2H
+    lock-at-most-for: PT5M       # förlängs av KeepAliveLockProvider medan ombyggnaden pågår
 scheduler:
   protection-refresh:
     cron: "0 0 2 * * *"
@@ -49,6 +52,11 @@ spring:
           enabled: false         # true per miljö när OpenSearch finns
           backend:
             uris: …
+            version: opensearch:3.6  # låst, så att starten inte beror på klustret (§6.2)
+            version_check:
+              enabled: false
+            connection_timeout: 2000
+            read_timeout: 10000
           indexing:
             listeners:
               enabled: false
@@ -61,21 +69,31 @@ spring:
 - Varje integration behöver OAuth2-klient, URL och sealed secrets per miljö.
 - En ny källa kräver en rad under `integration.sources`, kön och dead letter-kön i rabbitmq-topology och
   kontaktpersonsroller via REST.
-- Vid första driftsättningen i varje miljö sätts `CONTACT_PERSON` som kontaktpersonsroll för `SUPPORT_MANAGEMENT`,
-  `CONTRACT` och `CASE_DATA` med `PUT /{municipalityId}/contact-person-roles/{source}` ([beslut 33]).
+- Vid första driftsättningen i varje miljö sätts kontaktpersonsrollerna för `SUPPORT_MANAGEMENT`, `CONTRACT` och
+  `CASE_DATA` med `PUT /{municipalityId}/contact-person-roles/{source}` ([beslut 33]), **innan** lyssnarna slås på. Ett
+  meddelande som tillämpas utan roller gör varje kontaktperson med id till kund.
+- För contract och Casedata är rollen `CONTACT_PERSON`. I SupportManagement är rollerna metadata per namespace, och
+  `CONTACT_PERSON` finns inte i SM:s testdata. Vilka roller som betyder kontaktperson i SM tas fram ur produktionens
+  metadata innan rollerna sätts ([§13.2]).
+- dept44:s PII-maskning är påslagen med alla kategorier, även `uuid`. Den maskar personnummer, telefonnummer, e-post och
+  UUID:n i alla loggrader, payload-loggen inräknad. Meddelande-id och request-id är också UUID:n, men de finns
+  omaskerade i den tekniska loggen.
 
 ## 12.1 Larm för dead letter-köer
 
 - `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas dead letter-kö och
   läser antalet meddelanden.
-- Indikatorn finns bara när RabbitMQ är påslaget (`@ConditionalOnBean(ConnectionFactory.class)`). Med
-  `dept44.rabbitmq.enabled=false` finns ingen `ConnectionFactory`, och tjänsten ska ändå starta (C1).
+- Indikatorn finns bara när RabbitMQ är påslaget (`@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, [§9]).
+  Med `dept44.rabbitmq.enabled=false` finns ingen `ConnectionFactory`, och tjänsten ska ändå starta (C1).
 - Indikatorn blir `DOWN`, med köernas namn och antal i detaljerna, när någon kö inte är tom. Spring Boot Admin
   notifierar då till Slack, som för andra statusändringar.
+- En dead letter-kö som saknas ger också `DOWN`, eftersom det är ett fel i topologin.
 - Indikatorn ingår inte i grupperna `liveness` och `readiness`. Tjänsten fortsätter alltså att ta emot trafik.
 - Att AMQP-användaren får göra en passiv deklaration av dead letter-köerna verifieras i T1.
 - Hur dead letters hanteras står i README: läs dem och åtgärda orsaken. Flytta sedan tillbaka meddelandena till
   källkön, t.ex. med RabbitMQ Management ("Move messages") eller en shovel. Meddelanden som inte ska behandlas raderas.
 
+[§9]: 09-kodstruktur.md
+[§13.2]: 13-risker-och-oppna-fragor.md#132-förutsättningar-före-driftsättning
 [beslut 33]: 00-beslutslogg.md#beslut-33-kontaktpersonsrollerna-sätts-via-rest-vid-driftsättning
 

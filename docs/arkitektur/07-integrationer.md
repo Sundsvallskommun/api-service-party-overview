@@ -18,6 +18,13 @@ Del av [arkitekturen för party-overview](README.md).
 - Varken personnummer eller organisationsnummer skickas i en URL. För en enskild firma är organisationsnumret ägarens
   personnummer, och en URL hamnar både i dept44:s payload-logg och i gatewayens och Party:s loggar. Kropparna loggas bara
   med de fält som står i allowlisten.
+- Svaret från `PRIVATE/partyIds` är en map med personnumren som nycklar. Allowlisten maskar bara värden, så nycklarna
+  skulle loggas i klartext. dept44:s PII-maskning, som är påslagen ([§12]), maskar dem. P1 svarar i stället med en
+  lista av objekt, så att numren är värden.
+- legalId valideras mot dept44:s format innan det skickas. Ett ogiltigt värde skickas inte, och parten hoppas över
+  ([§3.7]). Party ska därför aldrig svara 400 på en batch från party-overview.
+- 429 och 408 görs om till ett avbrott i `PartyIntegration`, eftersom dept44-startern annars dead-letterar en 4xx
+  direkt ([§3.7]).
 
 ## 7.2 Citizen och LegalEntity
 
@@ -35,19 +42,22 @@ LegalEntity v2 (`GET /{municipalityId}/{legalEntityId}`) används bara när en n
 
 När en notering skapar en kund ([beslut 6]) sker följande:
 
-1. `PartyIntegration` avgör partytypen. Om ingen typ hittas blir svaret 404 och ingen notering skapas.
+1. `PartyIntegration` avgör partytypen. Om Party svarar 404 för båda typerna blir svaret 404, och ingen notering skapas.
+   Party frågar själv Citizen för `PRIVATE`, så när Citizen inte svarar svarar Party 5xx. Det blir 503, och ingen
+   notering skapas. Ett tillfälligt fel blir aldrig 404.
 2. `PRIVATE`: Citizen ger skyddsstatus, och om personen är oskyddad även namn (`givenname` plus `lastname`) och
-   folkbokföringsadress. Har Citizen ingen post skapas kunden utan namn och adress. Svarar Citizen inte skapas kunden
+   folkbokföringsadress. Har Citizen ingen post, eller svarar Citizen inte på party-overviews eget anrop, skapas kunden
    med `UNKNOWN`, utan namn och adress ([§5.4]).
 3. `ENTERPRISE`: LegalEntity ger namnet (`name`) och adressen (`postAddress`). `organizationNumber` i svaret används inte.
-4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU. Om ett meddelande hann skapa kunden under tiden
-   behålls dess uppgifter, men skyddsnivån räknas om.
+4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU och låses ([§3.6]). Om ett meddelande hann skapa
+   kunden under tiden behålls dess uppgifter, men skyddsnivån räknas om. Om kunden fanns men hann raderas under tiden
+   skapas den med `UNKNOWN`, eftersom Citizen aldrig tillfrågades.
 
 Fel från Citizen hanteras olika beroende på var anropet görs:
 
-- *I meddelandeflödet och när en notering skapar kunden:* om Citizen inte svarar, svarar 5xx eller har en öppen circuit
-  breaker skapas nya privatkunder med `UNKNOWN` ([§5.4]). Felet kastas inte vidare, så meddelandet görs inte om och
-  källans kö står inte still ([§3.7]). Felet loggas med antalet berörda kunder, men utan partyId.
+- *I meddelandeflödet och när en notering skapar kunden:* om Citizen inte svarar, svarar 5xx, 429 eller 408, eller har
+  en öppen circuit breaker, skapas nya privatkunder med `UNKNOWN` ([§5.4]). Felet kastas inte vidare, så meddelandet
+  görs inte om och källans kö står inte still ([§3.7]). Felet loggas med antalet berörda kunder, men utan partyId.
 - *I den nattliga kontrollen:* en batch som misslyckas loggas, och dess kunder tas med nästa natt.
 - *401:* betyder att behörigheten i Metakatalogen saknas. Det är ett konfigurationsfel. I meddelandeflödet blir det en
   `ClientProblem`, och meddelandet dead-letteras så att larmet går ([§12.1]). README beskriver åtgärden: registrera
@@ -61,8 +71,10 @@ Förebilder:
 - `api-service-postportalservice` `integration/legalentity/LegalEntityClient.java`
 
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
+[§3.6]: 03-meddelanden.md#36-kundradering
 [§3.7]: 03-meddelanden.md#37-felhantering
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
+[§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [beslut 6]: 00-beslutslogg.md#beslut-6-en-notering-på-en-okänd-kund-skapar-kunden
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-skickas-i-kroppen-mot-party

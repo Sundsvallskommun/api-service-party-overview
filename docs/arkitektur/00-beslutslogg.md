@@ -30,6 +30,8 @@ Källsystemen är master för engagemang och kunddata. party-overview lagrar env
 ## Beslut 4: Kunddata kommer bara från meddelanden
 
 Kunddata (namn, adress, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST.
+Undantaget är namn och adress från Citizen och LegalEntity när en notering skapar kunden ([beslut 6]), och när den
+nattliga kontrollen fyller i dem för en privatkund ([§5.4]).
 
 **Valdes bort:** Att party-overview är master för kunddata.
 
@@ -102,14 +104,14 @@ via REST ([§8.2]).
 
 ## Beslut 12: Versionsvakt i ett register per källobjekt
 
-Versionsvakten ligger i ett register per källobjekt, `source_object`, som saknar koppling till kunder och persondata. En
-DELETE lämnar en tombstone, och en senare UPDATE med högre version väcker objektet till liv igen. Tombstones sparas för
-alltid.
+Versionsvakten ligger i ett register per källobjekt, `source_object`, som saknar FK till kunderna. En DELETE lämnar en
+tombstone, och en senare UPDATE med högre version väcker objektet till liv igen. Tombstones sparas för alltid, utom för
+`CUSTOMER`, vars rader har kundens partyId och raderas med kunden ([§3.6]).
 
 **Valdes bort:** En vakt på engagemangsraderna, ett register över message-id, eller gallring av tombstones.
 
 **Skäl:** När objektet är raderat finns inga engagemangsrader kvar att jämföra mot, och en gammal UPDATE från en
-grundladdning skulle då väcka det till liv. Tombstones innehåller inga personuppgifter.
+grundladdning skulle då väcka det till liv. Övriga tombstones innehåller inga personuppgifter.
 
 ## Beslut 13: Radlås och single-active-consumer
 
@@ -152,11 +154,13 @@ Party blir inte bättre av omförsök.
 
 ## Beslut 17: En lyssnare och en mappning för alla köer
 
-En lyssnare och en mappning hanterar alla köer. Källan bestäms av kön, inte av något i meddelandet.
+En lyssnarklass och en mappning hanterar alla köer, med en listener-container per kö ([§9]). Källan bestäms av kön,
+inte av något i meddelandet.
 
-**Valdes bort:** Ett paket och en översättare per källa, som i POC:en.
+**Valdes bort:** Ett paket och en översättare per källa, som i POC:en, eller en enda container för alla köer.
 
-**Skäl:** Det gemensamma formatet gör översättarna onödiga. Kön kan dessutom bara nås via källans egen exchange.
+**Skäl:** Det gemensamma formatet gör översättarna onödiga. Kön kan dessutom bara nås via källans egen exchange. Med en
+enda container delar köerna en konsumenttråd, och ett omförsök på en källa stoppar alla.
 
 ## Beslut 18: Historiken kommer från källans aktiviteter
 
@@ -461,9 +465,9 @@ datatabellerna gav ingen spårbarhet utöver det.
 
 ## Beslut 48: Okänd skyddsstatus när Citizen inte svarar
 
-Om Citizen inte svarar, svarar 5xx eller har en öppen circuit breaker när en privatkund skapas, får kunden
-skyddsstatusen `UNKNOWN` och behandlas som skyddad tills den nattliga kontrollen har fått svar ([§5.4]). Meddelandet
-eller noteringen tillämpas ändå. 401 dead-letteras som tidigare, eftersom det är ett konfigurationsfel. README, javadoc
+Om Citizen inte svarar, svarar 5xx, har en öppen circuit breaker eller saknar en post för personen när en privatkund
+skapas, får kunden skyddsstatusen `UNKNOWN` och behandlas som skyddad tills den nattliga kontrollen har fått svar
+([§5.4]). Meddelandet eller noteringen tillämpas ändå. 401 dead-letteras som tidigare, eftersom det är ett konfigurationsfel. README, javadoc
 och OpenAPI-specen beskriver värdet.
 
 **Valdes bort:** Att göra om meddelandet tills Citizen svarar, och att sedan dead-lettera det.
@@ -502,4 +506,7 @@ kontaktpersonsroll aldrig blir kund ([beslut 15]).
 [beslut 34]: #beslut-34-casedata-publicerar-ärenden-och-sekretessärenden-som-delete
 [beslut 37]: #beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 48]: #beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
+[§3.6]: 03-meddelanden.md#36-kundradering
+[§9]: 09-kodstruktur.md
+[beslut 6]: #beslut-6-en-notering-på-en-okänd-kund-skapar-kunden
 

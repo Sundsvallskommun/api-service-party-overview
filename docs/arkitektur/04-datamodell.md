@@ -53,7 +53,8 @@ erDiagram
 - Varje FK under `customer` har `on delete cascade`. I entiteterna motsvaras det av `@ManyToOne(fetch = LAZY)`,
   `@ForeignKey(name = …)` och `@OnDelete(action = CASCADE)` på barnet, medan föräldern inte har någon kollektion. På
   `@ElementCollection` sitter `@OnDelete` på kollektionen. Om Hibernate inte genererar kaskaden för kollektionstabellen,
-  vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne`.
+  vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne` och en egen
+  `id`-kolumn. Valet görs i C2, och tabellen i [§4.3] uppdateras då.
 - Index, unika nycklar och FK har samma namn i `@Table`/`@ForeignKey` och i Flyway: `uq_<tabell>_<kolumner>`,
   `idx_<tabell>_<kolumner>` och `fk_<tabell>_<kolumn>`. Ett namn får vara högst 64 tecken, som är MariaDB:s gräns för
   identifierare. Den enda nyckel som skulle gå över gränsen, engagemangets unika nyckel, namnges därför efter vad den
@@ -158,8 +159,8 @@ Index: `idx_contact_customer_id_namespace` och `idx_contact_engagement_id`.
 | `id`                      | varchar(36)               | nej  | PK                                |
 | `customer_id`             | varchar(36)               | nej  | FK `fk_note_customer_id`, cascade |
 | `namespace`               | varchar(32)               | nej  |                                   |
-| `subject`                 | varchar(255)              | ja   |                                   |
-| `body`                    | longtext                  | nej  |                                   |
+| `subject`                 | varchar(255)              | ja   | Högst 255 tecken (`@Size`)        |
+| `body`                    | text                      | nej  | Högst 10 000 tecken (`@Size`)     |
 | `created`, `created_by`   | datetime(6), varchar(255) | nej  |                                   |
 | `modified`, `modified_by` | datetime(6), varchar(255) | ja   |                                   |
 
@@ -171,7 +172,8 @@ gemensamma kolumnerna ligger i en `@MappedSuperclass AbstractHistoryEntity`.
 
 Index: `idx_note_history_note_id_occurred_at`.
 
-**`source_object`**: versionsregistret ([beslut 12]). Tabellen har inga kunduppgifter och ingen FK.
+**`source_object`**: versionsregistret ([beslut 12]). Tabellen har ingen FK. För `CUSTOMER` är `object_id` kundens
+partyId, och de raderna raderas med kunden ([§3.6]). Övriga rader innehåller inga kunduppgifter.
 
 |        Kolumn         |     Typ      |                                      Null                                      |
 |-----------------------|--------------|--------------------------------------------------------------------------------|
@@ -263,4 +265,5 @@ Index: `idx_search_index_queue_queued`.
 [beslut 12]: 00-beslutslogg.md#beslut-12-versionsvakt-i-ett-register-per-källobjekt
 [beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
 [beslut 18]: 00-beslutslogg.md#beslut-18-historiken-kommer-från-källans-aktiviteter
+[§3.6]: 03-meddelanden.md#36-kundradering
 

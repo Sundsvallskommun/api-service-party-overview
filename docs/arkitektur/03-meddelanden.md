@@ -9,47 +9,47 @@ inte i ett giltigt meddelande, och ett meddelande som bryter mot kraven dead-let
 
 **AMQP-egenskaper**
 
-|    Egenskap    |                                                  Krav                                                   |
-|----------------|---------------------------------------------------------------------------------------------------------|
-| `message-id`   | **krav**, UUID. Samma meddelande får samma id om det skickas igen, medan en grundladdning ger nya id:n. |
-| `content-type` | `application/json`                                                                                      |
-| `x-request-id` | Sätts av dept44-starter-rabbitmq och lagras i den tekniska loggen.                                      |
-| Routing key    | `<objektTyp>.<operation>` med gemener, t.ex. `errand.update` eller `customer.delete`.                   |
+|    Egenskap    |                                         Krav                                          |
+|----------------|---------------------------------------------------------------------------------------|
+| `message-id`   | **krav**, UUID. Sparas i den tekniska loggen för spårbarhet.                          |
+| `content-type` | `application/json`                                                                    |
+| `x-request-id` | Sätts av dept44-starter-rabbitmq och lagras i den tekniska loggen.                    |
+| Routing key    | `<objektTyp>.<operation>` med gemener, t.ex. `errand.update` eller `customer.delete`. |
 
 **Kropp**
 
-|                 Fält                 |                       Typ                       |                                  Krav                                  |                                                         Beskrivning                                                          |
-|--------------------------------------|-------------------------------------------------|------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
-| `operation`                          | `UPDATE` \| `DELETE`                            | **krav**                                                               | `UPDATE` innebär hela tillståndet och används även vid grundladdning.                                                        |
-| `objectType`                         | `ERRAND` \| `ASSET` \| `CONTRACT` \| `CUSTOMER` | **krav**                                                               |                                                                                                                              |
-| `municipalityId`                     | sträng                                          | **krav**                                                               | Valideras med `@ValidMunicipalityId`.                                                                                        |
-| `namespace`                          | sträng                                          | valfri                                                                 | Valideras med `@ValidNamespace`. Saknas den räknas objektet och dess kontaktuppgifter som globala.                           |
-| `objectId`                           | sträng                                          | **krav** utom för `CUSTOMER`                                           | Objektets id i källan, aldrig ett personnummer.                                                                              |
-| `version`                            | heltal (long)                                   | **krav**                                                               | Ökar vid varje publicerad ändring av objektet. En `DELETE` bär minst den senaste versionen.                                  |
-| `sourceModified`                     | tidpunkt med zon                                | **krav** vid `UPDATE`                                                  | När objektet senast ändrades i källan. Sorteringsnyckel och mått för "nyast vinner".                                         |
-| `activities[]`                       | lista                                           | valfri                                                                 | Det som hände i den här ändringen. Listan är tom vid grundladdning.                                                          |
-| `activities[].type`                  | sträng                                          | **krav**                                                               | T.ex. `CREATED`, `UPDATED`, `STATUS_CHANGED`. Källan bestämmer värdena.                                                      |
-| `activities[].description`           | sträng ≤ 1024                                   | valfri                                                                 | Kort text utan personuppgifter.                                                                                              |
-| `activities[].performedBy.type`      | sträng                                          | valfri                                                                 | T.ex. `AD_ACCOUNT`, `PARTY_ID` eller `SYSTEM`.                                                                               |
-| `activities[].performedBy.value`     | sträng                                          | valfri                                                                 | Den som utförde ändringen, från `X-Sent-By` i källan.                                                                        |
-| `activities[].occurredAt`            | tidpunkt med zon                                | **krav**                                                               |                                                                                                                              |
-| `object.reference`                   | sträng                                          | valfri                                                                 | Visningsid, t.ex. ärendenummer, `assetId` eller `contractId`.                                                                |
-| `object.title`                       | sträng                                          | valfri                                                                 |                                                                                                                              |
-| `object.category`                    | sträng                                          | valfri                                                                 | Typ eller klassificering i källan.                                                                                           |
-| `object.status`                      | sträng                                          | valfri                                                                 | Källans statuskod. Frontend översätter den.                                                                                  |
-| `object.validFrom`, `object.validTo` | datum                                           | valfri                                                                 |                                                                                                                              |
-| `object.sourceCreated`               | tidpunkt med zon                                | valfri                                                                 |                                                                                                                              |
-| `parties[]`                          | lista                                           | **krav** vid `UPDATE` (kan vara tom), för `CUSTOMER` även vid `DELETE` | Objektets parter. För `CUSTOMER` exakt en, och den pekar ut kunden.                                                          |
-| `parties[].partyId`                  | UUID                                            | partyId eller legalId                                                  | Bör alltid skickas när publiceraren har det.                                                                                 |
-| `parties[].legalId`                  | sträng                                          | partyId eller legalId                                                  | Personnummer eller organisationsnummer. Används bara när partyId saknas, och party-overview mappar det och kastar det sedan. |
-| `parties[].partyType`                | `PRIVATE` \| `ENTERPRISE`                       | **krav** när partyId eller legalId finns                               | En part vars typ publiceraren inte kan mappa skickas utan id ([§11.1]).                                                      |
-| `parties[].roles[]`                  | strängar                                        | valfri                                                                 | Källans rollkoder.                                                                                                           |
-| `parties[].name`                     | sträng                                          | valfri                                                                 | Visningsnamn: för- och efternamn, eller organisationsnamn.                                                                   |
-| `parties[].address`                  | objekt                                          | valfri                                                                 | `careOf`, `street`, `postalCode`, `city`, `country`.                                                                         |
-| `parties[].contactChannels[]`        | lista                                           | valfri                                                                 | Partens kontaktkanaler.                                                                                                      |
-| `parties[].contactChannels[].type`   | `EMAIL` \| `PHONE`                              | **krav**                                                               | Publiceraren mappar källans kanaltyper till de här värdena ([§11.1]).                                                        |
-| `parties[].contactChannels[].value`  | sträng                                          | **krav**                                                               | E-postadressen eller telefonnumret.                                                                                          |
-| `parties[].protection`               | `SECRECY_MARKING` \| `PROTECTED_REGISTRATION`   | valfri                                                                 | Sätts när källan vet att parten har skyddade personuppgifter. Då skickas varken `name`, `address` eller `contactChannels`.   |
+|                 Fält                 |                       Typ                       |                                  Krav                                  |                                                                                                                                              Beskrivning                                                                                                                                               |
+|--------------------------------------|-------------------------------------------------|------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `operation`                          | `UPDATE` \| `DELETE`                            | **krav**                                                               | `UPDATE` innebär hela tillståndet och används även vid grundladdning.                                                                                                                                                                                                                                  |
+| `objectType`                         | `ERRAND` \| `ASSET` \| `CONTRACT` \| `CUSTOMER` | **krav**                                                               |                                                                                                                                                                                                                                                                                                        |
+| `municipalityId`                     | sträng                                          | **krav**                                                               | Valideras med `@ValidMunicipalityId`.                                                                                                                                                                                                                                                                  |
+| `namespace`                          | sträng                                          | valfri                                                                 | Valideras med `@ValidNamespace`. Saknas den räknas objektet och dess kontaktuppgifter som globala.                                                                                                                                                                                                     |
+| `objectId`                           | sträng                                          | **krav** utom för `CUSTOMER`                                           | Objektets id i källan, aldrig ett personnummer.                                                                                                                                                                                                                                                        |
+| `version`                            | heltal (long)                                   | **krav**                                                               | Ökar vid varje publicerad ändring av objektet. En `DELETE` bär minst den senaste versionen.                                                                                                                                                                                                            |
+| `sourceModified`                     | tidpunkt med zon                                | **krav** vid `UPDATE`                                                  | När objektet senast ändrades i källan. Sorteringsnyckel och mått för "nyast vinner".                                                                                                                                                                                                                   |
+| `activities[]`                       | lista                                           | valfri                                                                 | Det som hände i den här ändringen. Listan är tom vid grundladdning.                                                                                                                                                                                                                                    |
+| `activities[].type`                  | sträng                                          | **krav**                                                               | T.ex. `CREATED`, `UPDATED`, `STATUS_CHANGED`. Källan bestämmer värdena.                                                                                                                                                                                                                                |
+| `activities[].description`           | sträng ≤ 1024                                   | valfri                                                                 | Kort text utan personuppgifter.                                                                                                                                                                                                                                                                        |
+| `activities[].performedBy.type`      | sträng                                          | valfri                                                                 | T.ex. `AD_ACCOUNT`, `PARTY_ID` eller `SYSTEM`.                                                                                                                                                                                                                                                         |
+| `activities[].performedBy.value`     | sträng                                          | valfri                                                                 | Den som utförde ändringen, från `X-Sent-By` i källan.                                                                                                                                                                                                                                                  |
+| `activities[].occurredAt`            | tidpunkt med zon                                | **krav**                                                               |                                                                                                                                                                                                                                                                                                        |
+| `object.reference`                   | sträng                                          | valfri                                                                 | Visningsid, t.ex. ärendenummer, `assetId` eller `contractId`.                                                                                                                                                                                                                                          |
+| `object.title`                       | sträng                                          | valfri                                                                 |                                                                                                                                                                                                                                                                                                        |
+| `object.category`                    | sträng                                          | valfri                                                                 | Typ eller klassificering i källan.                                                                                                                                                                                                                                                                     |
+| `object.status`                      | sträng                                          | valfri                                                                 | Källans statuskod. Frontend översätter den.                                                                                                                                                                                                                                                            |
+| `object.validFrom`, `object.validTo` | datum                                           | valfri                                                                 |                                                                                                                                                                                                                                                                                                        |
+| `object.sourceCreated`               | tidpunkt med zon                                | valfri                                                                 |                                                                                                                                                                                                                                                                                                        |
+| `parties[]`                          | lista                                           | **krav** vid `UPDATE` (kan vara tom), för `CUSTOMER` även vid `DELETE` | Objektets parter. För `CUSTOMER` exakt en, och den pekar ut kunden.                                                                                                                                                                                                                                    |
+| `parties[].partyId`                  | UUID                                            | partyId eller legalId                                                  | Bör alltid skickas när publiceraren har det.                                                                                                                                                                                                                                                           |
+| `parties[].legalId`                  | sträng                                          | partyId eller legalId                                                  | Personnummer med 12 siffror (`ÅÅÅÅMMDDNNNN`) eller organisationsnummer med 10 siffror, utan bindestreck, som dept44:s validatorer. Publiceraren normaliserar, och ett värde som ändå inte valideras skickas inte. Används bara när partyId saknas, och party-overview mappar det och kastar det sedan. |
+| `parties[].partyType`                | `PRIVATE` \| `ENTERPRISE`                       | **krav** när partyId eller legalId finns                               | En part vars typ publiceraren inte kan mappa skickas utan id ([§11.1]).                                                                                                                                                                                                                                |
+| `parties[].roles[]`                  | strängar                                        | valfri                                                                 | Källans rollkoder.                                                                                                                                                                                                                                                                                     |
+| `parties[].name`                     | sträng                                          | valfri                                                                 | Visningsnamn: för- och efternamn, eller organisationsnamn.                                                                                                                                                                                                                                             |
+| `parties[].address`                  | objekt                                          | valfri                                                                 | `careOf`, `street`, `postalCode`, `city`, `country`.                                                                                                                                                                                                                                                   |
+| `parties[].contactChannels[]`        | lista                                           | valfri                                                                 | Partens kontaktkanaler.                                                                                                                                                                                                                                                                                |
+| `parties[].contactChannels[].type`   | `EMAIL` \| `PHONE`                              | **krav**                                                               | Publiceraren mappar källans kanaltyper till de här värdena ([§11.1]).                                                                                                                                                                                                                                  |
+| `parties[].contactChannels[].value`  | sträng                                          | **krav**                                                               | E-postadressen eller telefonnumret.                                                                                                                                                                                                                                                                    |
+| `parties[].protection`               | `SECRECY_MARKING` \| `PROTECTED_REGISTRATION`   | valfri                                                                 | Sätts när källan vet att parten har skyddade personuppgifter. Då skickas varken `name`, `address` eller `contactChannels`.                                                                                                                                                                             |
 
 En part som saknar både partyId och legalId kan bara bli kontaktperson ([§5.3]). Annars ignoreras den.
 
@@ -145,8 +145,8 @@ MessageListener (alla köer)                          ingen transaktion
        1. mappa till ObjectChange och validera (@Validated)  ─ ogiltigt → dead letter direkt
        2. läs kontaktpersonsroller för (kommun, källa)
        3. dela upp parterna i kunder och kontaktpersoner (§5.3)
-       4. legalId → partyId via PartyIntegration, bara för kundparter
-                                                             ─ 404 → parten hoppas över (WARN utan PII)
+       4. legalId → partyId via PartyIntegration (batch), bara för kundparter
+                                                             ─ saknas i svaret → parten hoppas över (WARN utan PII)
           (en kontaktpersons legalId används inte och kastas)
        5. folkbokföringens skyddsstatus för PRIVATE-kundparter som inte finns i databasen
           (CitizenIntegration, batch, ShowClassified=true, §5.4)
@@ -154,8 +154,8 @@ MessageListener (alla köer)                          ingen transaktion
        6. MessageWriter.apply(change)                         @Transactional(READ_COMMITTED), egen bean
             a. lås källobjektet (source_object: IODKU, sedan SELECT … FOR UPDATE)
             b. avgör enligt versionsmatrisen (§3.4)           ─ inaktuellt → bara teknisk logg
-            c. lås alla berörda kunder: meddelandets kundparter och kunderna med engagemang i objektet
-               (IODKU och FOR UPDATE, i partyId-ordning, före alla kontroller)
+            c. lås alla berörda kunder i partyId-ordning, före alla kontroller: meddelandets kundparter
+               (IODKU och FOR UPDATE) och kunderna med engagemang i objektet (bara FOR UPDATE)
             d. tillämpa UPDATE eller DELETE (§3.5) och räkna om kundernas skyddsnivå (§5.4)
             e. skriv teknisk logg för varje berörd kund och markera kunden för sökindexering
                (search_index_queue, §6.2)
@@ -163,8 +163,12 @@ MessageListener (alla köer)                          ingen transaktion
 ```
 
 - Feign-anropen görs utanför transaktionen, så att en långsam Party inte håller lås i databasen.
-- Kunderna med engagemang i objektet läses efter att `source_object` har låsts. Låset gör att inget annat meddelande om
-  samma objekt kan ändra dem under tiden.
+- Kunderna med engagemang i objektet läses efter att `source_object` har låsts. Låset hindrar andra meddelanden om
+  samma objekt, men inte en kundradering via REST eller `CUSTOMER DELETE`, som tar bort engagemangen genom kaskaden.
+  Därför låses de kunderna bara med `FOR UPDATE`, och en kund som har hunnit raderas hoppas över i stället för att
+  skapas på nytt. Objektets engagemang läses om efter kundlåsen, och steg d–f utgår från den läsningen.
+- Kan ett legalId inte mappas, hoppar steg 5 i [§3.5] över att radera engagemang för kunder som inte längre är parter.
+  Den omappade parten kan vara en av dem, och ett tillfälligt fel ska inte radera data.
 - `MessageWriter` körs med READ COMMITTED, som SM:s `ProcessEventRelay`. Med MariaDB:s förval REPEATABLE READ läser en
   vanlig fråga ögonblicksbilden från transaktionens första läsning. En kontroll efter en låsväntan skulle då missa det
   som en annan transaktion hann skriva, t.ex. ett nytt engagemang på en kund som annars raderas automatiskt och tar det
@@ -190,7 +194,8 @@ MessageListener (alla köer)                          ingen transaktion
   Därför behövs inget register över message-id.
 - En grundladdning medan publiceraren är i drift är ofarlig. En ögonblicksbild som är äldre än en DELETE stoppas av
   tombstonen.
-- Raderade `source_object`-rader (tombstones) sparas för alltid. De innehåller inga personuppgifter.
+- Raderade `source_object`-rader (tombstones) sparas för alltid och innehåller inga personuppgifter. Undantaget är rader
+  för `CUSTOMER`, vars `object_id` är kundens partyId. De tas bort med kunden ([§3.6]).
 
 ## 3.5 Tillämpning
 
@@ -206,7 +211,7 @@ MessageListener (alla köer)                          ingen transaktion
    Radens kontaktuppgifter ersätts ([§5.3]), men för en skyddad kund sparas ingen rad med kundens egna kontaktuppgifter.
 4. Skriv meddelandets `activities` som historik på raden, men bara om raden är ny eller om `v > s`.
 5. Radera engagemangsrader för kunder som inte längre är parter (`ENGAGEMENT_REMOVED`), och räkna om skyddsnivån för
-   dem som har engagemang kvar.
+   dem som har engagemang kvar. Steget hoppas över om något legalId i meddelandet inte kunde mappas ([§3.3]).
 6. Sätt `source_object.version = v` och `deleted = false`.
 7. Radera de kunder från steg 5 som saknar både engagemang och noteringar ([§3.6]).
 
@@ -220,6 +225,8 @@ och noteringar ([§3.6]).
 
 **UPDATE för `CUSTOMER`**
 
+- Parten är alltid kunden och klassas inte på roller som i [§5.3]. Den behöver partyId eller ett legalId som går att
+  mappa, annars ignoreras meddelandet.
 - Skapa kunden om den saknas.
 - Sätt `asserted_protection` till partens `protection` och räkna om skyddsnivån ([§5.4]).
 - Om kunden är oskyddad:
@@ -232,12 +239,13 @@ Versionsvakten nycklas på kundens partyId, efter en eventuell mappning från le
 
 **DELETE för `CUSTOMER`**
 
-Markera `source_object` som raderat med version v. Radera sedan kunden med allt den äger ([§3.6]), om den finns, och
-logga `CUSTOMER_DELETED`. Det gäller i varje cell i versionsmatrisen som inte är inaktuell ([§3.4]).
+Radera kunden med allt den äger ([§3.6]), om den finns, och logga `CUSTOMER_DELETED`. Det gäller i varje cell i
+versionsmatrisen som inte är inaktuell ([§3.4]). Kundens rader i `source_object` raderas med den, så ingen tombstone med
+partyId sparas.
 
 ## 3.6 Kundradering
 
-En kund raderas i tre fall:
+En kund raderas i följande fall:
 
 |                           Orsak                            | Kanal i loggen |          Objekttyp i loggen          |
 |------------------------------------------------------------|----------------|--------------------------------------|
@@ -251,32 +259,37 @@ En kund raderas i tre fall:
 - Raderingen görs sist i transaktionen, efter `source_object` och all omräkning. `clearAutomatically` kopplar loss alla
   laddade entiteter, så en ändring som görs på en entitet efter raderingen skrivs aldrig.
 - Den tekniska loggraden `CUSTOMER_DELETED` skrivs i samma transaktion som raderingen.
+- Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
+  partyId. Ett senare, äldre `CUSTOMER UPDATE` kan då skapa kunden igen.
 - Ett senare meddelande som nämner kunden skapar den på nytt. Det är avsiktligt, eftersom källsystemet är master.
 - En kund som bara har kontaktuppgifter från `CUSTOMER`-meddelanden, och varken engagemang eller noteringar, raderas
   inte automatiskt. Kontrollen görs bara när ett engagemang eller en notering tas bort.
-- När en notering raderas låses kunden först, och transaktionen körs med READ COMMITTED, som i [§3.3]. Annars kan ett
-  meddelande hinna ge kunden ett engagemang som kontrollen inte ser.
+- Varje skrivning av en notering låser kunden först, med IODKU och `FOR UPDATE`, och transaktionen körs med READ
+  COMMITTED, som i [§3.3]. Annars kan ett meddelande hinna ge kunden ett engagemang som kontrollen inte ser, eller
+  radera kunden medan en ny notering väntar på sin FK-kontroll.
 
 ## 3.7 Felhantering
 
 Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
 
-|                                               Fel                                               |                                                      Följd                                                      |
-|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| Valideringsfel (`ConstraintViolationException`), okänd objekttyp eller kanaltyp, saknad version | Dead letter direkt                                                                                              |
-| Party svarar 404 på ett legalId                                                                 | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `objectId`, men utan legalId. |
-| 5xx från Party (`ServerProblem`)                                                                | Omförsök i cirka 8 minuter, sedan dead letter                                                                   |
-| Citizen svarar inte, svarar 5xx eller har öppen circuit breaker                                 | Inget fel. Nya privatkunder får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                   |
-| Citizen svarar 401                                                                              | Dead letter direkt (`ClientProblem`), så att larmet går. Behörigheten i Metakatalogen saknas ([§7.2]).          |
-| Databasen svarar inte, öppen circuit breaker                                                    | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                       |
-| Deadlock eller lock timeout (`TransientDataAccessException`)                                    | Omförsök                                                                                                        |
-| `DataIntegrityViolationException`                                                               | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                   |
+|                                               Fel                                               |                                                                        Följd                                                                         |
+|-------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Valideringsfel (`ConstraintViolationException`), okänd objekttyp eller kanaltyp, saknad version | Dead letter direkt                                                                                                                                   |
+| Ett legalId saknas i Party:s svar, eller har fel format och skickas därför aldrig till Party    | Parten hoppas över och resten av meddelandet tillämpas. WARN loggas med källa och `objectId`, men utan legalId.                                      |
+| 5xx från Party (`ServerProblem`)                                                                | Omförsök i cirka 8 minuter, sedan dead letter                                                                                                        |
+| 429 eller 408 från Party, eller öppen circuit breaker mot Party                                 | Avbrott: omförsök, sedan tillbaka till kön. `PartyIntegration` gör om svaret till ett avbrott, eftersom startern annars dead-letterar en 4xx direkt. |
+| Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker                 | Inget fel. Nya privatkunder får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                                                        |
+| Citizen svarar 401                                                                              | Dead letter direkt (`ClientProblem`), så att larmet går. Behörigheten i Metakatalogen saknas ([§7.2]).                                               |
+| Databasen svarar inte                                                                           | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                                                            |
+| Deadlock eller lock timeout (`TransientDataAccessException`)                                    | Omförsök                                                                                                                                             |
+| `DataIntegrityViolationException`                                                               | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                                                        |
 
 Ett meddelande som misslyckas rullas tillbaka helt och syns inte i den tekniska loggen. Det syns i starterns WARN-rad
 och i dead letter-kön.
 
-Omförsöken görs i lyssnarens tråd. Med single-active-consumer står källans kö still under tiden, medan andra källors
-köer inte påverkas.
+Omförsöken görs i lyssnarens tråd. Varje kö har en egen listener-container med en egen konsument ([§9]), så under ett
+omförsök står bara den källans kö still. Med en enda container för alla köer delar köerna en tråd, och ett omförsök på
+en källa skulle stoppa alla.
 
 [§3.3]: #33-flödet-genom-tjänsten
 [§3.4]: #34-versionsmatrisen

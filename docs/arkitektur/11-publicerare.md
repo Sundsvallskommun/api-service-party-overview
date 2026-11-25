@@ -13,24 +13,36 @@ Del av [arkitekturen för party-overview](README.md).
      får skriva.
    - Händelsen skickas av servicemetoderna, inte från entity-callbacks. En callback som `@PostPersist` körs när
      Hibernate flushar vid commit, efter att BEFORE_COMMIT-lyssnarna redan har körts, och då skrivs ingen rad.
+   - Varje publiceringspunkt körs i en transaktion. Utan transaktion kastas händelsen tyst, eftersom en
+     `@TransactionalEventListener` har `fallbackExecution = false` som förval. Där en publiceringspunkt inte har någon
+     transaktion, t.ex. SM:s kommunikation via REST, skrivs outbox-raden i stället direkt i en egen transaktion, som
+     SM:s `ProcessEventPublisher` gör.
    - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter samlade på raden.
 3. **Relay:**
    - Körs direkt efter commit och dessutom schemalagt med ShedLock.
    - Väntande rader grupperas per objekt i den ordning de skrevs. Relayn läser objektets **aktuella** tillstånd, bygger
-     ett meddelande med alla väntande aktiviteter och publicerar `UPDATE`, eller `DELETE` om objektet är borta.
-   - Relayn tar ett delat lås på objektets rad (`SELECT … FOR SHARE`) innan den läser raderna och tillståndet, så att
-     de hör ihop. Utan låset kan en ändring committas mellan läsningarna. Tillståndet blir då version N+1 medan bara
+     ett meddelande med alla väntande aktiviteter och publicerar `UPDATE`. Den publicerar `DELETE` när objektet är borta
+     eller inte ska synas: soft-deletat (SM), sekretessmarkerat (Casedata) eller i ett namespace utan opt-in.
+   - Relayn tar ett delat lås på objektets rad innan den läser raderna och tillståndet, så att de hör ihop. I MariaDB
+     heter det `SELECT … LOCK IN SHARE MODE`, eftersom `FOR SHARE` ger syntaxfel i MariaDB, både i 10.6 och i 11.4. I
+     JPA används `@Lock(PESSIMISTIC_READ)`, som Hibernates MariaDB-dialekt skriver om till `lock in share mode`. Utan låset kan en ändring committas mellan läsningarna. Tillståndet blir då version N+1 medan bara
      raden för N är läst, och när raden för N+1 publiceras senare har den samma version. party-overview tolkar den som
      en rättning, och dess aktiviteter hamnar aldrig i historiken ([§3.4]). Låset hålls tills brokern har bekräftat, och
      en skrivning till objektet väntar under tiden.
    - Raderna tas bort först när brokern har bekräftat meddelandet. En rad som misslyckas blockerar senare rader för
      samma objekt.
+   - En health-indikator blir `DOWN` när den äldsta väntande raden är äldre än en konfigurerbar gräns, som
+     `ProcessEventRelay.findHealthFault` i SM. Annars märks det inte om publiceringen har stannat, t.ex. för att
+     brokern returnerar meddelandena.
    - `message-id` är ett nytt UUID per publicering. Det återanvänds om samma publicering görs om efter `TIMEOUT`.
 4. **Version:** objektets `@Version`. Den ska öka vid varje ändring som publiceras.
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
 6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
    publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adress eller
-   kontaktkanaler för den parten.
+   kontaktkanaler för den parten. Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för
+   kommande publicerare.
+   - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort. Ett värde som ändå inte valideras skickas inte,
+     och parten skickas utan id.
    - Källans partytyp mappas till `PRIVATE` eller `ENTERPRISE`. En part vars typ inte går att mappa skickas utan id. Den
      kan då bara bli kontaktperson, och resten av meddelandet tillämpas.
    - Textfälten hålls inom maxlängderna i [§3.1].
@@ -41,6 +53,8 @@ Del av [arkitekturen för party-overview](README.md).
      keyset-paginering.
    - Den körs asynkront, med ShedLock så att den inte startar två gånger.
    - Den använder samma outbox som vanliga ändringar och behåller därför ordningen per objekt.
+   - Den kan köras för ett namespace som just har stängt av opt-in. Relayn publicerar då `DELETE` för namespacets
+     objekt, eftersom de inte ska synas.
 8. **AsyncAPI:** publiceraren exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet. Mönster: party-assets
    `origin/publish-asset-events` `AssetEventsAsyncApi`.
 
@@ -70,8 +84,8 @@ Del av [arkitekturen för party-overview](README.md).
   vara kontaktpersoner. `parameters` skickas aldrig.
 - **Utkast:** Ärenden med `lifecycle = DRAFT` publiceras inte ([beslut 26]). När ett utkast skickas in publiceras det
   som `UPDATE`.
-- **Skyddad identitet:** Om SM vet att en stakeholder har skyddade personuppgifter sätts `protection`, och då skickas
-  varken namn, adress eller kontaktkanaler ([§3.1]).
+- **Skyddad identitet:** SM har i dag ingen uppgift om skyddade personuppgifter på stakeholders och skickar därför inte
+  `protection`. Skyddet för SM:s kunder kommer från folkbokföringen ([§5.4]).
 - **Grundladdning:** En ny `JobType` som går igenom ärendena per namespace med keyset, som
   `ErrandPurgeRunner.findIdsAfter`, och med ShedLock per namespace.
 
@@ -96,10 +110,13 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
 
 ## 11.4 contract (`CONTRACT`)
 
-- **Tidsstämplar:** Nya kolumner `created` och `modified` på kontraktet. Det är en additiv migrering, och befintliga
-  rader får `modified = created = now()`. `modified` sätts även när kontraktet skapas, eftersom den blir
-  `sourceModified`.
-- **Vem:** `Identifier` fångas vid varje skrivning. Klienterna måste skicka `X-Sent-By`.
+- **Tidsstämplar:** Nya, nullbara kolumner `created` och `modified` på kontraktet. Det är en additiv migrering, och
+  befintliga rader behåller null. `created` och `modified` sätts när ett kontrakt skapas, och `modified` vid varje
+  ändring. Saknar ett kontrakt `modified` publiceras `sourceModified` som den fasta tidpunkten `1970-01-01T00:00:00Z`,
+  som i party-assets. Med `now()` på befintliga rader skulle varje gammalt kontrakt räknas som nyast, och contracts
+  namn och adress skulle då skriva över de andra källornas efter grundladdningen ([§5.2]).
+- **Vem:** `Identifier` fångas när `X-Sent-By` finns, och blir `performedBy`. Utan headern saknas `performedBy`, så att
+  contracts befintliga klienter inte behöver ändras.
 - **Outbox:** En egen CRM-outbox. Den befintliga är byggd för billing, har ett enda mål och tar bort raden.
   Publiceringspunkter: `ContractService` (create, patch, update, delete), `ContractTerminationWorker` och
   `ContractAutoExtensionWorker`, även vid vanlig periodförlängning, som saknar outbox-rad idag.
@@ -145,7 +162,7 @@ från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är
   (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas inte.
 - **Parter:** `errand.stakeholders`, där `PERSON` blir `PRIVATE` och `ORGANIZATION` blir `ENTERPRISE`. `personId`
   skickas som partyId bara om det är ett UUID, och aldrig annars. `organizationNumber` skickas som legalId bara när
-  partyId saknas. `roles`, namn, adress (`POSTAL`, annars `VISITING_ADDRESS`) och `contactChannels` följer med, där
+  partyId saknas. `roles`, namn, adress (`POSTAL_ADDRESS`, annars `VISITING_ADDRESS`) och `contactChannels` följer med, där
   `CELLPHONE` och `PHONE` blir `PHONE`. Parter med rollen `ADMINISTRATOR` eller med `adAccount`, alltså handläggare,
   skickas inte. Parter utan id skickas med, eftersom de kan vara kontaktpersoner. `extraParameters` och
   `authorizedSignatory` skickas aldrig.
@@ -158,7 +175,9 @@ från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§3.7]: 03-meddelanden.md#37-felhantering
+[§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
+[§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [§11.1]: #111-gemensamt-för-alla-publicerare
 [§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
 [beslut 20]: 00-beslutslogg.md#beslut-20-transaktionell-outbox-hos-varje-publicerare
