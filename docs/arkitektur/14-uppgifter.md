@@ -164,7 +164,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   - besöksadressen "SKEPPARPLATSEN 1" och en postadress med bara postnummer och ort
   - att tomma strängar blir null
 - `officers` och `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar
-  loggas. Ett organisationsnummer som är ett personnummer ger ingen `organizationNumber` i profilen.
+  loggas. Profilen har inget organisationsnummer.
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
   och en testperson med skyddad folkbokföring. Resultatet dokumenteras i README.
 - 401 från Citizen ger en `ClientProblem` vars detail säger att behörigheten i Metakatalogen saknas.

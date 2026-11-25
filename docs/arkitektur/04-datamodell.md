@@ -130,7 +130,6 @@ skyddad kund har ingen. Raden och dess barn ersätts som helhet.
 |                        Kolumn                         |             Typ              |  Null  |                                  Anmärkning                                  |
 |-------------------------------------------------------|------------------------------|--------|------------------------------------------------------------------------------|
 | `customer_id`                                         | varchar(36)                  | nej    | PK och FK `fk_enterprise_profile_customer_id`, cascade                       |
-| `organization_number`                                 | varchar(10)                  | ja     | Bara när numret inte är ett personnummer                                     |
 | `legal_form_code`, `legal_form`                       | varchar(8), varchar(255)     | ja     | SCB:s juridiska form                                                         |
 | `company_form`                                        | varchar(64)                  | ja     | Bolagsverkets företagsform                                                   |
 | `seat_municipality_code`, `seat_municipality`         | varchar(8), varchar(255)     | ja     |                                                                              |

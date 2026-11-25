@@ -557,8 +557,7 @@ och då skulle namn och adress sparas för en skyddad person.
 För en enskild firma, där organisationsnumret är ägarens personnummer, hämtas ägarens skydd från folkbokföringen på
 samma sätt som för en privatkund, också i den nattliga kontrollen ([§5.4]). Ett legalId för `ENTERPRISE` får därför
 vara ett personnummer med 10 eller 12 siffror, och det slås alltid upp mot LegalEntity ([§3.1]). Ett tiosiffrigt
-nummer får det århundrade som gör ägaren yngre än 100 år. Ett personnummer sparas aldrig, men ett organisationsnummer
-som inte är ett personnummer sparas i företagsprofilen ([beslut 58]).
+nummer får det århundrade som gör ägaren yngre än 100 år. Numret sparas aldrig, utan mappas till partyId:t.
 
 **Valdes bort:** Att bara kontrollera privatkunder. Att slå upp numret mot Citizen när det är ett personnummer.
 
@@ -608,8 +607,7 @@ kontaktperson behöver bara en adress för att gå att nå, och färre adresser 
 Uppgifterna om ett företag från LegalEntity, som SNI-koder, storleksklass för anställda och omsättning, juridisk form
 och pågående konkurs, lagras i `enterprise_profile`, en rad per företagskund, med typade kolumner. SNI-koderna och de
 pågående förfarandena ligger i egna tabeller under profilen ([§5.5]). SNI-koderna hör till företaget och räknas fram ur
-arbetsställenas koder, med huvudarbetsställets först. Ett organisationsnummer som inte är ett personnummer sparas i
-profilen.
+arbetsställenas koder, med huvudarbetsställets först.
 
 **Valdes bort:**
 
@@ -618,13 +616,14 @@ profilen.
 - Arbetsställena som egna rader, med adresser och SNI-koder per arbetsställe.
 - En egen tabell med SCB:s SNI-klassifikation.
 - Funktionärer och firmateckning (`officers`, `fullSignatureDescription`).
+- Organisationsnumret.
 
 **Skäl:** Kundraden låses i varje meddelande och ska vara smal, och kolumnerna gäller inte privatkunder. Profilen
 hämtas i en egen takt och raderas som en helhet när kunden blir skyddad. Med typade kolumner ser schemakontrollen
 fälten, och SNI-koderna går att fråga på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger
 bara arbetsställenas koder, utan andelar. Arbetsställena behövs inte för kundbilden, och LegalEntity ger kodernas namn,
 så ingen klassifikation behöver underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna anges med namn
-och personnummer.
+och personnummer. Kunden identifieras med partyId:t, och ett organisationsnummer mappas alltid till det ([beslut 54]).
 
 ## Beslut 59: Företagsprofilen uppdateras från en ändringskö genom att LegalEntity hämtas
 
@@ -674,4 +673,5 @@ företag, också de som inte har ändrats, och ändå visa en ändring först ef
 [§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 [beslut 58]: #beslut-58-företagsuppgifter-lagras-i-en-egen-profil
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[beslut 54]: #beslut-54-enskilda-firmor-kontrolleras-mot-folkbokföringen
 

@@ -143,9 +143,9 @@ meddelandet, eller från `organizationNumber` i LegalEntitys svar på `GET /{mun
   skiljetecknet i ett personnummer.
 - Ägarens partyId slås upp via Citizen (`POST /{municipalityId}/guid/batch`) och sparas som `registry_party_id`.
   Kunden får sedan folkbokföringens skydd precis som en privatkund, också i den nattliga kontrollen.
-- Ett personnummer sparas aldrig. Ett organisationsnummer som inte är ett personnummer sparas i företagsprofilen
-  ([§5.5]). För en privatkund är `registry_party_id` kundens eget partyId. För andra företag är den null, och likaså
-  för ett företag där det inte gick att avgöra om det är en enskild firma eller vem som äger den.
+- Numret sparas aldrig, varken för en enskild firma eller för andra företag. Kunden identifieras med partyId:t. För en
+  privatkund är `registry_party_id` kundens eget partyId. För andra företag är den null, och likaså för ett företag
+  där det inte gick att avgöra om det är en enskild firma eller vem som äger den.
 
 **Citizen.** Citizen svarar för personer både i och utanför kommunen. Personer som är sekretessmarkerade eller har
 skyddad folkbokföring filtreras bort helt, om man inte frågar med `ShowClassified=true`.
@@ -248,7 +248,6 @@ företagsregister ([beslut 58]). Profilen syns för alla namespaces, som kundens
 
 |                         Uppgift                          |                               Från LegalEntity                               |                                   Kolumn ([§4.3])                                   |
 |----------------------------------------------------------|------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| Organisationsnummer, när det inte är ett personnummer    | `organizationNumber`                                                         | `organization_number`                                                               |
 | Juridisk form enligt SCB, t.ex. `49` "Övriga aktiebolag" | `legalForm`                                                                  | `legal_form_code`, `legal_form`                                                     |
 | Företagsform enligt Bolagsverket, t.ex. "Aktiebolag"     | `form`                                                                       | `company_form`                                                                      |
 | Sätets kommun, t.ex. `2281` "Sundsvall kommun"           | `countyMunicipalityCode`, `municipality`                                     | `seat_municipality_code`, `seat_municipality`                                       |
@@ -283,11 +282,11 @@ utövas av huvudkontor".
   firmatecknare och revisorer
 - arbetsställena, utöver antalet och SNI-koderna
 - aktiekapital, antal aktier, valuta och räkenskapsår
+- `organizationNumber`, eftersom kunden identifieras med partyId:t ([§5.4])
 - namn och adresser, som följer [§5.2]
 
 Ingenting ur LegalEntitys svar loggas. Tomma strängar och värden med bara blanksteg blir null, övriga värden trimmas,
-och ett värde som är längre än kolumnen kortas. Organisationsnumret sparas bara om det har 10 siffror och tredje siffran
-är 2–9.
+och ett värde som är längre än kolumnen kortas.
 
 **När profilen skrivs:**
 
