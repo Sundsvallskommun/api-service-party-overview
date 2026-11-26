@@ -254,7 +254,7 @@ Index:
 |-------------------------------------|---------------------------|------|---------------------------------------------------|
 | `id`                                | varchar(36)               | nej  | PK                                                |
 | `engagement_id`                     | varchar(36)               | nej  | FK `fk_engagement_history_engagement_id`, cascade |
-| `activity_id`                       | varchar(64)               | nej  | Aktivitetens id från publiceraren ([§3.1])        |
+| `activity_id`                       | varchar(36)               | nej  | Aktivitetens id från publiceraren ([§3.1])        |
 | `type`                              | varchar(64)               | nej  |                                                   |
 | `description`                       | varchar(1024)             | ja   |                                                   |
 | `performed_by_type`, `performed_by` | varchar(32), varchar(255) | ja   |                                                   |

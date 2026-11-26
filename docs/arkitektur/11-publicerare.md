@@ -21,8 +21,8 @@ Del av [arkitekturen för party-overview](README.md).
      transaktion får en, t.ex. med `TransactionTemplate` per asset i `PR3Importer` i party-assets. Outbox-raden skrivs
      aldrig i en egen transaktion, eftersom ändringen och raden då kan committas var för sig.
    - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter.
-   - Varje aktivitet får id:t `<radens id>-<index>`, där index är aktivitetens plats på raden från 0, t.ex. `4711-0`.
-     Id:t blir detsamma varje gång raden publiceras ([§3.1], [beslut 70]).
+   - Varje aktivitet får ett UUID v4 när raden skrivs, och det sparas med aktiviteten i `activities`. Id:t blir då
+     detsamma varje gång raden publiceras ([§3.1], [beslut 70]).
 3. **Relay:**
    - Körs direkt efter commit och schemalagt med ShedLock.
    - Väntande rader grupperas per objekt i den ordning de skrevs. Relayn läser objektets **aktuella** tillstånd, bygger

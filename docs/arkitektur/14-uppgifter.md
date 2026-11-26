@@ -718,7 +718,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
   ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
   skrivning till objektet inte väntar medan relayn publicerar.
-- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
+- Varje aktivitet har ett UUID som sparas på outbox-raden, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - E-post, sms och webbmeddelanden till och från ett ärende ger ingen outbox-rad, så länge ärendet självt inte ändras
   ([beslut 55]).
 - Ett namespace med `accessControl = true` kan inte slå på publiceringen. Slås åtkomstkontrollen på för ett namespace
@@ -773,7 +773,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
   ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
   skrivning till objektet inte väntar medan relayn publicerar.
-- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
+- Varje aktivitet har ett UUID som sparas på outbox-raden, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - Casedata exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - `ProcessService.updateProcess` anropas i exakt samma fall som tidigare.
@@ -820,7 +820,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
   ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
   skrivning till objektet inte väntar medan relayn publicerar.
-- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
+- Varje aktivitet har ett UUID som sparas på outbox-raden, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - party-assets exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
@@ -881,7 +881,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
   ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
   skrivning till objektet inte väntar medan relayn publicerar.
-- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
+- Varje aktivitet har ett UUID som sparas på outbox-raden, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - contract exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid

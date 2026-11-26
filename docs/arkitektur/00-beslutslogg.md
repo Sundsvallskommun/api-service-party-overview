@@ -853,13 +853,18 @@ party-overview skriver aktiviteterna från varje `UPDATE` på de engagemangsrade
 en aktivitet som redan finns på raden skrivs inte igen ([§3.5]). Versionsvakten styr bara tillståndet.
 Publicerarnas relay läser objektets rader före tillståndet och tar inget lås.
 
-**Valdes bort:** Historik bara när raden är ny eller versionen är högre än den lagrade, med ett delat lås på källraden i
-relayn tills brokern har bekräftat.
+**Valdes bort:**
+
+- Historik bara när raden är ny eller versionen är högre än den lagrade, med ett delat lås på källraden i relayn tills
+  brokern har bekräftat.
+- Ett id som byggs av outbox-radens id och aktivitetens plats på raden.
 
 **Skäl:** Ett meddelande som flyttas tillbaka från dead letter-kön efter ett nyare om samma objekt är inaktuellt, och
 dess aktiviteter skulle då aldrig hamna i historiken. Låset behövdes för att en rad inte skulle publiceras med samma
 version som ett tidigare meddelande. Det gjorde också att publicerarnas skrivningar väntade när brokern var långsam
-eller larmade för minne. Med id:n spelar varken ordningen eller dubbletter någon roll för historiken.
+eller larmade för minne. Med id:n spelar varken ordningen eller dubbletter någon roll för historiken. Id:t är ett UUID
+som sparas med aktiviteten, eftersom outbox-tabellens räknare kan börja om, t.ex. när tabellen skapas om eller
+databasen återställs. Nya aktiviteter skulle då få gamla id:n och tyst hoppas över.
 
 ## Beslut 71: party-overview litar på publicerarnas urval
 
