@@ -30,6 +30,7 @@ technical-log:
   delete-batch-size: 1000
 protection:
   batch-size: 100
+  legal-entity-retry: P7D        # uppehåll efter 404 från LegalEntity i den nattliga kontrollen (§5.4)
 search:
   timeout: PT5S
   relay:

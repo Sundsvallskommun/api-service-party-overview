@@ -51,8 +51,8 @@ Del av [arkitekturen för party-overview](README.md).
 4. **Version:** objektets `@Version`. Den ska öka vid varje ändring som publiceras.
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
 6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
-   publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och då skickas varken namn, adresser
-   eller kontaktkanaler för den parten. Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för
+   publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och partens uppgifter skickas ändå
+   ([§5.4]). Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för
    kommande publicerare.
    - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort, och ett inledande `16` på ett tolvsiffrigt
      organisationsnummer tas bort. Ett värde som ändå inte följer formatet, kontrollsiffran inräknad, skickas inte, och
@@ -175,9 +175,8 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
 
 ## 11.5 Casedata (`ERRAND`, källan `CASE_DATA`)
 
-Casedata har ungefär 5 000 ärenden. Det finns ingen outbox och ingen RabbitMQ idag, och tjänsten måste uppgraderas
-från dept44 8.0.12 till 8.2.0, där dept44-starter-rabbitmq finns. Analysen är gjord på `origin/main`
-(2026-10-19).
+Casedata har ungefär 5 000 ärenden. Tjänsten har dept44 8.2.0, där dept44-starter-rabbitmq finns, men ingen outbox
+och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
 
 - **Opt-in:** Egenskapen `integration.party-overview.namespaces` i `application.yml`, eftersom Casedata saknar
   `namespace_config`. Namespaces utan opt-in skriver inga outbox-rader. Bara `SBK_MEX` slås på tills vidare

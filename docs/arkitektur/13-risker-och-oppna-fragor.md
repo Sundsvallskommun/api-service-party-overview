@@ -14,13 +14,13 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 13.2 Förutsättningar före driftsättning
 
-|                                                       Förutsättning                                                       |                                                                Behövs för                                                                |
-|---------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
-| party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar som skapar kunder (C8) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
-| En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                     |
-| Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                   |
-| Ändringskön i rabbitmq-topology (T3).                                                                                     | Ändringskön (C14, C15)                                                                                                                   |
-| Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                |
+|                                                       Förutsättning                                                       |                                                                            Behövs för                                                                             |
+|---------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar och kontaktpersoner som skapar kunder (C8, C16) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
+| En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                                              |
+| Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                                            |
+| Ändringskön i rabbitmq-topology (T3).                                                                                     | Ändringskön (C14, C15)                                                                                                                                            |
+| Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                                         |
 
 ## 13.3 Risker
 
@@ -52,32 +52,37 @@ Del av [arkitekturen för party-overview](README.md).
   långsammare när nya privatkunder kräver ett Citizen-anrop. Grundladdningen körs utanför kontorstid, och tiden mäts i
   test först. Casedata (cirka 5 000) tar några minuter.
 
-- Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder delat med 100 anrop per natt.
+- Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder och enskilda firmor plus antalet personer i
+  `registry_person`, delat med 100, anrop per natt. En person som både är kund och kontaktperson kontrolleras två
+  gånger.
 
   **Hantering:** `batch-size` är konfigurerbar. Belastningen stäms av med den som förvaltar Citizen.
 
-- Om Citizen inte svarar skapas nya privatkunder med skyddsstatusen `UNKNOWN`. De visas utan namn och adress tills den
-  nattliga kontrollen har fått svar från Citizen ([§5.4]).
+- Om Citizen inte svarar får nya privatkunder och kontaktpersoner skyddsstatusen `UNKNOWN` tills den nattliga
+  kontrollen har fått svar från Citizen ([§5.4]).
 
-  **Hantering:** Avsiktligt ([beslut 48]). Kunden behandlas som skyddad tills statusen är känd, så inga uppgifter sparas
-  för tidigt, och köerna står inte still medan Citizen är nere.
+  **Hantering:** Avsiktligt ([beslut 48]). Uppgifterna sparas, frontend hanterar `UNKNOWN` som skyddat tills statusen
+  är känd, och köerna står inte still medan Citizen är nere.
 
-- Envelope-data (t.ex. en ärendetitel) eller en notering kan innehålla skyddsvärda uppgifter om en skyddad kund.
+- Uppgifter om skyddade kunder och kontaktpersoner sparas, går att söka på och returneras av API:t, också
+  envelope-data och noteringar ([beslut 27]). Att de inte lämnas ut utan prövning beror på att varje konsument visar och
+  respekterar skyddsnivån. Läsningar loggas inte särskilt ([beslut 35]).
 
-  **Hantering:** Det ansvaret ligger hos källsystemen och verksamheterna. Kunden visas som skyddad i varje vy, så den
-  som läser vet att uppgifterna är känsliga.
+  **Hantering:** Skyddsnivån och Citizens flaggor finns på kunden, på varje kontaktperson och i varje sökträff, och
+  sökträffen visar med `hasProtectedContacts` om en kontaktperson är skyddad ([§6.2]). OpenAPI-specen beskriver vad
+  fälten betyder ([§5.4]). Åtkomsten till API:t avgör vem som kan läsa uppgifterna
+  ([beslut 30]).
 
 - Den tekniska loggen växer under lagringstiden, som är fem år som förval.
 
   **Hantering:** Indexen klarar stora volymer, och gallringen raderar äldre rader varje natt ([§8.2]).
 
-- Om skyddet tillkommer i folkbokföringen hos en befintlig kund, ser party-overview det först när ändringskön säger att
-  personen har ändrats, eller vid nästa nattliga kontroll. Fram till dess kan ett meddelande hinna spara namn och
-  adress.
+- Om skyddet tillkommer i folkbokföringen för en befintlig kund eller kontaktperson, ser party-overview det först när
+  ändringskön säger att personen har ändrats, eller vid nästa nattliga kontroll. Fram till dess visas den gamla nivån.
 
   **Hantering:** Med ändringskön är fönstret några minuter, och utan den högst ett dygn, eftersom kontrollen tar med
-  alla privatkunder och enskilda firmor varje natt ([§5.4], [§5.5]). Ingen publicerare skickar i dag `protection`, så
-  skyddet kommer bara från folkbokföringen ([§11.1]).
+  alla privatkunder, enskilda firmor och kontaktpersoner varje natt ([§5.4], [§5.5]). Ingen publicerare skickar i dag
+  `protection`, så skyddet kommer bara från folkbokföringen ([§11.1]).
 
 - När opt-in stängs av för ett namespace i SM eller Casedata, eller en asset-typ tas bort från party-assets vitlista,
   ligger engagemangen kvar i party-overview.
@@ -87,28 +92,40 @@ Del av [arkitekturen för party-overview](README.md).
   kommer ett objekt tillbaka först när dess version har ökat, eftersom tombstonen har samma version ([§3.4]). En typ
   eller ett namespace som aldrig har publicerats har inga tombstones och kommer in direkt.
 
-- När Citizen eller LegalEntity inte svarar sparas inga kontaktpersoner med partyId som inte är kunder, och nya kunder
-  får `UNKNOWN` utan egna kontaktuppgifter ([§5.3], [§5.4]). Det som saknas kommer tillbaka först med nästa ändring av
-  objektet, och för avslutade objekt kommer ingen.
+- När Citizen eller LegalEntity inte svarar får nya kunder och kontaktpersoner `UNKNOWN` ([§5.3], [§5.4]). Den
+  nattliga kontrollen ersätter nivån för kunderna och för personerna i `registry_person`. En kontaktperson med
+  `ENTERPRISE` där det inte gick att avgöra om det är en enskild firma saknar `registry_party_id` och får
+  `UNVERIFIED`, som står kvar tills objektet ändras i källan ([beslut 48]).
 
   **Hantering:** Varje sådant fel loggas på WARN med källan och antalet berörda kunder och kontaktpersoner ([§7.2]).
-  Efter ett avbrott körs grundladdningen om för de källor som berördes, också de källor som står i `source` på
-  `CONTACT_REMOVED`-raderna från avbrottet ([§8.1]). README beskriver det.
+  En ny grundladdning av källan ger de kvarvarande kontaktraderna rätt nivå. README beskriver det.
 
 - En reindexering som avbryts, t.ex. av en omstart, lämnar ett halvbyggt index.
 
   **Hantering:** Låset släpps inom fem minuter ([§6.2]). README beskriver att reindexeringen då körs igen.
 
-- Varje namespace ger upp till tre fält i sökindexet (`contacts_ns_`, `phones_ns_` och `notes_ns_`). OpenSearch
-  tillåter förvalt 1 000 fält per index, och noteringarnas namespace väljs av anroparen.
+- Varje namespace ger upp till fem fält i sökindexet (`contacts_ns_`, `engagements_ns_`, `notes_ns_`, `phones_ns_` och
+  `references_ns_`). OpenSearch tillåter förvalt 1 000 fält per index, och noteringarnas namespace väljs av
+  anroparen.
 
   **Hantering:** Antalet namespaces är några tiotal. `index.mapping.total_fields.limit` höjs i indexinställningarna om
   det behövs, och ett mappningsfel syns som `attempts ≥ 5` i `OpenSearchHealthIndicator`.
 
 - En kund som bara har noteringar syns för alla verksamheter, och den tekniska loggen visar vem som skapade den. Den
-  som kan anropa API:t kan också ta reda på en persons skyddsstatus genom att skapa en notering och läsa kunden.
+  som kan anropa API:t kan skapa en notering eller en kontaktperson på ett partyId och sedan läsa kundens namn,
+  folkbokföringsadress, skyddsnivå och Citizens värden, också för en skyddad person ([§7.2]). PartyId:t måste komma
+  från annat håll, eftersom uppslaget ger 404 för den som inte är kund ([§6.1]).
 
-  **Hantering:** Åtkomsten till API:t avgör vem som kan göra det ([beslut 30]).
+  **Hantering:** Accepteras ([beslut 6]). Kunden behöver namn och adress för att synas i kundvyn och i sökningen, och
+  skyddade uppgifter får sparas ([beslut 27]). Åtkomsten till API:t avgör vem som kan göra det ([beslut 30]).
+
+- Utan filter returnerar API:t alla verksamheters kontaktuppgifter, kontaktpersoner och noteringar för en kund, och
+  sökningen söker i dem alla. Noteringar och kontaktpersoner kan läsas, ändras och raderas av alla som kan anropa
+  API:t, oavsett namespace ([§5.1]).
+
+  **Hantering:** Accepteras ([beslut 7]). Namespace är ett attribut och ett filter, inte en behörighet. Frontend
+  filtrerar på verksamhetens namespace där det behövs. Den tekniska loggen och noteringarnas historik visar vem som
+  gjorde vad ([§8.1]), och åtkomsten till API:t avgör vem som kan göra det ([beslut 30]).
 
 - Datakvaliteten i Casedata: `personId` som inte är UUID, och ärenden utan `updated`.
 
@@ -173,12 +190,12 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras ([beslut 32]). LegalEntity saknar ett uppslag med numret i kroppen och är inte vår tjänst.
   Anropet undantas från party-overviews payload-logg, och PII-maskningen är påslagen ([§7.1]).
 
-- En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen och sparas med namn, kanaler och
-  adress. En kontaktperson utan id som får skydd efter att raden sparades ligger kvar tills objektet ändras i källan
-  ([§5.3]). En kontaktperson med partyId kontrolleras när ändringskön säger att personen har ändrats ([§5.5]).
+- En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen. Den sparas med `UNVERIFIED`,
+  som inte räknas i sökträffens `hasProtectedContacts` ([§5.3], [beslut 48]). En sådan kontaktperson kan ändå ha
+  skyddade personuppgifter.
 
-  **Hantering:** Accepteras. Publicerarna skickar partyId när de har det, och nästa ändring av objektet kontrollerar
-  kontaktpersonen igen.
+  **Hantering:** Accepteras. Publicerarna skickar partyId när de har det, och en källa som vet om skyddet anger det i
+  `protection`. Frontend visar `UNVERIFIED` som okontrollerat.
 
 - För en enskild firma med ett tiosiffrigt organisationsnummer framgår inte århundradet, som Citizens uppslag av
   personnummer behöver. party-overview antar att ägaren är yngre än 100 år ([§5.4]).
@@ -207,6 +224,12 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras. För ett företag med ett arbetsställe är koderna desamma. Om LegalEntity börjar ge
   företagets koder används de i stället.
 
+- Ett företag kan ha hundratals arbetsställen. Profilen ersätts då som helhet med alla arbetsställen, deras adresser och
+  SNI-koder, under kundens lås, och ett meddelande om samma kund väntar under tiden ([§5.5]).
+
+  **Hantering:** Accepteras, utan tak, så att listan stämmer med antalet arbetsställen ([beslut 58]). Profilen skrivs
+  bara om när den har ändrats, och raderna skrivs i JDBC-batchar. C5 testar en profil med 2 000 arbetsställen.
+
 - LegalEntitys svar innehåller personnummer och namn på företagets funktionärer.
 
   **Hantering:** De mappas aldrig, och ingenting ur svaret loggas ([§7.2]). C3 verifierar det.
@@ -226,6 +249,8 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 30]: 00-beslutslogg.md#beslut-30-de-administrativa-endpoints-ligger-i-samma-api
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
+[beslut 27]: 00-beslutslogg.md#beslut-27-skyddad-identitet-med-tre-nivåer
+[beslut 35]: 00-beslutslogg.md#beslut-35-ingen-särskild-loggning-av-läsningar-av-skyddade-kunder
 [§13.2]: #132-förutsättningar-före-driftsättning
 [beslut 37]: 00-beslutslogg.md#beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
 [beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
@@ -237,5 +262,9 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 62]: 00-beslutslogg.md#beslut-62-meddelandeformaten-följer-cloudevents
 [§3.6]: 03-meddelanden.md#36-kundradering
 [beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
+[§6.1]: 06-rest-api.md#61-endpoints
 [§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
+[beslut 6]: 00-beslutslogg.md#beslut-6-en-notering-på-en-okänd-kund-skapar-kunden
+[§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace
+[beslut 7]: 00-beslutslogg.md#beslut-7-synlighet-för-engagemang-kontaktuppgifter-och-noteringar
 

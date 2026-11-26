@@ -6,19 +6,26 @@ Del av [arkitekturen för party-overview](README.md).
 
 Ett meddelande kan ge flera rader per kund, t.ex. `ENGAGEMENT_REMOVED` följt av `CUSTOMER_DELETED`.
 
-|        Utfall        |                                                                                            När                                                                                             |
-|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CUSTOMER_CREATED`   | Kunden skapades, via meddelande eller notering                                                                                                                                             |
-| `CUSTOMER_UPDATED`   | Ett `CUSTOMER UPDATE` tillämpades                                                                                                                                                          |
-| `CUSTOMER_DELETED`   | Kunden raderades ([§3.6])                                                                                                                                                                  |
-| `ENGAGEMENT_CREATED` | Kunden fick ett nytt engagemang                                                                                                                                                            |
-| `ENGAGEMENT_UPDATED` | Ett befintligt engagemang uppdaterades. Det gäller även en rättning med samma version.                                                                                                     |
-| `ENGAGEMENT_REMOVED` | Objektet raderades, eller kunden är inte längre part i det                                                                                                                                 |
-| `IGNORED_STALE`      | Meddelandet var äldre än det lagrade och ändrade ingenting                                                                                                                                 |
-| `PROTECTION_CHANGED` | Kundens effektiva skyddsnivå ändrades ([§5.4]). Den nya nivån står i raden.                                                                                                                |
-| `CONTACT_REMOVED`    | En kontaktpersons rader hos kunden raderades, eftersom personen raderades eller fick skydd ([§5.3]). Raden har kundens partyId, inte kontaktpersonens, och kontaktradens källa i `source`. |
-| `PROFILE_UPDATED`    | Företagsprofilen skrevs av ändringskön eller den nattliga kontrollen ([§5.5])                                                                                                              |
-| `PROFILE_NOT_FOUND`  | LegalEntity känner inte företaget som ändringskön angav, och profilen lämnades orörd ([§5.5])                                                                                              |
+|          Utfall          |                                                                                                          När                                                                                                          |
+|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `CUSTOMER_CREATED`       | Kunden skapades, via meddelande, notering eller kontaktperson från REST                                                                                                                                               |
+| `CUSTOMER_UPDATED`       | Ett `CUSTOMER UPDATE` tillämpades                                                                                                                                                                                     |
+| `CUSTOMER_DELETED`       | Kunden raderades ([§3.6])                                                                                                                                                                                             |
+| `ENGAGEMENT_CREATED`     | Kunden fick ett nytt engagemang                                                                                                                                                                                       |
+| `ENGAGEMENT_UPDATED`     | Ett befintligt engagemang uppdaterades. Det gäller även en rättning med samma version.                                                                                                                                |
+| `ENGAGEMENT_REMOVED`     | Objektet raderades, eller kunden är inte längre part i det                                                                                                                                                            |
+| `IGNORED_STALE`          | Meddelandet var äldre än det lagrade och ändrade ingenting                                                                                                                                                            |
+| `PROTECTION_CHANGED`     | Kundens effektiva skyddsnivå ändrades ([§5.4]). Den nya nivån står i raden.                                                                                                                                           |
+| `CONTACT_REMOVED`        | En kontaktpersons rader hos kunden raderades, eftersom parten raderades ([§5.3]). Raden har kundens partyId, inte kontaktpersonens, och kontaktradens källa i `source`. För en kontaktperson från REST saknas källan. |
+| `PROFILE_UPDATED`        | Företagsprofilen skrevs av ändringskön eller den nattliga kontrollen ([§5.5])                                                                                                                                         |
+| `PROFILE_NOT_FOUND`      | LegalEntity känner inte företaget som ändringskön angav, och profilen lämnades orörd ([§5.5])                                                                                                                         |
+| `NAME_ADDRESS_FILLED`    | Den nattliga kontrollen fyllde i namn och folkbokföringsadress från Citizen för en privatkund som saknade dem ([§5.4])                                                                                                |
+| `CONTACT_PERSON_CREATED` | En kontaktperson lades till via REST ([§5.3]). Raden har kundens partyId och `performed_by`.                                                                                                                          |
+| `CONTACT_PERSON_UPDATED` | En kontaktperson från REST ändrades                                                                                                                                                                                   |
+| `CONTACT_PERSON_DELETED` | En kontaktperson från REST raderades                                                                                                                                                                                  |
+
+Ändringar i `registry_person` loggas inte, eftersom raden inte hör till någon kund. En kunds egen nivå loggas som
+`PROTECTION_CHANGED`.
 
 Vid `UPDATE` skrivs `IGNORED_STALE` för meddelandets kundparter. En `DELETE` för `ERRAND`, `ASSET` och `CONTRACT` saknar
 parter, så där skrivs det för de kunder som har engagemang i objektet. Ett `CUSTOMER DELETE` har kunden som enda part.
@@ -46,7 +53,7 @@ Den tekniska loggen gallras efter en lagringstid ([beslut 60]). Den raderas inte
 Inget annat gallras automatiskt:
 
 - Historik och kontakter följer sina engagemang och sin kund. Undantaget är en kontaktpersons rader, som också raderas
-  när personen raderas, också automatiskt, eller får skydd ([§5.3]).
+  när parten raderas, också automatiskt ([§5.3]).
 - Tombstones i `source_object` sparas för alltid ([beslut 12]). Rader för `CUSTOMER`, som innehåller partyId, blir
   aldrig tombstones och raderas med kunden ([§3.6]).
 

@@ -34,7 +34,7 @@ party-overview läser bara fälten i tabellerna här.
 | `operation`                                                                   | `UPDATE` \| `DELETE`                                        | **krav**                                                               | `UPDATE` innebär hela tillståndet och används även vid grundladdning.                                                                                       |
 | `objectType`                                                                  | `ERRAND` \| `ASSET` \| `CONTRACT` \| `CUSTOMER`             | **krav**                                                               |                                                                                                                                                             |
 | `municipalityId`                                                              | sträng                                                      | **krav**                                                               | Valideras med `@ValidMunicipalityId`.                                                                                                                       |
-| `namespace`                                                                   | sträng                                                      | valfri                                                                 | Valideras med `@ValidNamespace`. Saknas den räknas objektet och dess kontaktuppgifter som globala.                                                          |
+| `namespace`                                                                   | sträng                                                      | valfri                                                                 | Valideras med `@ValidNamespace(nullable = true)`. Saknas den räknas objektet och dess kontaktuppgifter som globala.                                         |
 | `objectId`                                                                    | sträng                                                      | **krav** utom för `CUSTOMER`                                           | Objektets id i källan, aldrig ett personnummer.                                                                                                             |
 | `version`                                                                     | heltal (long)                                               | **krav**                                                               | Ökar vid varje publicerad ändring av objektet. En `DELETE` bär minst den senaste versionen.                                                                 |
 | `sourceModified`                                                              | tidpunkt med zon                                            | **krav** vid `UPDATE`                                                  | När objektet senast ändrades i källan. Sorteringsnyckel och mått för "nyast vinner".                                                                        |
@@ -62,7 +62,7 @@ party-overview läser bara fälten i tabellerna här.
 | `parties[].contactChannels[]`                                                 | lista                                                       | valfri                                                                 | Partens kontaktkanaler.                                                                                                                                     |
 | `parties[].contactChannels[].type`                                            | `EMAIL` \| `PHONE`                                          | **krav**                                                               | Publiceraren mappar källans kanaltyper till de här värdena ([§11.1]).                                                                                       |
 | `parties[].contactChannels[].value`                                           | sträng                                                      | **krav**                                                               | E-postadressen eller telefonnumret.                                                                                                                         |
-| `parties[].protection`                                                        | `SECRECY_MARKING` \| `PROTECTED_REGISTRATION`               | valfri                                                                 | Sätts när källan vet att parten har skyddade personuppgifter. Då skickas varken `name`, `addresses` eller `contactChannels`.                                |
+| `parties[].protection`                                                        | `SECRECY_MARKING` \| `PROTECTED_REGISTRATION`               | valfri                                                                 | Sätts när källan vet att parten har skyddade personuppgifter. Uppgifterna skickas ändå ([§5.4]).                                                            |
 
 En part som saknar både partyId och legalId kan bara bli kontaktperson ([§5.3]). Annars ignoreras den.
 
@@ -150,21 +150,32 @@ genereras med ZenWave SDK ([§9]).
 | contract          | `api-fabriken.contract`           | `api-fabriken.party-overview.contract`           | `CONTRACT`           |
 | Casedata          | `api-fabriken.case-data`          | `api-fabriken.party-overview.case-data`          | `CASE_DATA`          |
 
-Varje kö deklareras i rabbitmq-topology som en quorum-kö med följande:
+Varje kö deklareras i rabbitmq-topology som en quorum-kö. Bara det som inte går att sätta med en policy är
+kö-argument, eftersom en befintlig kö inte kan få nya eller ändrade argument utan att skapas om ([beslut 66]):
 
-- dead-letter-exchange och en egen dead letter-kö (`….dlq`)
-- `x-delivery-limit: 5`
-- `x-dead-letter-strategy: at-least-once` och `x-overflow: reject-publish`. Utan dem är dead-letteringen i en
-  quorum-kö at-most-once, och ett meddelande kan försvinna på vägen till dead letter-kön.
-- `x-single-active-consumer: true`. Argumentet går inte att lägga till på en befintlig quorum-kö, så det måste finnas
-  när kön skapas.
-- bindning till publicerarens exchange med `#`. Kön tar emot alla objekttyper från källan.
+- `x-queue-type: quorum`
+- `x-single-active-consumer: true`. Det går inte att sätta med en policy och inte att lägga till på en befintlig kö,
+  så det måste finnas när kön skapas.
+
+Resten sätts med en policy per kö, som går att ändra på en befintlig kö:
+
+- `dead-letter-exchange` och `dead-letter-routing-key`, som leder till köns egen dead letter-kö (`….dlq`)
+- `delivery-limit: 5`
+- `dead-letter-strategy: at-least-once` och `overflow: reject-publish`. Utan dem är dead-letteringen i en quorum-kö
+  at-most-once, och ett meddelande kan försvinna på vägen till dead letter-kön.
+
+Policyns mönster matchar bara köns eget namn, t.ex. `^api-fabriken\.party-overview\.support-management$`, så att dead
+letter-köerna inte får den. En kö har bara en policy åt gången, den med högst prioritet. Därför står alla värden i
+samma policy, och den har högre prioritet än andra policyer vars mönster matchar kön.
+
+Kön binds till publicerarens exchange med `#` och tar emot alla objekttyper från källan.
 
 Dead letter-köerna har ingen TTL, och ett meddelande ligger kvar tills någon har tagit hand om det. Köerna kan
 innehålla personuppgifter, t.ex. ett legalId eller namn, och därför har bara drift och utvecklare åtkomst. Det larmas
 när en dead letter-kö inte är tom ([§12.1]).
 
-Ändringskön för företag och personer ([§5.5]) deklareras på samma sätt, men utan `x-single-active-consumer`, och
+Ändringskön för företag och personer ([§5.5]) deklareras på samma sätt, med en egen policy men utan
+`x-single-active-consumer`, och
 binds till exchangen hos köns förvaltare ([§13.1]).
 
 party-overview deklarerar ingen topologi själv, och dess AMQP-användare saknar configure-rättighet.
@@ -183,12 +194,13 @@ MessageListener (alla köer)                          ingen transaktion
                                                                (WARN utan PII)
           för nya ENTERPRISE-kunder, och ENTERPRISE-kontaktpersoner som inte finns som kunder:
           organisationsnumret från meddelandet eller LegalEntity, och ägarens partyId om det är en
-          enskild firma (§5.4)                               ─ svarar inte → UNKNOWN
+          enskild firma (§5.4)                               ─ svarar inte → UNKNOWN, för en
+                                                               kontaktperson UNVERIFIED
           för nya ENTERPRISE-kunder hämtas LegalEntity även när numret finns i meddelandet,
           eftersom svaret också ger företagsprofilen (§5.5)  ─ svarar inte → ingen profil
        5. folkbokföringens skyddsstatus för nya kunder med registry_party_id, och för kontaktpersoner
-          som inte finns som kunder: personen själv, eller ägaren till en enskild firma
-          (CitizenIntegration, batch, ShowClassified=true, §5.3, §5.4)
+          vars registry_party_id saknas i registry_person eller har UNKNOWN: personen själv, eller
+          ägaren till en enskild firma (CitizenIntegration, batch, ShowClassified=true, §5.3, §5.4)
                                                              ─ svarar inte eller 5xx → UNKNOWN
        6. MessageWriter.apply(change)                         @Transactional(READ_COMMITTED), egen bean
             a. lås källobjektet (source_object: IODKU, sedan SELECT … FOR UPDATE)
@@ -197,8 +209,8 @@ MessageListener (alla köer)                          ingen transaktion
                (IODKU och FOR UPDATE), och kunderna med engagemang i objektet och kontaktpersonerna som
                finns som kunder (bara FOR UPDATE)
             d. tillämpa UPDATE eller DELETE (§3.5) och räkna om kundernas skyddsnivå (§5.4).
-               Kontaktpersoner med en skyddsnivå som inte är NONE sparas inte (§5.3). Nya, oskyddade
-               företagskunder får sin profil (§5.5).
+               Kontaktraderna sparas, och svaren från steg 5 skrivs i registry_person med
+               ordningsvakten (IODKU, §5.3). Nya företagskunder får sin profil (§5.5).
             e. skriv teknisk logg för varje berörd kund och markera kunden för sökindexering
                (search_index_queue, §6.2)
             f. radera de kunder som ska raderas automatiskt (§3.6)
@@ -212,10 +224,9 @@ MessageListener (alla köer)                          ingen transaktion
 - Ett legalId som inte finns hos Citizen eller LegalEntity, eller som har fel format, ger ingen part, men resten av
   meddelandet tillämpas, även steg 5 i [§3.5], enligt [beslut 16]. Ett tillfälligt fel görs om ([§3.7]) och når aldrig
   tillämpningen.
-- Kontaktpersonernas skyddsnivå avgörs efter kundlåsen. För en kontaktperson som finns som kund gäller kundens nivå,
-  och annars nivån från steg 5. En kontaktperson som var kund i steg 5 men har hunnit raderas saknar nivå och sparas
-  inte. Låset gör att en kontaktrad för en person som är kund inte kan skrivas medan personens kontaktrader raderas
-  ([§5.3]).
+- Kontaktradernas skyddsnivå skrivs inte. Den räknas fram när raden läses ([§5.3]). Varje `registry_party_id` på en
+  kontaktrad får en rad i `registry_person`, och saknas ett svar från steg 5 skapas den med `UNKNOWN`. Låset på en
+  kontaktperson som finns som kund gör att raden inte skrivs medan personens kontaktrader raderas ([§3.6]).
 - `MessageWriter` körs med READ COMMITTED, som SM:s `ProcessEventRelay`. Med MariaDB:s förval REPEATABLE READ läser en
   vanlig fråga ögonblicksbilden från transaktionens första läsning. En kontroll efter en låsväntan skulle då missa det
   som en annan transaktion hann skriva, t.ex. ett nytt engagemang på en kund som annars raderas automatiskt och tar det
@@ -255,9 +266,8 @@ MessageListener (alla köer)                          ingen transaktion
 2. Gör upsert av engagemangsraden per kund, nycklad på `(municipality_id, object_type, source, object_id, customer_id)`:
    - envelope-fälten, roller, namespace och `party_protection` (partens `protection`)
    - `ENGAGEMENT_CREATED` om raden är ny, annars `ENGAGEMENT_UPDATED`
-3. Räkna om kundens skyddsnivå ([§5.4]). Om kunden är oskyddad uppdateras namn och adresser enligt "nyast vinner"
-   ([§5.2]). Radens kontaktuppgifter ersätts ([§5.3]), men för en skyddad kund sparas ingen rad med kundens egna
-   kontaktuppgifter.
+3. Räkna om kundens skyddsnivå ([§5.4]), och uppdatera namn och adresser enligt "nyast vinner" ([§5.2]). Radens
+   kontaktuppgifter ersätts ([§5.3]).
 4. Skriv meddelandets `activities` som historik på raden, men bara om raden är ny eller om `v > s`.
 5. Radera engagemangsrader för kunder som inte längre är parter (`ENGAGEMENT_REMOVED`), och räkna om skyddsnivån för
    dem som har engagemang kvar.
@@ -279,10 +289,9 @@ automatiskt ([§3.6]).
 - Skapa kunden om den saknas.
 - Sätt källans rad i `asserted_protection` till partens `protection`, eller ta bort raden om `protection` saknas, och
   räkna om skyddsnivån ([§5.4]). En annan källas skydd påverkas inte.
-- Om kunden är oskyddad:
-  - Uppdatera namn och adresser enligt "nyast vinner" ([§5.2]).
-  - Ersätt kundens kontaktuppgifter från den här källan (rader med `engagement_id is null` och samma `source`). De får
-    meddelandets namespace, och saknas det blir de globala.
+- Uppdatera namn och adresser enligt "nyast vinner" ([§5.2]).
+- Ersätt kundens kontaktuppgifter från den här källan (rader med `engagement_id is null` och samma `source`). De får
+  meddelandets namespace, och saknas det blir de globala.
 - Logga `CUSTOMER_UPDATED`.
 
 Versionsvakten nycklas på kundens partyId, efter en eventuell mappning från legalId.
@@ -291,20 +300,22 @@ Versionsvakten nycklas på kundens partyId, efter en eventuell mappning från le
 
 Radera kunden med allt den äger ([§3.6]), om den finns, och logga `CUSTOMER_DELETED`. Det gäller i varje cell i
 versionsmatrisen som inte är inaktuell ([§3.4]). Alla rader i `source_object` för `CUSTOMER` med partyId:t raderas, även
-när kunden saknas, så ingen tombstone med partyId sparas. Personens kontaktrader hos företag raderas också ([§5.3]).
+när kunden saknas, så ingen tombstone med partyId sparas. Personens kontaktrader hos andra kunder raderas också, även
+kontaktpersonerna från REST ([§5.3]).
 
 ## 3.6 Kundradering
 
 En kund raderas i följande fall:
 
-|                                        Orsak                                        | Kanal i loggen |          Objekttyp i loggen          |
-|-------------------------------------------------------------------------------------|----------------|--------------------------------------|
-| Ett `CUSTOMER DELETE`-meddelande                                                    | `MESSAGE`      | `CUSTOMER`                           |
-| `DELETE /{municipalityId}/customers/{partyId}`                                      | `REST`         | —                                    |
-| Sista engagemanget är borta, och kunden har varken noteringar eller `CUSTOMER`-data | `MESSAGE`      | det objekt som tog bort engagemanget |
-| Sista noteringen raderas, och kunden har varken engagemang eller `CUSTOMER`-data    | `REST`         | —                                    |
+|                                                                                      Orsak                                                                                      | Kanal i loggen |          Objekttyp i loggen          |
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|--------------------------------------|
+| Ett `CUSTOMER DELETE`-meddelande                                                                                                                                                | `MESSAGE`      | `CUSTOMER`                           |
+| `DELETE /{municipalityId}/customers/{partyId}`                                                                                                                                  | `REST`         | —                                    |
+| Sista engagemanget är borta, och kunden har varken noteringar, kontaktpersoner från REST eller `CUSTOMER`-data                                                                  | `MESSAGE`      | det objekt som tog bort engagemanget |
+| Sista noteringen eller sista kontaktpersonen från REST raderas, och kunden har inget annat kvar: varken engagemang, noteringar, kontaktpersoner från REST eller `CUSTOMER`-data | `REST`         | —                                    |
 
-De två sista är automatisk radering. `CUSTOMER`-data betyder att kunden har en rad i `source_object` för `CUSTOMER`,
+De två sista är automatisk radering. Kontaktpersoner från REST är de som har lagts till i
+`manual_contact_person` ([§5.3]). `CUSTOMER`-data betyder att kunden har en rad i `source_object` för `CUSTOMER`,
 alltså att någon källa har skickat ett `CUSTOMER UPDATE` för den. Raden bär källans kontaktuppgifter och skydd
 ([§3.5]), och de ska inte försvinna för att kundens sista engagemang gör det.
 
@@ -313,17 +324,24 @@ alltså att någon källa har skickat ett `CUSTOMER UPDATE` för den. Raden bär
 - Raderingen görs sist i transaktionen, efter `source_object` och all omräkning. `clearAutomatically` kopplar loss alla
   laddade entiteter, så en ändring som görs på en entitet efter raderingen skrivs aldrig.
 - Den tekniska loggraden `CUSTOMER_DELETED` skrivs i samma transaktion som raderingen.
-- Vid varje radering, också en automatisk, raderas personens kontaktrader hos företag i kommunen (`contact.party_id`,
-  [§5.3]). Varje berört företag loggas som `CONTACT_REMOVED` ([§8.1]). Anger källan fortfarande personen som
-  kontaktperson kommer raden tillbaka nästa gång objektet ändras i källan ([beslut 52]).
+- Vid varje radering, också en automatisk, raderas personens kontaktrader från källorna hos andra kunder i kommunen
+  (`contact.party_id`, [§5.3]). Anger källan fortfarande personen som kontaktperson kommer raden tillbaka nästa gång
+  objektet ändras i källan ([beslut 52]).
+- Personens kontaktpersoner från REST hos andra kunder (`manual_contact_person.party_id`) raderas bara när personen
+  raderas med `CUSTOMER DELETE` eller via REST, aldrig vid en automatisk radering, eftersom ingen källa kan skapa dem
+  igen ([beslut 65]). En kund som på det sättet förlorar sin sista kontaktperson från REST raderas inte automatiskt.
+- Varje kund som förlorar kontaktrader loggas som `CONTACT_REMOVED` ([§8.1]).
+- Personens rad i `registry_person` raderas av den nattliga kontrollen när ingen kontaktrad pekar på den längre
+  ([§5.4]).
 - Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
   partyId. Ett senare, äldre `CUSTOMER UPDATE` kan då skapa kunden igen.
 - Ett senare meddelande som nämner kunden skapar den på nytt. Det är avsiktligt, eftersom källsystemet är master.
 - En kund som bara har `CUSTOMER`-data raderas aldrig automatiskt, bara av ett `CUSTOMER DELETE` eller via REST.
 - En radering via REST låser först kundens rader i `source_object` för `CUSTOMER` och sedan kunden, i samma ordning som
   meddelandeflödet ([§3.3]).
-- När en notering skapas låses kunden först med IODKU och `FOR UPDATE`. När en notering ändras eller raderas låses
-  kunden bara med `FOR UPDATE`, och saknas kunden blir svaret 404, så att en raderad kund inte skapas på nytt.
+- När en notering eller en kontaktperson skapas via REST låses kunden först med IODKU och `FOR UPDATE`. När en
+  notering eller kontaktperson ändras eller raderas låses kunden bara med `FOR UPDATE`, och saknas kunden blir svaret
+  404, så att en raderad kund inte skapas på nytt.
   Transaktionen körs med READ COMMITTED, som i [§3.3]. Annars kan ett meddelande hinna ge kunden ett engagemang som
   kontrollen inte ser, eller radera kunden medan en ny notering väntar på sin FK-kontroll.
 - REST-anropen som skriver och den nattliga kontrollens batchar görs om, högst tre gånger, vid deadlock eller lock
@@ -340,11 +358,11 @@ Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
 | Ett legalId finns inte hos Citizen eller LegalEntity, eller har fel format och skickas därför aldrig ([§7.1])                                                               | Parten hoppas över och resten av meddelandet tillämpas, även raderingen av engagemang för kunder som inte längre är parter ([beslut 16]). WARN loggas med källa och `objectId`, men utan legalId. |
 | 5xx från Citizen eller LegalEntity när partyId slås upp (`ServerProblem`)                                                                                                   | Omförsök i cirka 8 minuter, sedan dead letter. Utan partyId kan parten inte tillämpas.                                                                                                            |
 | 429 eller 408, eller öppen circuit breaker, när partyId slås upp                                                                                                            | Avbrott: omförsök, sedan tillbaka till kön. Integrationen gör om svaret till ett avbrott, eftersom startern annars dead-letterar en 4xx direkt.                                                   |
-| Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när skyddsstatusen hämtas                                                                   | Inget fel. Nya kunder får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                                                                                                           |
+| Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när skyddsstatusen hämtas                                                                   | Inget fel. Nya kunder och kontaktpersoner får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                                                                                       |
 | LegalEntity eller Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när en ny företagskunds organisationsnummer eller ägare hämtas            | Inget fel. Kunden får `UNKNOWN` utan `registry_party_id`, och den nattliga kontrollen gör om uppslaget ([§5.4]).                                                                                  |
 | LegalEntity svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när profilen hämtas för en ny företagskund vars organisationsnummer finns i meddelandet | Inget fel. Kunden skapas utan företagsprofil, och den nattliga kontrollen hämtar den ([§5.5]).                                                                                                    |
 | Citizen svarar 401                                                                                                                                                          | Dead letter direkt (`ClientProblem`), så att larmet går. Behörigheten i Metakatalogen saknas ([§7.2]).                                                                                            |
-| Databasen svarar inte                                                                                                                                                       | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `x-delivery-limit`                                                                                                                         |
+| Databasen svarar inte                                                                                                                                                       | Avbrott: omförsök, sedan tillbaka till kön, räknas mot `delivery-limit`                                                                                                                           |
 | Deadlock eller lock timeout (`TransientDataAccessException`)                                                                                                                | Omförsök                                                                                                                                                                                          |
 | `DataIntegrityViolationException`                                                                                                                                           | Dead letter direkt. Ska inte kunna inträffa tack vare IODKU, så det är en bugg om det händer.                                                                                                     |
 
@@ -376,4 +394,6 @@ omförsök står bara den källans kö still.
 [§8.1]: 08-teknisk-logg.md#81-utfall-i-den-tekniska-loggen
 [beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
 [beslut 62]: 00-beslutslogg.md#beslut-62-meddelandeformaten-följer-cloudevents
+[beslut 66]: 00-beslutslogg.md#beslut-66-köernas-inställningar-sätts-med-policyer
+[beslut 65]: 00-beslutslogg.md#beslut-65-verksamheter-lägger-till-egna-kontaktpersoner-via-rest
 

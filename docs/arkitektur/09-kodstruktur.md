@@ -5,13 +5,13 @@ Del av [arkitekturen för party-overview](README.md).
 ```
 se.sundsvall.partyoverview
 ├─ api/                         CustomerResource, CustomerSearchResource, EngagementResource,
-│  │                            NoteResource, TechnicalLogResource, ContactPersonRoleResource,
+│  │                            NoteResource, ContactPersonResource, TechnicalLogResource, ContactPersonRoleResource,
 │  │                            SearchIndexResource, WorkplaceResource
 │  └─ model/                    Customer, EnterpriseProfile, Workplace, Engagement, HistoryEntry, Note, …
-├─ service/                     CustomerService, EngagementService, NoteService,
+├─ service/                     CustomerService, EngagementService, NoteService, ContactPersonService,
 │  │                            TechnicalLogService, ContactPersonRoleService
 │  ├─ message/                  MessageService (ingen tx), MessageWriter (@Transactional)
-│  ├─ protection/               ProtectionService (räknar om skyddsnivån, tömmer skyddade uppgifter)
+│  ├─ protection/               ProtectionService (räknar om kundens skyddsnivå och skriver personer i registry_person)
 │  ├─ enterprise/               EnterpriseProfileService (skriver profilen), EnterpriseProfileMapper (SNI-koderna)
 │  ├─ search/                   CustomerSearchService, SearchIndexMarker, SearchIndexRelay,
 │  │                            SearchReindexService, SearchAvailability, SearchSchemaInitializer

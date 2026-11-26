@@ -11,7 +11,7 @@ Citizen och LegalEntity, utan api-service-party ([beslut 56]).
 |----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
 | Personnummer → partyId: `PRIVATE`-parter i meddelanden och uppslag, kontaktpersoner och ägaren till en enskild firma | Citizen `POST /{municipalityId}/guid/batch`, med numren i kroppen                                                                   |
 | Organisationsnummer → partyId: `ENTERPRISE`-parter i meddelanden och uppslag, även en enskild firmas nummer          | LegalEntity `GET /{municipalityId}/{organizationNumber}/guid`                                                                       |
-| Partytyp när en notering skapar kunden                                                                               | De anrop som ändå görs: Citizen `GET /{municipalityId}/{personId}` och LegalEntity `GET /{municipalityId}/{legalEntityId}` ([§7.2]) |
+| Partytyp när en notering eller kontaktperson skapar kunden                                                           | De anrop som ändå görs: Citizen `GET /{municipalityId}/{personId}` och LegalEntity `GET /{municipalityId}/{legalEntityId}` ([§7.2]) |
 
 - Feign med `dismiss404` → `Optional`, `@CircuitBreaker` och OAuth2, i `CitizenIntegration` och
   `LegalEntityIntegration`.
@@ -45,27 +45,27 @@ specifikationen för v3 i `api-service-messaging/src/main/resources/integrations
 personuppgifter görs med `ShowClassified=true`, vilket kräver behörighet i Metakatalogen ([§5.4]), och svaret tolkas
 enligt [§5.4].
 
-|                                    Användning                                     |              Endpoint               |
-|-----------------------------------------------------------------------------------|-------------------------------------|
-| Personnummer → partyId ([§7.1])                                                   | `POST /{municipalityId}/guid/batch` |
-| Skyddsstatus för nya kunder och kontaktpersoner i ett meddelande ([§3.3], steg 5) | `POST /{municipalityId}/batch`      |
-| Nattlig kontroll av skyddsstatus ([§5.4])                                         | `POST /{municipalityId}/batch`      |
-| Skyddsstatus för en person som ändringskön säger har ändrats ([§5.5])             | `POST /{municipalityId}/batch`      |
-| Partytyp, namn, adress och skyddsstatus när en notering skapar kunden             | `GET /{municipalityId}/{personId}`  |
+|                                        Användning                                         |              Endpoint               |
+|-------------------------------------------------------------------------------------------|-------------------------------------|
+| Personnummer → partyId ([§7.1])                                                           | `POST /{municipalityId}/guid/batch` |
+| Skyddsstatus för nya kunder och kontaktpersoner i ett meddelande ([§3.3], steg 5)         | `POST /{municipalityId}/batch`      |
+| Nattlig kontroll av skyddsstatus ([§5.4])                                                 | `POST /{municipalityId}/batch`      |
+| Skyddsstatus för en person som ändringskön säger har ändrats ([§5.5])                     | `POST /{municipalityId}/batch`      |
+| Partytyp, namn, adress och skyddsstatus när en notering eller kontaktperson skapar kunden | `GET /{municipalityId}/{personId}`  |
 
 LegalEntity v2 ger namn, adresser, organisationsnummer och företagsprofilen med
-`GET /{municipalityId}/{legalEntityId}`. Det anropet görs när en notering skapar en kund och när ett meddelande skapar
-en företagskund, så att en enskild firma känns igen ([§5.4]) och profilen sparas ([§5.5]). Det görs också när
-ändringskön säger att ett företag har ändrats, och när den nattliga kontrollen hämtar en profil som saknas.
+`GET /{municipalityId}/{legalEntityId}`. Det anropet görs när en notering eller kontaktperson skapar en kund och när ett
+meddelande skapar en företagskund, så att en enskild firma känns igen ([§5.4]) och profilen sparas ([§5.5]). Det görs
+också när ändringskön säger att ett företag har ändrats, och när den nattliga kontrollen hämtar en profil som saknas.
 Organisationsnummer slås upp med `GET /{municipalityId}/{organizationNumber}/guid` ([§7.1]).
 
 Svaret innehåller personnummer och namn på företagets funktionärer (`officers`, `fullSignatureDescription`). De mappas
 aldrig, och ingenting ur svaret loggas. Tomma strängar och värden med bara blanksteg blir null.
 
-När en notering skapar en kund ([beslut 6]) sker följande:
+När en notering, eller en kontaktperson som läggs till via REST, skapar en kund ([beslut 6], [§5.3]) sker följande:
 
 1. Citizen `GET /{municipalityId}/{personId}` anropas med partyId. Svarar Citizen med en person är kunden `PRIVATE`.
-   Svaret ger skyddsstatus och, om personen är oskyddad, namn (`givenname` plus `lastname`) och folkbokföringsadressen,
+   Svaret ger skyddsstatus, Citizens flaggor ([§5.4]), namn (`givenname` plus `lastname`) och folkbokföringsadressen,
    alltså adressen med `addressType = POPULATION_REGISTRATION_ADDRESS`. Andra adresser i svaret används inte.
 2. Har Citizen ingen post anropas LegalEntity `GET /{municipalityId}/{legalEntityId}`. Svarar LegalEntity är kunden
    `ENTERPRISE`, med namnet (`name`) och två adresser ([§5.2]):
@@ -79,8 +79,7 @@ När en notering skapar en kund ([beslut 6]) sker följande:
    adresser i `workplaces[]` mappas på samma sätt ([§5.5]).
 
    Är `organizationNumber` i svaret ett personnummer, alltså en enskild firma, får kunden ägarens skydd från
-   folkbokföringen som i [§5.4], och är ägaren skyddad sparas varken namn, adresser eller profil. Annars sparas
-   profilen ([§5.5]).
+   folkbokföringen som i [§5.4]. Namn, adresser och profil sparas oavsett skydd ([§5.5]).
 
 3. Känner varken Citizen eller LegalEntity partyId:t blir svaret 404, och ingen notering skapas. Svarar Citizen eller
    LegalEntity inte, eller med 5xx, blir svaret 503, och ingen notering skapas. Ett tillfälligt fel blir aldrig 404.
@@ -88,20 +87,20 @@ När en notering skapar en kund ([beslut 6]) sker följande:
 4. Anropen görs utanför transaktionen. Kunden skapas sedan med IODKU och låses ([§3.6]). Om ett meddelande hann skapa
    kunden under tiden behålls dess uppgifter, men skyddsnivån räknas om. Om kunden fanns men hann raderas under tiden
    skapas den med `UNKNOWN`, eftersom Citizen aldrig tillfrågades om skyddet. Ett företag får då inget
-   `registry_party_id`, och den nattliga kontrollen gör uppslaget ([§5.4]).
-
-5. Skapas kunden med en skyddsnivå som inte är `NONE` raderas personens kontaktrader hos företag ([§5.3]).
+   `registry_party_id`, och den nattliga kontrollen gör uppslaget ([§5.4]). En privatkund får då namn och
+   folkbokföringsadress av den nattliga kontrollen.
 
 Fel från Citizen hanteras olika beroende på var anropet görs:
 
 - *När skyddsstatus, eller en ny företagskunds organisationsnummer och ägare, hämtas i meddelandeflödet:* om Citizen
-  eller LegalEntity inte svarar, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker, skapas nya kunder med
-  `UNKNOWN`, och kontaktpersoner utan nivå sparas inte ([§5.3], [§5.4]). Felet kastas inte vidare, så meddelandet görs
-  inte om och källans kö står inte still ([§3.7]). Felet loggas på WARN med källan och antalet berörda kunder och
-  kontaktpersoner, men utan partyId, så att det går att se vilka källor som behöver en ny grundladdning ([§13.3]).
+  eller LegalEntity inte svarar, svarar 5xx, 429 eller 408, eller har en öppen circuit breaker, får nya kunder och
+  kontaktpersoner `UNKNOWN`, eller `UNVERIFIED` för en kontaktperson där det inte gick att avgöra om den är en enskild
+  firma ([§5.3], [§5.4]). Felet kastas inte vidare, så meddelandet görs inte om och källans kö står
+  inte still ([§3.7]). Felet loggas på WARN med källan och antalet berörda kunder och kontaktpersoner, men utan
+  partyId, så att det går att se vilka källor som kan behöva en ny grundladdning ([§13.3]).
 - *När partyId slås upp:* ett fel görs om som andra avbrott ([§3.7]), eftersom en part utan partyId inte kan
   tillämpas.
-- *När en notering skapar kunden:* 503, enligt steg 3 ovan.
+- *När en notering eller en kontaktperson från REST skapar kunden:* 503, enligt steg 3 ovan.
 - *I den nattliga kontrollen:* en batch som misslyckas loggas, och dess kunder tas med nästa natt.
 - *401:* betyder att behörigheten i Metakatalogen saknas. Det är ett konfigurationsfel. I meddelandeflödet blir det en
   `ClientProblem`, och meddelandet dead-letteras så att larmet går ([§12.1]). README beskriver åtgärden: registrera

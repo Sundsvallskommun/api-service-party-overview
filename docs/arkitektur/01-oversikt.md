@@ -19,8 +19,8 @@ flowchart LR
     QREG[[ändringskö för företag och personer]] -->|företag och personer som ändrats| PO
     PO --> DB[(MariaDB)]
     PO -->|sökindex via kö + relay| OS[(OpenSearch)]
-    PO -->|personnummer → partyId; skyddsstatus; partytyp, namn/adress när en notering skapar kunden| CIT[Citizen]
-    PO -->|organisationsnummer → partyId; företagsprofil; partytyp, namn/adress när en notering skapar kunden| LE[LegalEntity]
+    PO -->|personnummer → partyId; skyddsstatus; partytyp, namn/adress när REST skapar kunden| CIT[Citizen]
+    PO -->|organisationsnummer → partyId; företagsprofil; partytyp, namn/adress när REST skapar kunden| LE[LegalEntity]
     FE[Kundvy, frontend] -->|REST| PO
     FE -->|detaljer om ett objekt| SM
     FE -->|detaljer om ett objekt| PA
