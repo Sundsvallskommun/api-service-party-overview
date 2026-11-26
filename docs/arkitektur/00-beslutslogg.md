@@ -794,14 +794,37 @@ REST ändras på plats, har en version och visar vem som skapade och ändrade de
 
 ## Beslut 66: Köernas inställningar sätts med policyer
 
-Dead-lettering, `delivery-limit`, `dead-letter-strategy` och `overflow` sätts med en policy per kö i
-rabbitmq-topology. Bara kötypen och `x-single-active-consumer` är kö-argument ([§3.2]).
+Dead-lettering, `delivery-limit`, `dead-letter-strategy` och `overflow` sätts med en policy per kö i tjänstens
+driftkonfiguration. Bara kötypen och `x-single-active-consumer` är kö-argument ([§3.2]).
 
 **Valdes bort:** Att sätta alla inställningar som kö-argument när kön skapas.
 
 **Skäl:** En befintlig kö kan inte få nya eller ändrade argument utan att skapas om, och en kö som skapas om måste
 först tömmas. En policy kan läggas till och ändras på en befintlig kö. Kötypen och single-active-consumer går inte att
 sätta med en policy.
+
+## Beslut 67: Utkast publiceras inte i party-assets och contract
+
+En asset eller ett kontrakt med status `DRAFT` publiceras som `DELETE`, som andra objekt som inte ska synas
+([§11.1]). När objektet lämnar `DRAFT` har versionen ökat, och det publiceras som `UPDATE`.
+
+**Valdes bort:** Att publicera utkast som vanliga objekt.
+
+**Skäl:** Ett utkast är inget engagemang än, som i SupportManagement ([beslut 26]). party-assets håller också utkast
+utanför sin vanliga lista över assets (`GET /{municipalityId}/assets`).
+
+## Beslut 68: Lyssnarna använder direct-containern
+
+party-overviews lyssnare använder Spring AMQP:s direct-container i stället för dept44:s förval, simple-containern, med
+`missing-queues-fatal: false` ([§12]). Saknas en kö eller AMQP-användaren försöker containern igen tills de finns.
+`DeadLetterHealthIndicator` kontrollerar köerna och larmar under tiden ([§12.1]).
+
+**Valdes bort:** Simple-containern. När den saknar sin kö eller sin användare stoppas den för gott, och dept44-startern
+markerar då liveness som `BROKEN`, så att podden startas om.
+
+**Skäl:** En omstart tar ner REST-API:t också, och tjänsten startar om i en loop tills kön eller användaren finns. En
+felkonfigurerad kö ska larma, inte ta ner kundvyn för hela kommunen. Startern kör varje direct-konsument i en egen
+virtuell tråd, så köerna väntar inte på varandra.
 
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
@@ -849,4 +872,6 @@ sätta med en policy.
 [§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace
 [beslut 7]: #beslut-7-synlighet-för-engagemang-kontaktuppgifter-och-noteringar
 [§3.2]: 03-meddelanden.md#32-topologi
+[§11.1]: 11-publicerare.md#111-gemensamt-för-alla-publicerare
+[beslut 26]: #beslut-26-supportmanagement-publicerar-inte-utkast
 

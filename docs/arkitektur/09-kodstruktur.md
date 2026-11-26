@@ -39,7 +39,7 @@ se.sundsvall.partyoverview
     genereras med ZenWave SDK (`zenwave-sdk-maven-plugin` med `asyncapi-jsonschema2pojo`, 2.8.1), som på grenen
     `publish-events` i det här repot.
 - **Entiteter:** ingen Lombok, utan `create()`/`withX()` och `equals`/`hashCode`/`toString` som i POC:en.
-- **Lyssnaren:** en klass, `MessageListener`, men en listener-container per kö. Endpointerna registreras med
+- **Lyssnaren:** en klass, `MessageListener`, men en direct-container per kö ([beslut 68]). Endpointerna registreras med
   `RabbitListenerConfigurer`, en per post i `integration.sources`, så att de ligger i Springs listener-register och får
   dept44-starterns loggning och request-id. Med en enda `@RabbitListener` för alla köer delar köerna en konsumenttråd,
   och ett omförsök på en källa stoppar alla ([§3.7]). Ingen `@ConditionalOnProperty` på lyssnaren, eftersom startern
@@ -56,4 +56,5 @@ se.sundsvall.partyoverview
 
 [§3.7]: 03-meddelanden.md#37-felhantering
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 

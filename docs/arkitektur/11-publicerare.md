@@ -25,8 +25,9 @@ Del av [arkitekturen för party-overview](README.md).
    - Körs direkt efter commit och dessutom schemalagt med ShedLock.
    - Väntande rader grupperas per objekt i den ordning de skrevs. Relayn läser objektets **aktuella** tillstånd, bygger
      ett meddelande med alla väntande aktiviteter och publicerar `UPDATE`. Den publicerar `DELETE` när objektet är borta
-     eller inte ska synas: soft-deletat (SM), sekretessmarkerat (Casedata), i ett namespace utan opt-in eller med
-     åtkomstkontroll (SM), eller av en asset-typ som inte står på vitlistan (party-assets).
+     eller inte ska synas: soft-deletat (SM), ett utkast (SM, party-assets och contract, [beslut 67]),
+     sekretessmarkerat (Casedata), i ett namespace utan opt-in eller med åtkomstkontroll (SM), eller av en asset-typ
+     som inte står på vitlistan (party-assets).
    - Relayn tar ett delat lås på objektets rad innan den läser raderna och tillståndet, så att de hör ihop. I MariaDB
      heter det `SELECT … LOCK IN SHARE MODE`, eftersom `FOR SHARE` ger syntaxfel i MariaDB, både i 10.6 och i 11.4. I
      JPA används `@Lock(PESSIMISTIC_READ)`, som Hibernates MariaDB-dialekt skriver om till `lock in share mode`. Utan
@@ -97,9 +98,10 @@ Del av [arkitekturen för party-overview](README.md).
   objektet till liv ([§3.4]). Hård radering och purge publiceras som `DELETE`.
 - **Version:** `ErrandEntity.version`. Det måste verifieras att en ändring som bara rör stakeholders ökar versionen. Gör
   den inte det tvingas en ökning fram (`OPTIMISTIC_FORCE_INCREMENT`).
-- **Envelope:** `reference` = `errandNumber`, `title`, `category` = classification category/type, `status`,
-  `sourceCreated` = `created`, `sourceModified` = `modified` (annars `created`, eftersom `modified` sätts först vid den
-  första ändringen), `namespace`.
+- **Envelope:** `objectId` = `ErrandEntity.id`, som SM:s `GET …/errands/{errandId}` tar, `reference` =
+  `errandNumber`, `title`, `category` = classification category/type, `status`, `sourceCreated` = `created`,
+  `sourceModified` = `modified` (annars `created`, eftersom `modified` sätts först vid den första ändringen),
+  `namespace`. Frontend hämtar detaljerna från källan med `source` och `objectId`.
 - **Parter:** Stakeholders: `externalId` som partyId om det är ett UUID, och `externalIdType` som partytyp.
   `externalIdType` är fritext per namespace, med värden som `PRIVATE`, `ENTERPRISE`, `EMPLOYEE` och `ADMINISTRATOR`.
   Bara `PRIVATE` och `ENTERPRISE` mappas, utan hänsyn till skiftläge. Stakeholders med `EMPLOYEE` eller `ADMINISTRATOR`
@@ -109,13 +111,15 @@ Del av [arkitekturen för party-overview](README.md).
   `zipCode` som `postalCode`. Kanaltypen är fritext i SM och mappas utan hänsyn till skiftläge: `EMAIL`
   blir `EMAIL`, och `PHONE` och `SMS` blir `PHONE` ([§11.1]). Stakeholders utan partyId skickas med, eftersom de kan
   vara kontaktpersoner. `parameters` skickas aldrig.
-- **Utkast:** Ärenden med `lifecycle = DRAFT` publiceras inte ([beslut 26]). När ett utkast skickas in publiceras det
-  som `UPDATE`.
+- **Utkast:** Ärenden med `lifecycle = DRAFT` ger ingen outbox-rad. Når grundladdningen ett utkast publicerar relayn
+  `DELETE` ([beslut 26]). När ett utkast skickas in publiceras det som `UPDATE`.
 - **Skyddad identitet:** SM har i dag ingen uppgift om skyddade personuppgifter på stakeholders och skickar därför inte
   `protection`. Skyddet för SM:s kunder kommer från folkbokföringen ([§5.4]).
-- **Grundladdning:** En ny `JobType` som går igenom ärendena per namespace med keyset, som
-  `ErrandPurgeRunner.findIdsAfter`, och med ShedLock per namespace. Den tar ett valfritt namespace som parameter
-  ([§11.1]).
+- **Grundladdning:** En ny `JobType` som går igenom ett namespace med keyset, med
+  `ErrandsRepository.findIdsAfter`, som `ErrandPurgeRunner` använder. SM:s jobbvakt, en unik genererad kolumn
+  (`V1_78__add_active_job_guard.sql`) och inte ShedLock, tillåter ett aktivt jobb per typ och namespace, och en andra
+  start ger 409. Jobbet tar alltid ett namespace, eftersom `JobEntity.namespace` är `NOT NULL`. En grundladdning av
+  alla namespaces med opt-in startar ett jobb per namespace ([§11.1]).
 
 ## 11.3 party-assets (`ASSET`)
 
@@ -136,10 +140,12 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   `deleteAsset`, `AssetExpirationWorker` och `PR3Importer`, som sparar direkt i repositoryt.
 - **Version:** `AssetEntity.version`, inte `revision`, som inte ökar för drafts och delete.
 - **Vem:** `Identifier` sparas med typ, även vid delete.
-- **Envelope:** `reference` = `assetId`, `title`, `category` = `type`, `status`, `validFrom` = `issued`, `validTo`,
-  `sourceModified` = `updated`, annars `created`. Äldre rader saknar båda och får en fast tidpunkt,
-  `1970-01-01T00:00:00Z`, så att de aldrig räknas som nyast. Inget namespace, så engagemangen blir globala
-  ([beslut 23]).
+- **Envelope:** `objectId` = `id`, UUID:t som `GET /{municipalityId}/assets/{id}` tar, `reference` = `assetId`,
+  `title`, `category` = `type`, `status`, `validFrom` = `issued`, `validTo`, `sourceModified` = `updated`, annars
+  `created`. Äldre rader saknar båda och får en fast tidpunkt, `1970-01-01T00:00:00Z`, så att de aldrig räknas som
+  nyast. Inget namespace, så engagemangen blir globala ([beslut 23]).
+- **Utkast:** En asset med status `DRAFT` publiceras som `DELETE`. När den aktiveras har versionen ökat, och den
+  publiceras som `UPDATE` ([beslut 67]).
 - **Parter:** Exakt ett: `partyId` och `partyType`, utan kontaktuppgifter.
 - **Grundladdning:** `POST /{municipalityId}/asset-events/republish` skriver outbox-rader i batchar i stället för att
   publicera direkt. Den tar en valfri asset-typ som parameter ([§11.1]).
@@ -157,9 +163,12 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   Publiceringspunkter: `ContractService` (create, patch, update, delete), `ContractTerminationWorker` och
   `ContractAutoExtensionWorker`, även vid vanlig periodförlängning, som saknar outbox-rad idag.
 - **Version:** `lockVersion`.
-- **Envelope:** `reference` = `contractId`, `category` = `type`, `status`, `validFrom`/`validTo` =
+- **Envelope:** `objectId` = `contractId`, som `GET /{municipalityId}/contracts/{contractId}` tar, och inte det
+  interna `id`. `reference` = `contractId`, `category` = `type`, `status`, `validFrom`/`validTo` =
   `startDate`/`endDate`, `sourceCreated` = `created`, `sourceModified` = `modified`. Ingen titel. Inget namespace, så
   engagemangen blir globala ([beslut 23]).
+- **Utkast:** Ett kontrakt med status `DRAFT` publiceras som `DELETE`. När det lämnar `DRAFT` har versionen ökat, och
+  det publiceras som `UPDATE` ([beslut 67]).
 - **Parter:** Stakeholders med `roles`, namn, adress och kontaktkanaler, där `phoneNumber` blir `PHONE` och
   `emailAddress` blir `EMAIL` ([beslut 49]). Adressen skickas med sin typ, där `BILLING_ADDRESS` blir
   `INVOICE_ADDRESS`, och med `streetAddress` som `street` och `town` som `city`.
@@ -193,9 +202,11 @@ och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
   versionen sparas på outbox-raden ([§11.1]). Det finns ingen restore.
 - **Version:** `ErrandEntity.version` (`@Version int`, skickas som long). Publiceringspunkten sätter `updated` på
   ärendet, så att både versionen och `sourceModified` ändras även när bara en part ändras. Det verifieras med ett IT.
-- **Envelope:** `reference` = `errandNumber`, `title` = `case_type.display_name` följt av `caseTitleAddition`,
-  `category` = `caseType`, `status` = `status.statusType`, `sourceCreated` = `created`, `sourceModified` = `updated`
-  (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas inte.
+- **Envelope:** `objectId` = `ErrandEntity.id`, ett `Long` som skickas som sträng och som Casedatas
+  `GET …/errands/{errandId}` tar, `reference` = `errandNumber`, `title` = `case_type.display_name` följt av
+  `caseTitleAddition`, `category` = `caseType`, `status` = `status.statusType`, `sourceCreated` = `created`,
+  `sourceModified` = `updated` (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas
+  inte.
 - **Parter:** `errand.stakeholders`, där `PERSON` blir `PRIVATE` och `ORGANIZATION` blir `ENTERPRISE`. `personId`
   skickas som partyId bara om det är ett UUID, och aldrig annars. `organizationNumber` skickas som legalId bara när
   partyId saknas. `roles`, namn, alla adresser och `contactChannels` följer med, där `CELLPHONE` och `PHONE` blir
@@ -228,4 +239,5 @@ och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
 [beslut 51]: 00-beslutslogg.md#beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
 [beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
+[beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
 

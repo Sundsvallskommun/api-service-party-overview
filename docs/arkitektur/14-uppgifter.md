@@ -30,7 +30,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 11   | T2  | Egen OpenSearch-container per miljö                  | —                              |
 | 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, C3, T2                     |
 | 13   | C13 | Sök-endpoint                                         | C5, C7, C12                    |
-| 14   | T1  | Köer och exchanges i rabbitmq-topology               | —                              |
+| 14   | T1  | Köer och exchanges i driftkonfigurationen            | —                              |
 | 15   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                     |
 | 16   | SM1 | SupportManagement: outbox, relay och publicering     | F1                             |
 | 17   | SM2 | SupportManagement: grundladdning                     | SM1                            |
@@ -41,7 +41,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 22   | CT1 | contract: tidsstämplar                               | —                              |
 | 23   | CT2 | contract: outbox, relay och publicering              | CT1, F1                        |
 | 24   | CT3 | contract: grundladdning                              | CT2                            |
-| 25   | T3  | Ändringskön i rabbitmq-topology                      | F2                             |
+| 25   | T3  | Ändringskön i driftkonfigurationen                   | F2                             |
 | 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2            |
 | 27   | C15 | Skyddskontroll från ändringskön                      | C10, C14, F2                   |
 | 28   | C16 | Kontaktpersoner via REST                             | C7, C8, C9, C13                |
@@ -128,11 +128,14 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - legalId valideras mot formatet i [§3.1], per partytyp och med kontrollsiffran, innan det skickas ([§7.1]).
 - Ett eget undantag utan URL för IO-fel ([§7.1]).
 - `logbook.excluded.paths` för LegalEntitys uppslag med numret i URL:en ([§12]).
-- Konfiguration med OAuth2 och circuit breaker.
+- Konfiguration med OAuth2 och circuit breaker, där `ClientProblem` inte räknas som fel ([§12]). Instansnamnen är
+  klienternas `CLIENT_ID`.
 - WireMock-stubbar för IT.
 
 **Acceptans:**
 
+- En serie 400 från LegalEntity eller Citizen öppnar inte circuit breakern, men en serie 5xx eller timeouts gör det
+  ([§12]).
 - 404 på ett enskilt anrop ger `Optional.empty`, och 5xx ger `ServerProblem` som inte sväljs. 400 från LegalEntitys
   uppslag ger också `Optional.empty`. Ett element utan `success` i Citizens batchsvar ger ingen mappning, och ett
   legalId med fel format eller fel kontrollsiffra skickas inte.
@@ -625,11 +628,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - party-overview når containern i varje miljö.
 - Bara party-overview och drift har åtkomst.
 
-## T1 — Köer och exchanges i rabbitmq-topology
+## T1 — Köer och exchanges i driftkonfigurationen
 
 **Bygg:**
 
-- Publicerarnas exchanges och party-overviews köer enligt [§3.2]: quorum-köer med `x-single-active-consumer: true`
+- Publicerarnas exchanges i deras egen driftkonfiguration, och party-overviews köer i party-overviews, enligt [§3.2]:
+  quorum-köer med `x-single-active-consumer: true`
   som argument, dead letter-köer, och en policy per kö med `dead-letter-exchange`, `dead-letter-routing-key`,
   `delivery-limit: 5`, `dead-letter-strategy: at-least-once` och `overflow: reject-publish`.
 - AMQP-användare: publicerarna får write på sin exchange, och party-overview får read på sina köer. Ingen får
@@ -643,13 +647,13 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - En ändrad `delivery-limit` i policyn gäller för den befintliga kön utan att den skapas om. Det provas en gång i
   testmiljön.
 - Dead letter-köerna har ingen TTL. Bara drift och utvecklare har åtkomst ([beslut 31]).
-- party-overviews AMQP-användare kan göra en passiv deklaration av sina dead letter-köer ([§12.1]).
+- party-overviews AMQP-användare kan göra en passiv deklaration av sina köer och dead letter-köer ([§12.1]).
 
 ## C11 — RabbitMQ-lyssnare och `MessageIT`
 
 **Bygg:**
 
-- `MessageListener` med en listener-container per kö i `integration.sources`, registrerade med
+- `MessageListener` med en direct-container per kö i `integration.sources` ([beslut 68]), registrerade med
   `RabbitListenerConfigurer`, och källan från `CONSUMER_QUEUE` ([§9]).
 - `DeadLetterHealthIndicator` enligt [§12.1].
 - `MessageIT` enligt [§10].
@@ -663,8 +667,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `RabbitListenerConfigurer`.
 - Det finns ingen `@ConditionalOnProperty` på lyssnaren och ingen `@EnableRabbit`.
 - `DeadLetterHealthIndicator` finns i `/actuator/health` när RabbitMQ är påslaget. Den är `DOWN` med kö och antal i
-  detaljerna när en dead letter-kö har meddelanden eller saknas, och `UP` annars. Den ingår inte i `liveness` eller
-  `readiness`.
+  detaljerna när en dead letter-kö har meddelanden eller saknas, eller när en huvudkö saknas, och `UP` annars. Den
+  ingår inte i `liveness` eller `readiness`.
+- Saknas en kö när tjänsten startar, startar den ändå. REST-API:t svarar, liveness blir aldrig `BROKEN`, och
+  `DeadLetterHealthIndicator` är `DOWN` med köns namn. När kön skapas börjar lyssnaren konsumera utan omstart. Samma
+  sak gäller när AMQP-användaren saknas ([§12]).
 - Med `dept44.rabbitmq.enabled=false` finns ingen `DeadLetterHealthIndicator`, och tjänsten startar.
 - README beskriver hur dead letters hanteras, och att kontaktpersonsrollerna sätts innan lyssnarna slås på ([§12]).
 
@@ -674,6 +681,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Acceptans:**
 
+- `objectId` är `ErrandEntity.id`, och `reference` är `errandNumber` ([§11.2]).
 - En ändring i ett namespace utan opt-in ger ingen outbox-rad.
 - Outbox-tabellen har kolumnerna och indexet i [§11.1].
 - Ett API-anrop som ger flera events blir ett meddelande med alla aktiviteter.
@@ -695,8 +703,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   ([beslut 55]).
 - Ett namespace med `accessControl = true` kan inte slå på publiceringen. Slås åtkomstkontrollen på för ett namespace
   som publicerar, stängs publiceringen av ([beslut 51]).
-- Utkast publiceras inte, och ett inskickat utkast publiceras som `UPDATE` ([beslut 26]). Hård radering och purge
-  publiceras som `DELETE` med versionen från outbox-raden.
+- Ett utkast ger ingen outbox-rad, och ett inskickat utkast publiceras som `UPDATE` ([beslut 26]). Hård radering och
+  purge publiceras som `DELETE` med versionen från outbox-raden.
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - SM exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
@@ -706,13 +714,15 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Bygg:**
 
-- En `JobType` som går igenom ärendena per namespace med keyset och ShedLock, enligt [§11.2].
+- En `JobType` som går igenom ett namespace med keyset och SM:s jobbvakt, enligt [§11.2].
 
 **Acceptans:**
 
 - Alla ärenden i namespaces med opt-in publiceras utan aktiviteter.
 - Körs jobbet med ett namespace utan opt-in som parameter publiceras namespacets ärenden som `DELETE` ([§11.1]).
-- Två samtidiga starter ger en körning.
+- Jobbet startas per namespace, med namespacet i SM:s sökväg för jobb. En andra start för samma namespace medan
+  jobbet är aktivt ger 409.
+- Når jobbet ett utkast publiceras det som `DELETE` ([beslut 26]).
 - Pågående ändringar publiceras i rätt ordning per ärende.
 
 ## CD1 — Casedata: outbox, relay och publicering
@@ -721,6 +731,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Acceptans:**
 
+- `objectId` är `ErrandEntity.id` som sträng, och `reference` är `errandNumber` ([§11.5]).
 - En ändring i ett namespace utan opt-in ger ingen outbox-rad.
 - Outbox-tabellen har kolumnerna och indexet i [§11.1].
 - Varje publiceringspunkt i [§11.5] ger en outbox-rad. Schedulers, noteringar och beslut ger ingen.
@@ -767,6 +778,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Acceptans:**
 
+- `objectId` är assetens `id`, och `reference` är `assetId` ([§11.3]).
+- En asset med status `DRAFT` publiceras som `DELETE`, och när den aktiveras som `UPDATE` med högre version
+  ([beslut 67]).
 - Alla ändringspunkter i [§11.3] ger en outbox-rad, även PR3-importen och originalet som blir `REPLACED`.
 - Outbox-tabellen har kolumnerna och indexet i [§11.1].
 - En ändring ger en outbox-rad bara om assetens typ står på vitlistan före eller efter ändringen. En asset vars typ byts
@@ -819,6 +833,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Acceptans:**
 
+- `objectId` är `contractId`, som contracts `GET` tar, och inte det interna `id` ([§11.4]).
+- Ett kontrakt med status `DRAFT` publiceras som `DELETE`, och när det lämnar `DRAFT` som `UPDATE` med högre version
+  ([beslut 67]).
 - Alla publiceringspunkter i [§11.4] ger en outbox-rad, även en vanlig periodförlängning.
 - Billing-outboxen påverkas inte.
 - Outbox-tabellen har kolumnerna och indexet i [§11.1].
@@ -856,7 +873,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Alla kontrakt i kommunen publiceras utan aktiviteter.
 - Inga bilagor läses.
 
-## T3 — Ändringskön i rabbitmq-topology
+## T3 — Ändringskön i driftkonfigurationen
 
 **Bygg:**
 
@@ -1015,4 +1032,6 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
 [beslut 61]: 00-beslutslogg.md#beslut-61-noteringar-ändras-med-optimistisk-låsning
+[beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
+[beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
 

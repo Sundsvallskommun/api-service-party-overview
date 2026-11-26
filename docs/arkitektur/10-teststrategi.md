@@ -49,7 +49,7 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   globalt, med och utan namespace-filter, ett meddelande som via relayn blir sökbart, och reindexering.
 
 Topologins argument och policyer (single-active-consumer, delivery-limit och DLX) testas inte automatiskt. De granskas
-i PR:en mot rabbitmq-topology.
+i PR:en mot driftkonfigurationen.
 
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter

@@ -18,8 +18,8 @@ Del av [arkitekturen för party-overview](README.md).
 |---------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar och kontaktpersoner som skapar kunder (C8, C16) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
 | En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                                              |
-| Köer och exchanges i rabbitmq-topology (T1).                                                                              | Meddelandeflödet (C11)                                                                                                                                            |
-| Ändringskön i rabbitmq-topology (T3).                                                                                     | Ändringskön (C14, C15)                                                                                                                                            |
+| Köer och exchanges i driftkonfigurationen (T1).                                                                           | Meddelandeflödet (C11)                                                                                                                                            |
+| Ändringskön i driftkonfigurationen (T3).                                                                                  | Ändringskön (C14, C15)                                                                                                                                            |
 | Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                                         |
 
 ## 13.3 Risker
@@ -99,6 +99,12 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Varje sådant fel loggas på WARN med källan och antalet berörda kunder och kontaktpersoner ([§7.2]).
   En ny grundladdning av källan ger de kvarvarande kontaktraderna rätt nivå. README beskriver det.
+
+- En kö eller AMQP-användare som saknas stoppar inte tjänsten, men källans meddelanden tillämpas inte förrän den finns
+  ([beslut 68]).
+
+  **Hantering:** `DeadLetterHealthIndicator` är `DOWN` med köns namn, och Spring Boot Admin larmar ([§12.1]). Kön
+  driftsätts före källans rad i `integration.sources` ([§12]).
 
 - En reindexering som avbryts, t.ex. av en omstart, lämnar ett halvbyggt index.
 
@@ -267,4 +273,5 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 6]: 00-beslutslogg.md#beslut-6-en-notering-på-en-okänd-kund-skapar-kunden
 [§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace
 [beslut 7]: 00-beslutslogg.md#beslut-7-synlighet-för-engagemang-kontaktuppgifter-och-noteringar
+[beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 

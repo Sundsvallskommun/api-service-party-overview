@@ -150,8 +150,9 @@ genereras med ZenWave SDK ([§9]).
 | contract          | `api-fabriken.contract`           | `api-fabriken.party-overview.contract`           | `CONTRACT`           |
 | Casedata          | `api-fabriken.case-data`          | `api-fabriken.party-overview.case-data`          | `CASE_DATA`          |
 
-Varje kö deklareras i rabbitmq-topology som en quorum-kö. Bara det som inte går att sätta med en policy är
-kö-argument, eftersom en befintlig kö inte kan få nya eller ändrade argument utan att skapas om ([beslut 66]):
+Varje kö deklareras som en quorum-kö i party-overviews driftkonfiguration (spring-boot-chart, [§12]). Bara det som
+inte går att sätta med en policy är kö-argument, eftersom en befintlig kö inte kan få nya eller ändrade argument utan
+att skapas om ([beslut 66]):
 
 - `x-queue-type: quorum`
 - `x-single-active-consumer: true`. Det går inte att sätta med en policy och inte att lägga till på en befintlig kö,
@@ -369,8 +370,8 @@ Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
 Ett meddelande som misslyckas rullas tillbaka helt och syns inte i den tekniska loggen. Det syns i starterns WARN-rad
 och i dead letter-kön.
 
-Omförsöken görs i lyssnarens tråd. Varje kö har en egen listener-container med en egen konsument ([§9]), så under ett
-omförsök står bara den källans kö still.
+Omförsöken görs i lyssnarens tråd. Varje kö har en egen konsument i en direct-container, och startern kör varje
+konsument i en egen virtuell tråd ([§9], [§12]), så under ett omförsök står bara den källans kö still.
 
 [§3.3]: #33-flödet-genom-tjänsten
 [§3.4]: #34-versionsmatrisen

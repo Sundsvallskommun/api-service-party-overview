@@ -56,6 +56,15 @@ spring:
     scheduling:
       pool:
         size: 4                  # en tråd per schemalagt jobb, så att relayn inte väntar på den nattliga kontrollen
+  rabbitmq:
+    listener:
+      type: direct               # försöker igen när en kö eller AMQP-användaren saknas, utan omstart (beslut 68)
+      direct:
+        missing-queues-fatal: false
+        consumers-per-queue: 1
+  datasource:
+    hikari:
+      maximum-pool-size: 20      # fem lyssnare, de schemalagda jobben och REST samtidigt (§3.7)
   data:
     web:
       pageable:
@@ -80,13 +89,34 @@ spring:
               enabled: false
           schema_management:
             strategy: none
+resilience4j:
+  circuitbreaker:
+    instances:
+      citizen:                   # klientens CLIENT_ID
+        ignoreExceptions: se.sundsvall.dept44.exception.ClientProblem
+      legalentity:
+        ignoreExceptions: se.sundsvall.dept44.exception.ClientProblem
 ```
 
 - RabbitMQ:s health-indikator ingår i `/actuator/health`, där Spring Boot Admin larmar när brokern inte svarar, men inte
   i `readiness`. Readiness styr bara REST-trafiken, och läs-API:t fungerar utan brokern.
+- Lyssnarna använder Spring AMQP:s direct-container ([beslut 68]). Saknas en kö eller AMQP-användaren försöker den igen
+  tills de finns, i stället för att stoppas för gott. Då markerar dept44-startern inte liveness som `BROKEN`, podden
+  startas inte om, och REST-API:t fungerar. `missing-queues-fatal` sätts till `false` uttryckligen, så att ett annat
+  förval i driftkonfigurationen inte gäller. En kö som saknas larmar i stället via `DeadLetterHealthIndicator`
+  ([§12.1]).
+- Med direct-containern körs varje lyssnare samtidigt, i en egen virtuell tråd som startern sätter upp. Fem köer ger
+  fem lyssnare som kan hålla en databasanslutning var, och därför är poolen 20 i stället för dept44:s tio.
+- Circuit breakern för Citizen och LegalEntity räknar inte `ClientProblem` (4xx) som fel. Annars skulle en serie 400
+  från LegalEntity, som betyder att numret inte finns, öppna den, och varje uppslag skulle bli ett avbrott ([§7.1]).
+  Instanserna heter som klienternas `CLIENT_ID`.
 - Varje integration behöver OAuth2-klient, URL och sealed secrets per miljö.
-- En ny källa kräver en rad under `integration.sources`, kön och dead letter-kön i rabbitmq-topology och
-  kontaktpersonsroller via REST.
+- Köerna, dead letter-köerna och policyerna deklareras i tjänstens egen driftkonfiguration (spring-boot-chart), inte i
+  ett gemensamt topologi-repo och inte av tjänsten själv ([§3.2]). Publicerarnas exchanges ligger i deras egen
+  driftkonfiguration.
+- En ny källa kräver en rad under `integration.sources`, kön och dead letter-kön i driftkonfigurationen och
+  kontaktpersonsroller via REST. Kön ska finnas innan raden driftsätts. Annars försöker lyssnaren igen tills kön finns,
+  och `DeadLetterHealthIndicator` larmar under tiden.
 - Vid första driftsättningen i varje miljö sätts kontaktpersonsrollerna för `SUPPORT_MANAGEMENT`, `CONTRACT` och
   `CASE_DATA` med `PUT /{municipalityId}/contact-person-roles/{source}` ([beslut 33]), **innan** lyssnarna slås på. Ett
   meddelande som tillämpas utan roller gör varje kontaktperson med id till kund.
@@ -100,15 +130,19 @@ spring:
 
 ## 12.1 Larm för dead letter-köer
 
-- `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas dead letter-kö, och av
-  ändringsköns när `integration.registry-changes.queue` har ett värde, och läser antalet meddelanden.
+- `DeadLetterHealthIndicator` gör en passiv deklaration (`queueDeclarePassive`) av varje källas kö och dead letter-kö,
+  och av ändringsköns när `integration.registry-changes.queue` har ett värde, och läser antalet meddelanden i dead
+  letter-köerna.
+- En huvudkö som saknas ger `DOWN`, med köns namn. Direct-containern försöker igen utan att larma själv, och dept44:s
+  `rabbitListeners` visar en container som försöker igen som `UP`. Indikatorn är alltså det som visar att en kö
+  saknas.
 - Indikatorn finns bara när RabbitMQ är påslaget (`@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, [§9]).
   Med `dept44.rabbitmq.enabled=false` finns ingen `ConnectionFactory`, och tjänsten ska ändå starta (C1).
 - Indikatorn blir `DOWN`, med köernas namn och antal i detaljerna, när någon kö inte är tom. Spring Boot Admin
   notifierar då till Slack, som för andra statusändringar.
 - En dead letter-kö som saknas ger också `DOWN`, eftersom det är ett fel i topologin.
 - Indikatorn ingår inte i grupperna `liveness` och `readiness`. Tjänsten fortsätter alltså att ta emot trafik.
-- Att AMQP-användaren får göra en passiv deklaration av dead letter-köerna verifieras i T1.
+- Att AMQP-användaren får göra en passiv deklaration av sina köer och dead letter-köer verifieras i T1 och T3.
 - Hur dead letters hanteras står i README: läs dem och åtgärda orsaken. Flytta sedan tillbaka meddelandena till
   källkön, t.ex. med RabbitMQ Management ("Move messages") eller en shovel. Meddelanden som inte ska behandlas raderas.
 
@@ -116,4 +150,7 @@ spring:
 [§13.2]: 13-risker-och-oppna-fragor.md#132-förutsättningar-före-driftsättning
 [beslut 33]: 00-beslutslogg.md#beslut-33-kontaktpersonsrollerna-sätts-via-rest-vid-driftsättning
 [§7.1]: 07-integrationer.md#71-uppslag-av-partyid
+[§3.2]: 03-meddelanden.md#32-topologi
+[§12.1]: #121-larm-för-dead-letter-köer
+[beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 
