@@ -7,11 +7,11 @@ Del av [arkitekturen för party-overview](README.md).
 partyId är Citizens `personId` för en person och LegalEntitys id för ett företag. party-overview slår upp dem direkt mot
 Citizen och LegalEntity, utan api-service-party ([beslut 56]).
 
-|                                                      Användning                                                      |                                                              Endpoint                                                               |
-|----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| Personnummer → partyId: `PRIVATE`-parter i meddelanden och uppslag, kontaktpersoner och ägaren till en enskild firma | Citizen `POST /{municipalityId}/guid/batch`, med numren i kroppen                                                                   |
-| Organisationsnummer → partyId: `ENTERPRISE`-parter i meddelanden och uppslag, även en enskild firmas nummer          | LegalEntity `GET /{municipalityId}/{organizationNumber}/guid`                                                                       |
-| Partytyp när en notering eller kontaktperson skapar kunden                                                           | De anrop som ändå görs: Citizen `GET /{municipalityId}/{personId}` och LegalEntity `GET /{municipalityId}/{legalEntityId}` ([§7.2]) |
+|                                                                   Användning                                                                    |                                                              Endpoint                                                               |
+|-------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| Personnummer → partyId: `PRIVATE`-parter i meddelanden och uppslag, kontaktpersoner, ett företags funktionärer och ägaren till en enskild firma | Citizen `POST /{municipalityId}/guid/batch`, med numren i kroppen                                                                   |
+| Organisationsnummer → partyId: `ENTERPRISE`-parter i meddelanden och uppslag, även en enskild firmas nummer, och funktionärer som är företag    | LegalEntity `GET /{municipalityId}/{organizationNumber}/guid`                                                                       |
+| Partytyp när en notering eller kontaktperson skapar kunden                                                                                      | De anrop som ändå görs: Citizen `GET /{municipalityId}/{personId}` och LegalEntity `GET /{municipalityId}/{legalEntityId}` ([§7.2]) |
 
 - Feign med `dismiss404` → `Optional`, `@CircuitBreaker` och OAuth2, i `CitizenIntegration` och
   `LegalEntityIntegration`.
@@ -58,8 +58,10 @@ enskild firma känns igen ([§5.4]) och profilen sparas ([§5.5]). Det görs ock
 ändrats, och när den nattliga kontrollen hämtar en profil som saknas. Organisationsnummer slås upp med
 `GET /{municipalityId}/{organizationNumber}/guid` ([§7.1]).
 
-Svaret innehåller personnummer och namn på företagets funktionärer (`officers`, `fullSignatureDescription`). De mappas
-aldrig, och ingenting ur svaret loggas. Tomma strängar och värden med bara blanksteg blir null.
+Svaret innehåller namn och personnummer på företagets funktionärer (`officers`, `fullSignatureDescription`).
+Funktionärerna i `officers` blir kontaktpersoner, och deras nummer slås upp till partyId och sparas aldrig ([§5.5]).
+`fullSignatureDescription` mappas aldrig. Ingenting ur svaret loggas. Tomma strängar och värden med bara blanksteg blir
+null.
 
 När en notering, eller en kontaktperson som läggs till via REST, skapar en kund ([beslut 6], [§5.3]) sker följande:
 
@@ -98,7 +100,8 @@ Fel från Citizen hanteras olika beroende på var anropet görs:
   Felet loggas på WARN med källan och antalet berörda kunder och kontaktpersoner, men utan partyId, så att det går att
   se vilka källor som kan behöva en ny grundladdning ([§13.3]).
 - *När partyId slås upp i meddelandeflödet:* ett fel görs om som andra avbrott ([§3.7]), eftersom en part utan
-  partyId inte kan tillämpas.
+  partyId inte kan tillämpas. Undantaget är funktionärernas nummer för en ny företagskund, där kunden i stället skapas
+  utan profil ([§5.5]).
 - *När en notering eller en kontaktperson från REST skapar kunden:* 503, enligt steg 3 ovan.
 - *I uppslaget via REST:* 503 ([§6.1]).
 - *I den nattliga kontrollen:* en batch som misslyckas loggas, och dess kunder tas med nästa natt.

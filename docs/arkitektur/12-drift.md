@@ -15,6 +15,7 @@ integration:
     PARTY_ASSETS: api-fabriken.party-overview.party-assets
     CONTRACT: api-fabriken.party-overview.contract
     CASE_DATA: api-fabriken.party-overview.case-data
+    CONTACT_SETTINGS: api-fabriken.party-overview.contact-settings
   registry-changes:
     queue:                       # ändringskön (§5.5). Utan värde finns varken lyssnaren eller dess larm.
   dead-letter-suffix: .dlq       # DLQ = kö + suffix, används av health-indikatorn
@@ -113,15 +114,16 @@ resilience4j:
 - Köerna, dead letter-köerna och policyerna deklareras i tjänstens egen driftkonfiguration (spring-boot-chart), inte i
   ett gemensamt topologi-repo och inte av tjänsten själv ([§3.2]). Publicerarnas exchanges ligger i deras egen
   driftkonfiguration.
-- En ny källa kräver en rad under `integration.sources`, kön och dead letter-kön i driftkonfigurationen och
-  kontaktpersonsroller via REST. Kön ska finnas innan raden driftsätts. Annars försöker lyssnaren igen tills kön finns,
-  och `DeadLetterHealthIndicator` larmar under tiden.
-- Vid första driftsättningen i varje miljö sätts kontaktpersonsrollerna för `SUPPORT_MANAGEMENT`, `CONTRACT` och
-  `CASE_DATA` med `PUT /{municipalityId}/contact-person-roles/{source}` ([beslut 33]), **innan** lyssnarna slås på. Ett
-  meddelande som tillämpas utan roller gör varje kontaktperson med id till kund.
-- För contract och Casedata är rollen `CONTACT_PERSON`. I SupportManagement är rollerna metadata per namespace, och
-  `CONTACT_PERSON` finns inte i SM:s testdata. Vilka roller som betyder kontaktperson i SM tas fram ur produktionens
-  metadata innan rollerna sätts ([§13.2]).
+- En ny källa kräver en rad under `integration.sources`, kön och dead letter-kön i driftkonfigurationen och, om den
+  publicerar objekt med parter, partsroller via REST. Kön ska finnas innan raden driftsätts. Annars försöker lyssnaren
+  igen tills kön finns, och `DeadLetterHealthIndicator` larmar under tiden.
+- Vid första driftsättningen i varje miljö sätts partsrollerna för `SUPPORT_MANAGEMENT`, `PARTY_ASSETS`, `CONTRACT` och
+  `CASE_DATA` med `PUT /{municipalityId}/party-roles/{source}` ([beslut 33]), **innan** lyssnarna slås på.
+  `CONTACT_SETTINGS` behöver inga partsroller ([§5.6]). Ett meddelande som tillämpas utan roller ger ingen kund, och
+  varje part loggas på WARN.
+- I SupportManagement är rollerna metadata per namespace, och `CONTACT_PERSON` finns inte i SM:s testdata. Vilka roller
+  som är kundroller och kontaktroller i SM, och vilka som ska ignoreras, tas fram ur produktionens metadata tillsammans
+  med verksamheterna innan rollerna sätts ([§13.2]).
 - dept44:s PII-maskning är påslagen med alla kategorier, även `uuid`. Den maskar personnummer, telefonnummer, e-post och
   UUID:n i loggradernas meddelanden, payload-loggen inräknad, men inte i stacktraces. Därför får inga undantag ha
   personuppgifter i sina meddelanden ([§7.1]). Meddelande-id och request-id är också UUID:n och maskeras i
@@ -146,10 +148,11 @@ resilience4j:
 
 [§9]: 09-kodstruktur.md
 [§13.2]: 13-risker-och-oppna-fragor.md#132-förutsättningar-före-driftsättning
-[beslut 33]: 00-beslutslogg.md#beslut-33-kontaktpersonsrollerna-sätts-via-rest-vid-driftsättning
+[beslut 33]: 00-beslutslogg.md#beslut-33-partsrollerna-sätts-via-rest-vid-driftsättning
 [beslut 45]: 00-beslutslogg.md#beslut-45-rabbitmq-ingår-inte-i-readiness
 [§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 [§3.2]: 03-meddelanden.md#32-topologi
 [§12.1]: #121-larm-för-dead-letter-köer
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
+[§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 

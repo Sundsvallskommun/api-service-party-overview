@@ -3,7 +3,7 @@
 Del av [arkitekturen för party-overview](README.md).
 
 Varje uppgift går att slå ihop för sig. Acceptanskriterierna kan klistras in i en Jira-subtask. **C** är
-party-overview, **T** är infrastrukturen (RabbitMQ och OpenSearch) och **SM**, **PA**, **CT** och **CD** är
+party-overview, **T** är infrastrukturen (RabbitMQ och OpenSearch) och **SM**, **PA**, **CT**, **CD** och **CS** är
 publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Ändringskön för företag och personer
 (**F2**) ägs av sin förvaltare, och det som återstår att ta reda på står i [§13.1].
 
@@ -20,7 +20,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 1    | C1  | Projektgrund                                         | —                                  |
 | 2    | C2  | Datamodell, Flyway och schemaverifiering             | C1                                 |
 | 3    | C3  | Integrationer mot Citizen och LegalEntity            | C1, C2, behörighet i Metakatalogen |
-| 4    | C4  | Kontaktpersonsroller via REST                        | C2                                 |
+| 4    | C4  | Partsroller via REST                                 | C2                                 |
 | 5    | C5  | Meddelandekärnan                                     | C2, C3, C4, F1                     |
 | 6    | C6  | Kundmeddelanden (`CUSTOMER`)                         | C5                                 |
 | 7    | C7  | Läs-API för kund, kontakter, engagemang och historik | C2, C3                             |
@@ -45,6 +45,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2                |
 | 27   | C15 | Skyddskontroll från ändringskön                      | C10, C14, F2                       |
 | 28   | C16 | Kontaktpersoner via REST                             | C7, C8, C9, C10, C13               |
+| 29   | CS1 | ContactSettings: outbox, relay och publicering       | F1                                 |
+| 30   | CS2 | ContactSettings: grundladdning                       | CS1                                |
+| 31   | C17 | Kontaktinställningar från ContactSettings            | C5, C6, C7, C9, C11, C12           |
 
 ## C1 — Projektgrund
 
@@ -94,11 +97,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `SchemaVerificationTest` och `SchemaParityIT` är gröna. Om ett index tas bort i bara den ena källan blir
   `SchemaParityIT` röd. Det provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `customer_address`, `engagement`,
-  `engagement_history`, `contact`, `contact_channel`, `manual_contact_person`, `manual_contact_person_channel`,
-  `note`, `note_history`, `asserted_protection`, `enterprise_profile`, `enterprise_workplace`,
-  `enterprise_workplace_address`, `enterprise_workplace_sni_code` och `enterprise_proceeding` för kunden. Raderna i
-  `technical_log`, `source_object`, `search_index_queue` och `registry_person` finns kvar, och likaså kundens
-  kontaktrader hos andra kunder (`party_id`).
+  `engagement_history`, `contact`, `contact_channel`, `manual_contact_person`, `manual_contact_person_channel`, `note`,
+  `note_history`, `asserted_protection`, `enterprise_profile`, `enterprise_workplace`, `enterprise_workplace_address`,
+  `enterprise_workplace_sni_code` och `enterprise_proceeding` för kunden. Raderna i `technical_log`, `source_object`,
+  `search_index_queue`, `registry_person` och `contact_setting` finns kvar, och likaså kundens kontaktrader hos andra
+  kunder (`party_id`).
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
@@ -119,8 +122,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `LegalEntityClient`/`LegalEntityIntegration` med:
   - `getPartyId` (`GET /{municipalityId}/{organizationNumber}/guid`) för organisationsnummer → partyId ([§7.1])
   - `getLegalEntity` (`GET /{municipalityId}/{legalEntityId}`), som returnerar namn, postadress, besöksadress och
-    organisationsnummer, och företagsprofilen med arbetsställen och förfaranden, mappad av `EnterpriseProfileMapper`
-    ([§5.5], [§7.2])
+    organisationsnummer, och företagsprofilen med arbetsställen, förfaranden och funktionärer, mappad av
+    `EnterpriseProfileMapper` ([§5.5], [§7.2]). Vilka fält i `officers` som ger namn, funktion och nummer verifieras
+    mot LegalEntitys specifikation och dokumenteras i [§5.5].
 - `CompanySniCodes`, en ren funktion som räknar fram företagets SNI-koder ur arbetsställenas sparade rader ([§5.5]).
   C7 och C12 använder den.
 - Partytypen för ett partyId avgörs med `getCitizen` och `getLegalEntity` ([§7.2]). En enskild firma känns igen på att
@@ -185,24 +189,27 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `CompanySniCodes` ger 70100, 72190, 86212 och 91012, i den ordningen, för arbetsställena i SCA-stubben. Enhetstester
   täcker ett företag utan huvudarbetsställe, ett med två, och ett arbetsställe utan storleksklass eller med en som inte
   är ett tal, som räknas som minst.
-- `officers` och `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar
-  loggas. Profilen har inget organisationsnummer.
+- `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar loggas. `officers`
+  mappas med namn, funktion och nummer, och numret finns bara i minnet, aldrig i en entitet eller loggrad ([§5.5]).
+  Profilen har inget organisationsnummer.
 - Tolkningen av `classified` och `protectedNR` ([beslut 41]) verifieras i testmiljön mot en sekretessmarkerad testperson
   och en testperson med skyddad folkbokföring. Resultatet dokumenteras i README.
 - 401 från Citizen ger en `ClientProblem` vars detail säger att behörigheten i Metakatalogen saknas.
 - Ingenting ur Citizens svar loggas.
 
-## C4 — Kontaktpersonsroller via REST
+## C4 — Partsroller via REST
 
 **Bygg:**
 
-- `ContactPersonRoleResource`, `ContactPersonRoleService` och repository, enligt [§6].
+- `PartyRoleResource`, `PartyRoleService` och repository för `party_role`, enligt [§4.3] och [§6.1].
 
 **Acceptans:**
 
 - `PUT` ersätter källans roller som en helhet. En tom lista tar bort alla.
 - Ett `PUT` som faller på deadlock görs om med `DeadlockRetry` från C2.
 - En källa som saknas i `integration.sources` ger 400. En tom eller blank roll ger 400.
+- Varje roll har `classification` `CUSTOMER`, `CONTACT_PERSON` eller `IGNORED`. Ett annat värde, ett saknat värde och
+  samma roll två gånger i listan ger 400. `GET` returnerar rollerna med sin klassning per källa.
 - `created_by` sätts från `X-Sent-By`, och ett anrop utan den headern ger 400.
 - Resource-test, failure-test och IT (happy case).
 
@@ -227,8 +234,17 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `ENGAGEMENT_UPDATED`.
 - En part som försvinner ur objektet ger `ENGAGEMENT_REMOVED`. Var det kundens sista engagemang och har kunden inga
   noteringar ger det dessutom `CUSTOMER_DELETED`. En kund med en notering finns kvar.
-- En kontaktpersonsroll ger en `CONTACT_PERSON`-kontakt på varje `ENTERPRISE`-kund och aldrig en egen kund. Ett objekt
-  utan företagskund ger ingen kontakt.
+- Parterna klassas enligt tabellen i [§5.3], tabelldrivet med ett fall per rad:
+  - En part med en kundroll och partyId blir kund, också när den har en kontaktroll.
+  - En part med en kontaktroll ger en `CONTACT_PERSON`-rad på objektets engagemang hos varje kund, både privatkunder
+    och företag, och aldrig en egen kund. Ett objekt utan kund ger ingen kontaktrad.
+  - En part med bara `IGNORED`-roller ignoreras utan WARN. En part med en roll som saknas i `party_role`, eller utan
+    roller, ignoreras och ger en WARN med källan och rollkoden, utan partyId.
+  - En kund som redan har ett engagemang i objektet, och nu bara har roller som saknas i `party_role`, behåller
+    engagemanget och dess historik oförändrade. Med rollen klassad som `IGNORED` tas engagemanget bort.
+  - Samma partyId två gånger, med en kundroll och en kontaktroll, ger en kund och ingen kontaktrad för personen.
+  - En kontaktperson vars legalId inte går att mappa hoppas över.
+  - I ett `CUSTOMER`-meddelande blir parten kund oavsett roller.
 - En kontaktperson får partens första postadress, annars den första besöksadressen och annars den första
   fakturaadressen ([§5.3]). En part utan adress ger en kontaktrad utan adress, och kundens egen kontaktrad
   (`contact_type = CUSTOMER`) har aldrig någon adress.
@@ -245,10 +261,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   startade senast. Det äldre svaret ändrar varken nivå eller Citizens värden i `registry_person` ([§5.4]).
 - Ingen kontaktrad uppdateras när en kunds eller en persons nivå ändras. Kontaktraderna ersätts bara som helhet av
   meddelandena ([§5.3]).
-- En automatisk radering av kunden raderar partens kontaktrader från källorna hos andra kunder i kommunen, men inte
-  partens kontaktpersoner från REST. Varje kund som förlorar rader loggas som `CONTACT_REMOVED` och markeras för
-  omindexering ([§3.6]). När objektet sedan ändras i källan och fortfarande anger personen som kontaktperson kommer
-  raden tillbaka.
+- En automatisk radering av kunden raderar partens kontaktrader från källornas objekt hos andra kunder i kommunen, men
+  inte partens kontaktpersoner från REST eller rader som funktionär. Varje kund som förlorar rader loggas som
+  `CONTACT_REMOVED` och markeras för omindexering ([§3.6]). När objektet sedan ändras i källan och fortfarande anger
+  personen som kontaktperson kommer raden tillbaka.
 - En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer, med 10 eller 12 siffror, får ägarens partyId
   som `registry_party_id` och ägarens skydd från Citizen. Firman och ägaren blir två olika kunder. Ett vanligt
   organisationsnummer ger `registry_party_id = null` ([§5.4]).
@@ -257,6 +273,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - En ny företagskund får sin profil från LegalEntity, också när organisationsnumret finns i meddelandet. Svarar
   LegalEntity inte skapas kunden utan profil, och organisationsnumret från meddelandet avgör ändå om det är en enskild
   firma. En skyddad företagskund får sin profil, och en kund som blir skyddad behåller sin ([§5.5]).
+- Profilens funktionärer blir kontaktpersoner på företaget, med `source = LEGAL_ENTITY`, namn, funktion och partyId,
+  och syns i kundens `contactPersons[]` ([§5.5]). Ett personnummer slås upp via Citizen och ett organisationsnummer via
+  LegalEntity, och inget nummer finns i någon tabell eller loggrad. Ett nummer som inte finns ger en kontaktperson med
+  `UNVERIFIED`. En ändrad funktionär ger ny `content_hash`, och funktionärerna ersätts med profilen.
+- Svarar Citizen eller LegalEntity inte, eller med 5xx, när funktionärernas nummer slås upp för en ny företagskund
+  skapas kunden utan profil, och meddelandet tillämpas utan omförsök ([§3.7]).
 - En profil vars `fetched` är äldre än den sparade skriver inte över den. Det testas med två hämtningar som skrivs i
   omvänd ordning.
 - En profil med 2 000 arbetsställen, vart och ett med två adresser och tre SNI-koder, skrivs och läses tillbaka
@@ -341,12 +363,17 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Acceptans:**
 
-- Ingen sökväg har namespace ([§6]). Utan filter visas kundens alla kontakter. Med `namespace=A` visas A:s och de
-  globala, men aldrig B:s, och med `namespace=A&namespace=B` visas A:s, B:s och de globala. Ett ogiltigt namespace
-  i filtret ger 400. Dubbletter slås ihop, men två kontaktpersoner som bara skiljer sig i adress eller namespace visas
-  båda. En ihopslagen kontaktperson får den högsta nivån bland raderna, med den radens värden från Citizen.
-- Kunden returneras med alla sina adresser, i ordningen i [§5.2], och varje kontaktperson med sin adress, sin
-  `protectionLevel` och Citizens värden ([§5.3]).
+- Ingen sökväg har namespace ([§6]). Utan filter visas kundens alla egna kontaktuppgifter. Med `namespace=A` visas A:s
+  och de globala, men aldrig B:s, och med `namespace=A&namespace=B` visas A:s, B:s och de globala. Ett ogiltigt
+  namespace i filtret ger 400.
+- Kunden returneras med alla sina adresser, i ordningen i [§5.2]. Kundens `contactChannels[]` innehåller uppgifterna
+  från `CUSTOMER`-meddelanden och inga från engagemangen, och en kanal med samma typ och värde visas en gång, också
+  `070-123 45 67` och `0701234567`. Kundens `contactPersons[]` innehåller funktionärerna och aldrig kontaktpersoner
+  från engagemangen ([§5.3]).
+- Varje engagemang returneras med kundens kontaktuppgifter och kontaktpersonerna i sitt objekt, både hos en privatkund
+  och hos ett företag. Varje kontaktperson har sin adress, sin `protectionLevel` och Citizens värden ([§5.3]).
+  Uppgifterna i ett engagemang syns varken på kunden eller på kundens andra engagemang. Kontaktuppgifterna för en sida
+  engagemang läses med en fråga.
 - En kontaktpersons nivå räknas fram enligt [§5.3], tabelldrivet med ett fall per gren: kontaktpersonen är kund i
   kommunen, är kund bara i en annan kommun, har en rad i `registry_person`, har bara `fallback_protection`, och har
   `party_protection` som är högre respektive lägre än övriga. En enskild firma som är kontaktperson och vars ägare är
@@ -376,8 +403,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Ett engagemang som tillhör en annan kund ger 404.
 - Ett sorteringsfält som inte är tillåtet ger 400, och sidorna är stabila när sorteringsnyckeln är lika ([§6.1]).
 - Testerna för profilen och arbetsställena lägger in sina rader direkt i databasen, med värdena från SCA-stubben i C3.
-- Frågorna använder indexen i [§4.3]. Det verifieras med `EXPLAIN` i ett repository-test för engagemangslistan och
-  kontaktfrågan.
+- Frågorna använder indexen i [§4.3]. Det verifieras med `EXPLAIN` i ett repository-test för engagemangslistan, kundens
+  kontaktfråga och engagemangens kontaktfråga. Kundens kontaktfråga läser bara rader utan `engagement_id`, också för en
+  kund med tusentals engagemang, vilket syns i `rows`.
 
 ## C8 — Noteringar
 
@@ -508,7 +536,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `registry_party_id` och ägarens nivå. Ett annat företag får `registry_protection = null` och sin profil från samma
   svar, och tas inte med igen.
 - En företagskund utan profil tas med och får sin profil, loggad som `PROFILE_UPDATED`, också när den är skyddad
-  ([§5.5]).
+  ([§5.5]). Svarar Citizen inte när funktionärernas nummer slås upp får kunden ingen profil, och den tas med nästa natt.
 - Svarar LegalEntity 404 får kunden `legal_entity_not_found`. Ett företag med `UNKNOWN` utan `registry_party_id`, och
   ett företag utan profil, tas då inte med förrän `protection.legal-entity-retry` har gått. Testet har en kund vars
   `legal_entity_not_found` ligger inom intervallet och en vars värde ligger utanför. En enskild firma med
@@ -589,7 +617,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Sökningen träffar på:
 
   - namn och var och en av kundens adresser
-  - kontaktuppgifter och kontaktpersoner, med kontaktpersonens adress
+  - kontaktuppgifter och kontaktpersoner, med kontaktpersonens adress, också en kontaktperson i en privatkunds ärende
   - engagemangens referens, titel och kategori
   - noteringar
   - företagets bransch och verksamhetsbeskrivning, t.ex. "skogsbruk" för SCA Forest Products
@@ -667,11 +695,12 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `MessageListener` med en direct-container per kö i `integration.sources` ([beslut 68]), registrerade med
   `RabbitListenerConfigurer`, och källan från `CONSUMER_QUEUE` ([§9]).
 - `DeadLetterHealthIndicator` enligt [§12.1].
-- `MessageIT` enligt [§10], utom fallet med ändringskön, som C14 lägger till.
+- `MessageIT` enligt [§10], utom fallen med ändringskön och ContactSettings, som C14 och C17 lägger till.
 
 **Acceptans:**
 
-- Ett meddelande per väg (alla objekttyper och operationer) går hela vägen från kön till databasen.
+- Ett meddelande per väg (alla objekttyper och operationer utom `CONTACT_SETTING`, som C17 bygger) går hela vägen från
+  kön till databasen.
 - Ett meddelande som ligger i omförsök på en kö hindrar inte att ett meddelande på en annan kö tillämpas.
 - Ett ogiltigt meddelande hamnar i sin dead letter-kö, och likaså ett meddelande utan `message-id` ([§3.1]).
 - Varje meddelande får starterns loggrad och request-id, även med containrar som registreras via
@@ -684,7 +713,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `DeadLetterHealthIndicator` är `DOWN` med köns namn. När kön skapas börjar lyssnaren konsumera utan omstart. Samma
   sak gäller när AMQP-användaren saknas ([§12]).
 - Med `dept44.rabbitmq.enabled=false` finns ingen `DeadLetterHealthIndicator`, och tjänsten startar.
-- README beskriver hur dead letters hanteras, och att kontaktpersonsrollerna sätts innan lyssnarna slås på ([§12]).
+- README beskriver hur dead letters hanteras, och att partsrollerna sätts innan lyssnarna slås på ([§12]).
 
 ## SM1 — SupportManagement: outbox, relay och publicering
 
@@ -790,6 +819,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Acceptans:**
 
 - `objectId` är assetens `id`, och `reference` är `assetId` ([§11.3]).
+- Ägaren skickas som enda part, med rollen `OWNER` ([§11.3]).
 - En asset med status `DRAFT` publiceras som `DELETE`, och när den aktiveras som `UPDATE` med högre version
   ([beslut 67]).
 - Alla ändringspunkter i [§11.3] ger en outbox-rad, även PR3-importen och originalet som blir `REPLACED`.
@@ -917,6 +947,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   senaste anropet till LegalEntity.
 - 404 från LegalEntity lämnar profilen orörd, skriver `PROFILE_NOT_FOUND` i den tekniska loggen och loggar WARN utan
   id ([§8.1]).
+- Profilen får företagets funktionärer som kontaktpersoner ([§5.5]). Svarar Citizen inte när deras nummer slås upp
+  görs meddelandet om, och profilen lämnas orörd.
 - När LegalEntity inte svarar, svarar 429 eller 408, eller har öppen circuit breaker, är det ett avbrott: meddelandet
   läggs tillbaka i kön och hamnar efter `delivery-limit` i dead letter-kön. 429 och 408 görs om till ett avbrott, som
   när partyId slås upp. 5xx görs om i lyssnaren och dead-letteras sedan direkt ([§3.7]).
@@ -966,8 +998,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Acceptans:**
 
 - En kontaktperson med namespace A finns i kundens `contactPersons[]` utan filter och med `namespace=A`, men inte med
-  `namespace=B` och inte i en annan kommun. En kontaktperson utan namespace finns med i alla fall. Ingen av dem slås
-  ihop med en kontaktperson från en källa.
+  `namespace=B` och inte i en annan kommun. En kontaktperson utan namespace finns med i alla fall. Kundens
+  `contactPersons[]` innehåller kontaktpersonerna från REST och ett företags funktionärer, och ingen kontaktperson från
+  REST syns på kundens engagemang.
 - Listan utan filter ger kundens alla kontaktpersoner från REST. Med `namespace=A&namespace=B` ger den A:s, B:s och de
   globala, men inte C:s. Ett ogiltigt namespace i filtret ger 400, och en okänd kund ger 404. Varje kontaktperson har
   sitt `namespace`, eller inget för en global.
@@ -1005,6 +1038,69 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   ([§3.6]).
 - Varje skrivning av en kontaktperson låser kunden först och körs med READ COMMITTED ([§3.6]). En skrivning som faller
   på deadlock görs om med `DeadlockRetry` från C2.
+
+## CS1 — ContactSettings: outbox, relay och publicering
+
+**Bygg:** enligt [§11.1] och [§11.6].
+
+**Acceptans:**
+
+- Migreringen lägger till `version` additivt, befintliga rader får 0, och `@Version` ökar vid varje ändring.
+- `create`, `update` och `delete` i `ContactSettingsService` ger en outbox-rad i samma transaktion. En virtuell
+  inställning, utan partyId, och en ändring av ombud ger ingen.
+- Meddelandet har `objectType` `CONTACT_SETTING`, inställningens `id` som `objectId`, `partyId` som enda part utan
+  partytyp och roller, och inga aktiviteter ([§11.6]).
+- `EMAIL` skickas som `EMAIL` och `SMS` som `PHONE`, med `destination` som värde. En kanal med `disabled = true`
+  skickas inte, och `alias` skickas inte.
+- En radering publiceras som `DELETE` med versionen från outbox-raden.
+- Outbox-tabellen har kolumnerna och indexet i [§11.1].
+- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]).
+- En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
+- ContactSettings exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
+- En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
+  nästa körning.
+
+## CS2 — ContactSettings: grundladdning
+
+**Bygg:**
+
+- En admin-endpoint som startar ett asynkront jobb med ShedLock och skriver outbox-rader ([§11.6]).
+
+**Acceptans:**
+
+- Endpointen returnerar utan att vänta på brokern, och två samtidiga starter ger en körning.
+- Alla inställningar med partyId i kommunen publiceras utan aktiviteter, och inga virtuella inställningar.
+
+## C17 — Kontaktinställningar från ContactSettings
+
+**Bygg:**
+
+- Tillämpningen av `CONTACT_SETTING` i `MessageWriter`, entiteterna och frågorna för `contact_setting` och
+  `contact_setting_channel`, och källan `CONTACT_SETTINGS` i `integration.sources` ([§4.3], [§5.6], [§12]). Tabellerna
+  finns redan från C2.
+- Kanalerna i kundens `contactChannels[]` och i sökindexet ([§6.1], [§6.2]).
+
+**Acceptans:**
+
+- En inställning med partyId sparas i `contact_setting`, också när personen inte är kund, och skapar ingen kund.
+- När personen är kund i kommunen visas inställningens kanaler i kundens `contactChannels[]`, med och utan
+  namespace-filter. En kanal som också finns i ett `CUSTOMER`-meddelande visas en gång. Kanalerna hamnar i
+  `contacts_global` och `phones_global`, och kunden markeras för omindexering.
+- En person som blir kund efter att inställningen sparades får dess kanaler direkt, utan nytt meddelande.
+- `UPDATE` ersätter kanalerna. `DELETE` tar bort raden med inställningens id, och ett `DELETE` för ett annat id än
+  radens lämnar raden orörd. Ett `UPDATE` med ett nytt id för samma partyId ersätter den gamla raden när dess
+  `sourceModified` är nyare, men inte när den är äldre. Ett äldre `UPDATE` för samma id efter ett nyare ändrar
+  ingenting ([§3.4]).
+- Finns kunden loggas `CONTACT_SETTING_UPDATED` eller `CONTACT_SETTING_DELETED` med kanalen `MESSAGE` och källan
+  `CONTACT_SETTINGS`. Finns den inte skrivs ingen loggrad.
+- Samtidighetstest: en kund skapas medan en inställning för samma partyId tillämpas. Efter relayn innehåller kundens
+  sökdokument inställningens kanaler.
+- Meddelandet klassas inte med partsrollerna, ger ingen WARN och anropar varken Citizen eller LegalEntity.
+- En kund som bara har en kontaktinställning och förlorar sitt sista engagemang raderas automatiskt, och raden i
+  `contact_setting` står kvar.
+- `DELETE` på kund och `CUSTOMER DELETE` raderar personens rad i `contact_setting`. `DELETE` på kund ger 204 när
+  personen bara har en kontaktinställning.
+- `MessageIT` ([§10]) får fallen `CONTACT_SETTING UPDATE` och `DELETE`.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
@@ -1051,4 +1147,6 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 [beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
 [beslut 69]: 00-beslutslogg.md#beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
+[§11.6]: 11-publicerare.md#116-contactsettings-contact_setting
+[§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 

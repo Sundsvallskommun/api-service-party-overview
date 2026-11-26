@@ -22,6 +22,7 @@ erDiagram
     engagement ||--o{ contact : "härleds från"
     contact ||--o{ contact_channel : "har"
     note ||--o{ note_history : "har"
+    contact_setting ||--o{ contact_setting_channel : "har"
     source_object {
         string municipality_id
         string object_type
@@ -32,7 +33,7 @@ erDiagram
         string municipality_id
         string party_id
     }
-    contact_person_role {
+    party_role {
         string municipality_id
         string source
         string role
@@ -41,21 +42,26 @@ erDiagram
         string party_id
         string protection
     }
+    contact_setting {
+        string municipality_id
+        string party_id
+        string setting_id
+    }
 ```
 
-`source_object`, `technical_log`, `contact_person_role`, `registry_person`, `search_index_queue` och `shedlock` står
-fristående, utan FK.
+`source_object`, `technical_log`, `party_role`, `registry_person`, `contact_setting`, `search_index_queue` och
+`shedlock` står fristående, utan FK.
 
 ## 4.2 Gemensamt för alla tabeller
 
-- `id varchar(36)`, UUID från `@UuidGenerator` ([beslut 63]). Undantagen är `contact_channel` och
-  `manual_contact_person_channel`, som har sammansatta primärnycklar, `search_index_queue` och `enterprise_profile`,
-  som nycklas på `customer_id`, och `shedlock`.
+- `id varchar(36)`, UUID från `@UuidGenerator` ([beslut 63]). Undantagen är `contact_channel`,
+  `manual_contact_person_channel` och `contact_setting_channel`, som har sammansatta primärnycklar,
+  `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, och `shedlock`.
 - `municipality_id varchar(8)` finns på `customer` och på de tabeller som läses utan att gå via en kund: `engagement`
-  (uppslag per källobjekt, [§3.5]), `source_object`, `technical_log`, `contact_person_role`, `registry_person` och
-  `search_index_queue`. Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn. `contact` och
-  `manual_contact_person` nås också på `party_id` när en persons kontaktrader raderas, och då avgörs kommunen via
-  `customer_id` ([§5.3]).
+  (uppslag per källobjekt, [§3.5]), `source_object`, `technical_log`, `party_role`, `registry_person`,
+  `contact_setting` och `search_index_queue`. Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn.
+  `contact` och `manual_contact_person` nås också på `party_id` när en persons kontaktrader raderas, och då avgörs
+  kommunen via `customer_id` ([§5.3]).
 - `namespace varchar(32)` finns på `engagement`, `contact`, `manual_contact_person` och `note` ([§5.1]).
 - En adress har samma kolumner i `customer_address`, `contact`, `manual_contact_person` och
   `enterprise_workplace_address`: `address_type varchar(32)`, `care_of`, `street`, `city` och `country varchar(255)`
@@ -268,21 +274,22 @@ Index: `idx_engagement_history_engagement_id_occurred_at`.
 |-----------------------|--------------|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `id`                  | varchar(36)  | nej  | PK                                                                                                                                                                                                                                                                 |
 | `customer_id`         | varchar(36)  | nej  | FK `fk_contact_customer_id`, cascade                                                                                                                                                                                                                               |
-| `engagement_id`       | varchar(36)  | ja   | FK `fk_contact_engagement_id`, cascade. null betyder att uppgiften kommer från ett `CUSTOMER`-meddelande.                                                                                                                                                          |
+| `engagement_id`       | varchar(36)  | ja   | FK `fk_contact_engagement_id`, cascade. null betyder att uppgiften kommer från ett `CUSTOMER`-meddelande eller är en funktionär från LegalEntity ([§5.5]).                                                                                                         |
 | `namespace`           | varchar(32)  | ja   | null betyder globalt                                                                                                                                                                                                                                               |
-| `source`              | varchar(64)  | nej  |                                                                                                                                                                                                                                                                    |
-| `contact_type`        | varchar(32)  | nej  | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON`                                                                                                                                                                                                         |
+| `source`              | varchar(64)  | nej  | Källan, eller `LEGAL_ENTITY` för en funktionär                                                                                                                                                                                                                     |
+| `contact_type`        | varchar(32)  | nej  | `CUSTOMER` (kundens egna uppgifter) eller `CONTACT_PERSON`. En kontaktperson med `engagement_id` hör till objektet och visas bara på engagemanget, och en utan är en funktionär från LegalEntity ([§5.3], [§5.5]).                                                 |
 | `party_id`            | varchar(36)  | ja   | Kontaktpersonens partyId, när det är känt. Med det hittas raderna när parten raderas, och kunden när parten är kund i kommunen ([§5.3]).                                                                                                                           |
 | `registry_party_id`   | varchar(36)  | ja   | Den person vars skydd hämtas från folkbokföringen: kontaktpersonen själv för en person, ägaren för en enskild firma. Raden i `registry_person` har samma partyId. null för andra företag, när det inte gick att avgöra och när `contact_type = CUSTOMER` ([§5.3]). |
 | `party_protection`    | varchar(32)  | ja   | Partens `protection` i meddelandet: `SECRECY_MARKING` eller `PROTECTED_REGISTRATION` ([§3.1])                                                                                                                                                                      |
 | `fallback_protection` | varchar(32)  | ja   | Nivån för en kontaktperson utan `registry_party_id`: `NONE` för ett företag som inte är en enskild firma, annars `UNVERIFIED`. null när `registry_party_id` finns och när `contact_type = CUSTOMER` ([§5.3]).                                                      |
 | `name`                | varchar(255) | ja   | Kontaktpersonens namn                                                                                                                                                                                                                                              |
-| `role`                | varchar(64)  | ja   | Kontaktpersonens roll                                                                                                                                                                                                                                              |
+| `role`                | varchar(64)  | ja   | Kontaktpersonens roll, eller funktionärens funktion                                                                                                                                                                                                                |
 | adressfälten          | [§4.2]       | ja   | Kontaktpersonens adress ([§5.3]). null när `contact_type = CUSTOMER`.                                                                                                                                                                                              |
 | `created`             | datetime(6)  | nej  | Raderna ersätts som helhet och uppdateras aldrig.                                                                                                                                                                                                                  |
 
-Index: `idx_contact_customer_id_namespace`, `idx_contact_engagement_id`, `idx_contact_party_id` och
-`idx_contact_registry_party_id`. Det sista används när den nattliga kontrollen rensar `registry_person` ([§5.4]).
+Index: `idx_contact_customer_id_engagement_id_namespace`, `idx_contact_engagement_id`, `idx_contact_party_id` och
+`idx_contact_registry_party_id`. Det första ger kundens egna rader, de utan `engagement_id`, utan att läsa raderna från
+engagemangen. Det sista används när den nattliga kontrollen rensar `registry_person` ([§5.4]).
 
 Kontaktpersonens skyddsnivå lagras inte på raden. Den räknas fram när raden läses ([§5.3]).
 
@@ -334,6 +341,25 @@ eftersom statusen gäller personen i alla kommuner. Raden skapas med IODKU.
 | `created`, `modified` | datetime(6) | nej/ja |                                                                                                                                                         |
 
 Index: `uq_registry_person_party_id`.
+
+**`contact_setting`**: kontaktinställningar från ContactSettings, en rad per kommun och partyId ([§5.6], [beslut 71]).
+Tabellen har ingen FK, eftersom raden finns också när personen inte är kund.
+
+|        Kolumn         |     Typ     |  Null  |                                             Anmärkning                                              |
+|-----------------------|-------------|--------|-----------------------------------------------------------------------------------------------------|
+| `id`                  | varchar(36) | nej    | PK                                                                                                  |
+| `municipality_id`     | varchar(8)  | nej    |                                                                                                     |
+| `party_id`            | varchar(36) | nej    | Personens eller företagets partyId                                                                  |
+| `setting_id`          | varchar(36) | nej    | Inställningens id i ContactSettings, samma som `object_id` i `source_object`                        |
+| `source_modified`     | datetime(6) | nej    | Meddelandets `sourceModified`. Avgör om en inställning med ett annat id får ersätta raden ([§5.6]). |
+| `created`, `modified` | datetime(6) | nej/ja |                                                                                                     |
+
+Index: `uq_contact_setting_municipality_id_party_id`, som också används när kunden läses och indexeras, och
+`uq_contact_setting_setting_id`.
+
+**`contact_setting_channel`**: inställningens kanaler, modellerade som `contact_channel`, med primärnyckeln
+`(contact_setting_id, type, value)` och FK `fk_contact_setting_channel_contact_setting_id`, cascade. `type` är `EMAIL`
+eller `PHONE`.
 
 **`note`**
 
@@ -402,17 +428,19 @@ ett objekt, t.ex. en kunds rader för `CUSTOMER`, med nyckelns början.
 Index: `idx_technical_log_municipality_id_party_id_created` och `idx_technical_log_created`, som används vid gallring
 och manuell radering på datum ([§8.2]).
 
-**`contact_person_role`**: konfiguration ([beslut 15]).
+**`party_role`**: konfiguration av partsrollerna, som avgör vem i ett meddelande som blir kund och vem som blir
+kontaktperson ([§5.3], [beslut 15]).
 
-|         Kolumn          |            Typ            | Null |
-|-------------------------|---------------------------|------|
-| `id`                    | varchar(36)               | nej  |
-| `municipality_id`       | varchar(8)                | nej  |
-| `source`                | varchar(64)               | nej  |
-| `role`                  | varchar(64)               | nej  |
-| `created`, `created_by` | datetime(6), varchar(255) | nej  |
+|         Kolumn          |            Typ            | Null |                  Anmärkning                  |
+|-------------------------|---------------------------|------|----------------------------------------------|
+| `id`                    | varchar(36)               | nej  |                                              |
+| `municipality_id`       | varchar(8)                | nej  |                                              |
+| `source`                | varchar(64)               | nej  |                                              |
+| `role`                  | varchar(64)               | nej  | Källans rollkod                              |
+| `classification`        | varchar(32)               | nej  | `CUSTOMER`, `CONTACT_PERSON` eller `IGNORED` |
+| `created`, `created_by` | datetime(6), varchar(255) | nej  |                                              |
 
-Index: `uq_contact_person_role_municipality_id_source_role`.
+Index: `uq_party_role_municipality_id_source_role`.
 
 **`search_index_queue`**: kunder som ska indexeras om eller tas bort ur sökindexet ([§6.2]). Tabellen har ingen FK, så
 att en raderad kund finns kvar i kön tills den har tagits bort ur indexet.
@@ -457,7 +485,7 @@ rader med var sin fråga, med likhet på `priority`, så att indexet ger `queued
 [beslut 8]: 00-beslutslogg.md#beslut-8-en-engagemangsrad-per-kund
 [beslut 11]: 00-beslutslogg.md#beslut-11-den-tekniska-loggen-har-ingen-fk-till-kunden
 [beslut 12]: 00-beslutslogg.md#beslut-12-versionsvakt-i-ett-register-per-källobjekt
-[beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
+[beslut 15]: 00-beslutslogg.md#beslut-15-partsrollerna-avgör-vem-som-är-kund-och-kontaktperson
 [beslut 18]: 00-beslutslogg.md#beslut-18-historiken-kommer-från-källans-aktiviteter
 [§3.6]: 03-meddelanden.md#36-kundradering
 [beslut 53]: 00-beslutslogg.md#beslut-53-skyddet-från-customer-meddelanden-lagras-per-källa
@@ -471,4 +499,6 @@ rader med var sin fråga, med likhet på `priority`, så att indexet ger `queued
 [beslut 63]: 00-beslutslogg.md#beslut-63-primärnycklar-är-slumpmässiga-uuid
 [beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
 [beslut 65]: 00-beslutslogg.md#beslut-65-verksamheter-lägger-till-egna-kontaktpersoner-via-rest
+[§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 

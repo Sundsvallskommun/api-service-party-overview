@@ -17,6 +17,7 @@ Ingen sökväg har namespace. Vid läsning är `namespace` ett valfritt filter s
 | Engagemang och deras historik                      | Alla i kommunen                          | De angivna namespacena och de som saknar namespace |
 | Kontaktuppgifter och kontaktpersoner från källorna | Alla                                     | De angivna namespacena och de globala              |
 | Kontaktpersoner som lagts till via REST ([§5.3])   | Alla                                     | De angivna namespacena och de globala              |
+| Kontaktinställningar från ContactSettings ([§5.6]) | Alla                                     | Samma som utan filter                              |
 | Noteringar och deras historik                      | Alla                                     | De angivna namespacena och de globala              |
 | Teknisk logg                                       | Allt. Filtret finns inte.                | —                                                  |
 
@@ -24,8 +25,9 @@ När en notering eller en kontaktperson skapas är namespace ett valfritt fält 
 efteråt. Namespace är ett filter och ingen behörighet. Vem som får läsa och ändra styrs av åtkomsten till API:t
 ([§13.3]).
 
-Frågan för kontakter med filtret, `customer_id = ? and (namespace in (…) or namespace is null)`, går via
-`idx_contact_customer_id_namespace`.
+Frågan för kundens egna kontakter med filtret, `customer_id = ? and engagement_id is null and (namespace in (…) or
+namespace is null)`, går via `idx_contact_customer_id_engagement_id_namespace`. Engagemangens kontakter läses via
+`idx_contact_engagement_id`.
 
 ## 5.2 Namn och adress
 
@@ -53,19 +55,28 @@ En kund kan ha flera adresser, var och en med en typ ([beslut 57]):
 
 ## 5.3 Kunder, kontaktpersoner och kontaktuppgifter
 
-Varje part i ett meddelande sorteras så här:
+Varje part i ett meddelande klassas efter sina roller, med partsrollerna i `party_role` för (kommun, källa)
+([beslut 15]). Parter med samma partyId slås först ihop, efter mappningen av legalId, och klassas på sina sammanlagda
+roller. En part vars legalId inte går att mappa hoppas över, också när den har en kontaktroll ([§3.7]). Den första
+raden som stämmer gäller:
 
-|               Parten har                | Har en roll i `contact_person_role` för (kommun, källa) |                                                              Resultat                                                              |
-|-----------------------------------------|---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| partyId eller legalId som går att mappa | nej                                                     | **Kund**, med engagemang                                                                                                           |
-| vad som helst                           | ja                                                      | **Kontaktperson** på objektets alla `ENTERPRISE`-kunder. Blir aldrig själv kund. Har objektet ingen företagskund ignoreras parten. |
-| varken partyId eller legalId            | nej                                                     | Ignoreras                                                                                                                          |
+|                                                Partens roller                                                 |                                                                                             Resultat                                                                                             |
+|---------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Minst en roll är `CUSTOMER`, och parten har partyId eller ett legalId som går att mappa                       | **Kund**, med engagemang, också när parten har en kontaktroll                                                                                                                                    |
+| Ingen roll är `CUSTOMER`, minst en roll saknas i `party_role`, och parten har redan ett engagemang i objektet | Engagemanget står kvar oförändrat, med sin historik, tills rollen har klassats. WARN loggas.                                                                                                     |
+| Minst en roll är `CONTACT_PERSON`                                                                             | **Kontaktperson** i objektet, på objektets engagemang hos varje kund, både privatkunder och företag. Blir aldrig själv kund och syns aldrig på kunden. Har objektet ingen kund ignoreras parten. |
+| Övrigt, också en part utan roller                                                                             | Ignoreras                                                                                                                                                                                        |
+
+En roll som inte finns i `party_role` loggas på WARN med källan och rollkoden, men utan partyId, och likaså en part
+utan roller. En roll som ska ignoreras konfigureras som `IGNORED` och ger ingen WARN. Bara en uttrycklig klassning,
+också `IGNORED`, tar bort ett befintligt engagemang. I `CUSTOMER`-meddelanden är parten alltid kunden, oavsett roller
+([§3.5]), och `CONTACT_SETTING`-meddelanden klassas inte alls ([§5.6]).
 
 För varje kunds engagemangsrad ersätts kontaktuppgifterna (`contact` med `engagement_id` = raden) med:
 
 - en rad med `contact_type = CUSTOMER` med kundpartens egna `contactChannels`, om den har några, och
-- om kunden är `ENTERPRISE`: en rad med `contact_type = CONTACT_PERSON` för varje kontaktperson, med namn, den roll som
-  matchade, kontaktkanaler, en adress och kontaktpersonens partyId när det är känt.
+- en rad med `contact_type = CONTACT_PERSON` för varje kontaktperson i objektet, med namn, den roll som matchade,
+  kontaktkanaler, en adress och kontaktpersonens partyId när det är känt.
 
 Alla rader får engagemangets namespace.
 
@@ -74,12 +85,18 @@ partens första adress av typen `POSTAL_ADDRESS`, annars den första av typen `V
 av typen `INVOICE_ADDRESS` ([beslut 57]). Raden med `contact_type = CUSTOMER` har ingen adress, eftersom kundens
 adresser ligger på kunden ([§5.2]).
 
-Vid läsning slås identiska kontakter från källorna ihop: samma typ, namn, roll, adress, namespace och samma
-uppsättning kanaler. Det som ändrats senast kommer först. En ihopslagen kontaktperson får den högsta skyddsnivån bland
-raderna, med den radens värden från Citizen. Kontaktpersoner som har lagts till via REST slås aldrig ihop med andra.
+Kontaktraderna från ett objekt visas bara på sitt engagemang: kundens egna kanaler i `Engagement.contactChannels[]` och
+kontaktpersonerna i `Engagement.contactPersons[]` ([§6.1]). De slås aldrig ihop till kunden, men de är sökbara på
+kunden ([beslut 22], [§6.2]). På kunden visas:
 
-En ändring av kontaktpersonsrollerna gäller från nästa meddelande om varje objekt. Befintliga rader räknas om vid nästa
-ändring i källan eller vid en grundladdning.
+- `contactChannels[]`: kontaktuppgifterna från `CUSTOMER`-meddelanden, alltså raderna med `contact_type = CUSTOMER` utan
+  `engagement_id` ([§3.5]), och kundens e-postadresser och telefonnummer i ContactSettings ([§5.6]). En kanal med samma
+  typ och värde visas en gång, och telefonnummer jämförs normaliserade som i [§6.2].
+- `contactPersons[]`: ett företags funktionärer från LegalEntity ([§5.5]) och kontaktpersonerna som har lagts till via
+  REST.
+
+En ändring av partsrollerna gäller från nästa meddelande om varje objekt. Befintliga engagemang och kontaktrader räknas
+om vid nästa ändring i källan eller vid en grundladdning.
 
 **Kontaktpersoners skyddsnivå** ([beslut 52]). En kontaktperson sparas oavsett skydd och har en egen skyddsnivå, med
 samma värden som kundens ([§5.4]). Nivån visar att uppgifterna inte får lämnas ut utan prövning.
@@ -105,17 +122,18 @@ samma värden som kundens ([§5.4]). Nivån visar att uppgifterna inte får läm
   - annars `fallback_protection`
 - `registry_person` hålls aktuell av meddelandeflödet, den nattliga kontrollen och ändringskön ([§5.4], [§5.5]). En ny
   nivå syns därför direkt på personens alla kontaktrader, i alla kommuner, utan att någon kontaktrad skrivs om.
-- Partens kontaktrader hos andra kunder i kommunen raderas när parten raderas, på vilket av sätten i [§3.6] som
-  helst. Partens kontaktpersoner från REST raderas bara när parten raderas med `CUSTOMER DELETE` eller via REST, inte
-  vid en automatisk radering. Raderna hittas på `party_id`, och varje berörd kund loggas som `CONTACT_REMOVED` och
-  markeras för omindexering ([§8.1]).
+- Partens kontaktrader från källornas objekt hos andra kunder i kommunen raderas när parten raderas, på vilket av sätten
+  i [§3.6] som helst. Partens kontaktpersoner från REST och rader som funktionär ([§5.5]) raderas bara när parten
+  raderas med `CUSTOMER DELETE` eller via REST, inte vid en automatisk radering. Raderna hittas på `party_id`, och varje
+  berörd kund loggas som `CONTACT_REMOVED` och markeras för omindexering ([§8.1]).
 
 **Kontaktpersoner som läggs till via REST** ([beslut 65]). De kan läggas till på privatkunder och företag ([§6.1]).
+Tillsammans med ett företags funktionärer ([§5.5]) är de kundens enda kontaktpersoner.
 
 - Kontaktpersonen sparas i `manual_contact_person`. Namespace är valfritt och anges i kroppen, och en kontaktperson
   utan namespace är global. Namespace går inte att ändra efteråt.
-- Kundens kontaktpersoner från REST hämtas med en egen endpoint, och i kundvyn tillsammans med kontaktpersonerna från
-  källorna. Båda följer filtret i [§5.1].
+- Kundens kontaktpersoner från REST hämtas med en egen endpoint och i kundens `contactPersons[]`. De följer filtret i
+  [§5.1].
 - Kontaktpersonen har namn, roll, kontaktkanaler och en adress. Den kan anges med partyId eller med legalId, och då med
   `partyType`. legalId mappas till partyId som i [§3.3] och sparas aldrig. `registry_party_id` och
   `fallback_protection` sätts som för en kontaktrad från ett meddelande, och skyddsnivån räknas fram på samma sätt.
@@ -267,8 +285,9 @@ inte är `NONE` betyder att uppgifterna inte får lämnas ut utan prövning, och
 1. Namn, adresser, kontaktuppgifter, kontaktpersoner och företagsprofil sparas och uppdateras som för en oskyddad
    kund. Ingenting töms eller raderas när ett skydd tillkommer eller upphör, bara nivån ändras.
 2. Kunden indexeras i OpenSearch med alla uppgifter. Sökträffen har kundens `protectionLevel`, `classified` och
-   `protectedNR`, och `hasProtectedContacts`, som visar om någon av kundens synliga kontaktpersoner har nivån
-   `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION`. `UNVERIFIED` räknas inte ([§6.2], [beslut 48]).
+   `protectedNR`, och `hasProtectedContacts`, som visar om någon synlig kontaktperson på kunden eller på kundens
+   engagemang har nivån `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION`. `UNVERIFIED` räknas inte ([§6.2],
+   [beslut 48]).
 3. API:et returnerar uppgifterna med `protectionLevel`, `classified` och `protectedNR`, på kunden och på varje
    kontaktperson ([§5.3]). Frontend ska visa skyddet tydligt i varje vy och lista som rör kunden eller kontaktpersonen,
    skilja nivåerna åt, också `UNKNOWN`, och se till att uppgifterna inte lämnas ut utan prövning.
@@ -339,6 +358,7 @@ företagsregister ([beslut 58]). Profilen syns för alla namespaces, som kundens
 | Verksamhetsbeskrivning                                                                                                                          | `businessDescription`                                                        | `business_description`                                                                  |
 | Registrerad e-post och telefon                                                                                                                  | `eMail`, `phoneNumber`                                                       | `email`, `phone_number`                                                                 |
 | Arbetsställen: CFAR-nummer, namn, om det är huvudarbetsstället, postadress och besöksadress, telefon, storleksklass för anställda och SNI-koder | `workplaces[]`                                                               | `enterprise_workplace`, `enterprise_workplace_address`, `enterprise_workplace_sni_code` |
+| Funktionärer, t.ex. styrelseledamöter, firmatecknare och revisorer: namn och funktion                                                           | `officers[]`                                                                 | kontaktpersoner i `contact` med `source = LEGAL_ENTITY` (se nedan)                      |
 
 Antalet anställda finns bara som storleksklass, t.ex. "200–499 anställda", eftersom SCB sekretesskyddar det exakta
 antalet.
@@ -360,10 +380,27 @@ utövas av huvudkontor".
 Arbetsställenas adresser mappas som företagets ([§7.2]). Arbetsställena läses sidvis med en egen endpoint, med
 huvudarbetsstället först ([§6.1]).
 
+**Funktionärer** ([beslut 70]). Varje funktionär i `officers` blir en kontaktperson på företagskunden, och de visas i
+kundens `contactPersons[]` ([§5.3]).
+
+- Raden i `contact` har `source = LEGAL_ENTITY`, `contact_type = CONTACT_PERSON`, inget `engagement_id` och inget
+  namespace. Den har funktionärens namn och funktion som roll.
+- Personnumret slås upp till partyId via Citizen, och ett organisationsnummer, t.ex. för ett revisionsbolag, via
+  LegalEntity ([§7.1]). Numret sparas aldrig. `registry_party_id`, `fallback_protection` och raden i `registry_person`
+  sätts som för andra kontaktpersoner, och skyddsnivån räknas fram på samma sätt.
+- Ett nummer som inte finns ger en kontaktperson utan partyId, med `UNVERIFIED`.
+- Svarar Citizen eller LegalEntity inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när numren slås
+  upp, skrivs ingen profil den gången. En ny företagskund skapas då utan profil, i meddelandeflödet utan omförsök och
+  via REST utan 503, och den nattliga kontrollen hämtar profilen ([§3.7]). Ett meddelande från ändringskön görs om, som
+  när LegalEntity inte svarar.
+- Funktionärerna ersätts som helhet när profilen skrivs. En funktionärs rad raderas bara när personen raderas med
+  `CUSTOMER DELETE` eller via REST, inte vid en automatisk radering, och kommer då tillbaka nästa gång profilen ändras
+  ([§3.6]).
+- Vilka fält i `officers` som ger namn, funktion och nummer verifieras i C3.
+
 **Det som inte sparas:**
 
-- `officers` och `fullSignatureDescription`, eftersom de innehåller namn och personnummer på styrelseledamöter,
-  firmatecknare och revisorer
+- `fullSignatureDescription`, som är fritext med namn och personnummer
 - aktiekapital, antal aktier, valuta och räkenskapsår
 - kommun och län i adresserna, utöver orten
 - `organizationNumber`, eftersom kunden identifieras med partyId:t ([§5.4])
@@ -386,9 +423,10 @@ har hunnit raderas hoppas över och skapas inte på nytt. `fetched` är tidpunkt
 och en profil skrivs bara om den är nyare än den sparade. Anropen görs utanför transaktionen, så två flöden kan skriva
 i omvänd ordning mot den de hämtade i. Då vinner den senaste hämtningen.
 
-`content_hash` är en SHA-256 av den mappade profilen med arbetsställen och förfaranden. Är den oförändrad flyttas bara
-`fetched` fram, utan loggrad och utan omindexering. Annars ersätts profilen som helhet, och en profil som skrivs av
-ändringskön eller den nattliga kontrollen loggas som `PROFILE_UPDATED` ([§8.1]).
+`content_hash` är en SHA-256 av den mappade profilen med arbetsställen, förfaranden och funktionärer, där funktionärerna
+har partyId i stället för nummer. Är den oförändrad flyttas bara `fetched` fram, utan loggrad och utan omindexering.
+Annars ersätts profilen som helhet, och en profil som skrivs av ändringskön eller den nattliga kontrollen loggas som
+`PROFILE_UPDATED` ([§8.1]).
 
 **Skyddad identitet.** En enskild firmas profil är uppgifter om ägaren. Den sparas också när kunden är skyddad, och
 kundens `protectionLevel` visar att den inte får lämnas ut utan prövning ([§5.4]).
@@ -434,6 +472,31 @@ den första träffen i id-ordning, eftersom svaret är detsamma för alla kommun
 När LegalEntity eller Citizen inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om. Till sist dead-letteras
 det och larmet går ([§12.1]). Den nattliga kontrollen finns kvar som skyddsnät.
 
+## 5.6 Kontaktinställningar
+
+ContactSettings håller kontaktinställningar per kommun och partyId: de e-postadresser och mobilnummer som en person
+eller ett företag vill bli kontaktad på. ContactSettings publicerar dem som `CONTACT_SETTING` ([§11.6], [beslut 71]).
+
+- party-overview sparar varje inställning i `contact_setting`, en rad per kommun och partyId, också när personen inte
+  är kund ([§4.3]). Tabellen har ingen FK till kunden.
+- När personen är kund i kommunen visas kanalerna i kundens `contactChannels[]`, tillsammans med uppgifterna från
+  `CUSTOMER`-meddelanden ([§5.3]). De har inget namespace och visas med och utan filter. De indexeras i
+  `contacts_global` och `phones_global` ([§6.2]). En person som blir kund senare får dem direkt, utan nytt meddelande.
+- Meddelandet klassas inte med partsrollerna, och det hoppar över uppslagen i steg 2–5 i [§3.3].
+- Raden nycklas på inställningens id, som också är objektets id i `source_object`, och versionen styrs som för andra
+  objekt ([§3.4]). Tombstonen innehåller därför inga personuppgifter.
+- Ett `UPDATE` ersätter kanalerna. ContactSettings har högst en inställning per kommun och partyId, men versionen gäller
+  bara samma id. En rad för samma partyId med ett annat id ersätts därför bara om meddelandets `sourceModified` är
+  nyare än radens `source_modified`.
+- Ett `DELETE` tar bort raden med inställningens id, så ett sent `DELETE` för en borttagen inställning rör inte en ny.
+- En inställning skapar ingen kund och håller ingen kund kvar vid en automatisk radering ([§3.6]).
+- Finns kunden låses den med `FOR UPDATE`, ändringen loggas som `CONTACT_SETTING_UPDATED` eller
+  `CONTACT_SETTING_DELETED`, och kunden markeras för omindexering ([§8.1]). Finns kunden inte skrivs ingen loggrad,
+  eftersom loggen förs per kund. Kunden läses då igen efter commit, och finns den markeras den för omindexering. En kund
+  som skapades samtidigt kan annars ha indexerats innan inställningen var committad.
+- När en person raderas med `CUSTOMER DELETE` eller via REST raderas också personens rad i `contact_setting`. Den
+  kommer tillbaka nästa gång inställningen ändras i ContactSettings. En automatisk radering av kunden lämnar raden.
+
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [§5.4]: #54-skyddad-identitet
 [§6]: 06-rest-api.md
@@ -466,4 +529,14 @@ det och larmet går ([§12.1]). Den nattliga kontrollen finns kvar som skyddsnä
 [beslut 65]: 00-beslutslogg.md#beslut-65-verksamheter-lägger-till-egna-kontaktpersoner-via-rest
 [§13.3]: 13-risker-och-oppna-fragor.md#133-risker
 [beslut 7]: 00-beslutslogg.md#beslut-7-synlighet-för-engagemang-kontaktuppgifter-och-noteringar
+[§3.5]: 03-meddelanden.md#35-tillämpning
+[beslut 15]: 00-beslutslogg.md#beslut-15-partsrollerna-avgör-vem-som-är-kund-och-kontaktperson
+[§7.1]: 07-integrationer.md#71-uppslag-av-partyid
+[beslut 70]: 00-beslutslogg.md#beslut-70-ett-företags-funktionärer-blir-kontaktpersoner
+[beslut 22]: 00-beslutslogg.md#beslut-22-kontaktuppgifter-lagras-per-engagemang
+[§11.6]: 11-publicerare.md#116-contactsettings-contact_setting
+[beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
+[§3.4]: 03-meddelanden.md#34-versionsmatrisen
+[§5.6]: #56-kontaktinställningar
+[§3.7]: 03-meddelanden.md#37-felhantering
 

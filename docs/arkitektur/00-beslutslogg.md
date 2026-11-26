@@ -32,7 +32,8 @@ Källsystemen är master för engagemang och kunddata. party-overview lagrar env
 Kunddata (namn, adresser, kontaktuppgifter och kontaktpersoner) kommer från meddelanden och går bara att läsa via REST.
 Undantagen är namn och adress från Citizen och LegalEntity när en notering eller en kontaktperson från REST skapar
 kunden ([beslut 6]), och när den nattliga kontrollen fyller i dem för en privatkund som aldrig har fått några
-([§5.4]). Företagsprofilen kommer från LegalEntity ([beslut 58]). Kontaktpersoner som läggs till via REST ägs av
+([§5.4]). Företagsprofilen och företagets funktionärer kommer från LegalEntity ([beslut 58], [beslut 70]), och
+kontaktinställningarna från ContactSettings ([beslut 71]). Kontaktpersoner som läggs till via REST ägs av
 party-overview ([beslut 65]).
 
 **Valdes bort:** Att party-overview är master för kunddata.
@@ -90,7 +91,7 @@ Ett engagemang lagras som en rad per kund. Ett ärende med tre kunder blir tre r
 
 **Skäl:** Bara med en rad per kund raderar `DELETE FROM customer` direkt i databasen allt som kunden äger, utan att
 lämna föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data. Personens kontaktrader hos andra
-företag ägs av företagen och raderas via `contact.party_id` ([beslut 52]).
+kunder ägs av de kunderna och raderas via `contact.party_id` ([beslut 52]).
 
 ## Beslut 9: En tabell för alla engagemangstyper
 
@@ -151,14 +152,32 @@ kunden förlorar sin sista kontaktperson från REST för att personen raderas, g
 
 **Skäl:** Beställarens krav.
 
-## Beslut 15: party-overview härleder kontaktpersoner
+## Beslut 15: Partsrollerna avgör vem som är kund och kontaktperson
 
-party-overview härleder kontaktpersoner. En part med kontaktpersonsroll blir kontaktperson på objektets företagskunder
-men blir aldrig själv kund. Kontaktpersonsrollerna konfigureras per kommun och källa via REST.
+party-overview klassar varje part i ett meddelande efter dess roller i källan. Klassningen konfigureras per kommun,
+källa och roll via REST: `CUSTOMER`, `CONTACT_PERSON` eller `IGNORED` ([§5.3]).
 
-**Valdes bort:** Att publiceraren kopplar ihop dem, eller en lista i `application.yml`.
+- En part med en kundroll blir kund, också när den har en kontaktroll.
+- En part med en kontaktroll blir kontaktperson i objektet. Den visas på objektets engagemang hos varje kund, både
+  privatkunder och företag, men aldrig på kunden, och blir aldrig själv kund.
+- En part utan någon av dem ignoreras. En roll som saknas i konfigurationen loggas på WARN.
 
-**Skäl:** Beställarens val. I SM är rollerna metadata per namespace, så nya roller ska inte kräva en deploy.
+Kundens egna kontaktpersoner är ett företags funktionärer från LegalEntity och de som läggs till via REST ([beslut 65],
+[beslut 70]).
+
+**Valdes bort:**
+
+- Att bara konfigurera kontaktrollerna och låta alla andra parter bli kunder.
+- Att publiceraren klassar parterna.
+- Att en kontaktperson i ett objekt också blir kontaktperson på kunden.
+- Att kontaktpersoner bara gäller företagskunder.
+- En lista i `application.yml`.
+
+**Skäl:** Kunden är den som objektet gäller, och det är säkrare att ange vem det är än undantagen. En roll som saknas
+ger då en uppgift som saknas och en WARN, inte en kund med uppgifter som sparas och blir sökbara. En kontaktperson i ett
+ärende är kontakt för just det ärendet, oavsett om kunden är en person eller ett företag. I SupportManagement är
+rollerna metadata per namespace utan uppgift om vad de betyder, så publiceraren kan inte klassa dem, och en ny roll ska
+inte kräva en deploy. Med `IGNORED` ger en känd roll som inte ska med ingen WARN, så WARN visar bara roller som saknas.
 
 ## Beslut 16: Personnummer och organisationsnummer mappas till partyId
 
@@ -229,13 +248,18 @@ meddelande säger att den ska bort.
 
 ## Beslut 22: Kontaktuppgifter lagras per engagemang
 
-Kontaktuppgifter från källorna lagras per engagemang och ersätts som helhet varje gång ett meddelande appliceras.
-Dubbletter slås ihop vid läsning. Kontaktpersoner som läggs till via REST lagras för sig ([beslut 65]).
+Kontaktuppgifterna i ett objekt, kundens egna kanaler och objektets kontaktpersoner, lagras per engagemang och ersätts
+som helhet varje gång ett meddelande appliceras. De visas bara på engagemanget och slås aldrig ihop till kunden, men de
+är sökbara på kunden ([§5.3], [§6.2]). Kundens egna kontaktpersoner följer [beslut 15].
 
-**Valdes bort:** Ett separat kontaktregister per kund.
+**Valdes bort:**
+
+- Ett separat kontaktregister per kund.
+- Att slå ihop kontaktuppgifterna från kundens objekt och visa dem på kunden.
 
 **Skäl:** Uppgifterna följer källobjektet och försvinner med det. Det finns aldrig några inaktuella kontaktuppgifter att
-städa bort.
+städa bort. En kund kan ha många ärenden, och ett ärende många kontaktpersoner. Ihopslagna på kunden blir de en lista
+som inte går att överblicka, och de gäller ärendet, inte kunden.
 
 ## Beslut 23: contract och party-assets publicerar utan namespace
 
@@ -346,7 +370,7 @@ lagringstid ([beslut 60]) och kan raderas manuellt ([§8.2]).
 
 ## Beslut 30: De administrativa endpoints ligger i samma API
 
-De administrativa endpoints (kundradering, teknisk logg och kontaktpersonsroller) ligger i samma API som resten.
+De administrativa endpoints (kundradering, teknisk logg och partsroller) ligger i samma API som resten.
 
 **Valdes bort:** En egen API-produkt i gatewayen.
 
@@ -374,10 +398,16 @@ i URL:en. Anropet undantas från dept44:s payload-logg ([§7.1]).
 tjänst. För en enskild firma är numret ägarens personnummer. Det hålls borta från party-overviews payload-logg. Att det
 syns i gatewayens och LegalEntitys loggar är en accepterad risk ([§13.3]).
 
-## Beslut 33: Kontaktpersonsrollerna sätts via REST vid driftsättning
+## Beslut 33: Partsrollerna sätts via REST vid driftsättning
 
-Kontaktpersonsrollerna sätts via REST vid driftsättning: `CONTACT_PERSON` för contract och Casedata, och för
-SupportManagement de roller som produktionens metadata visar ([§12]).
+Partsrollerna sätts via REST vid driftsättning, för varje källa ([§12]):
+
+- contract: avtalsparternas roller som kundroller, `CONTACT_PERSON` som kontaktroll, och `SIGNATORY` och
+  fullmaktsrollerna (`POWER_OF_ATTORNEY_*`) som `IGNORED`, eftersom en avtalspart skickas med alla sina roller ([§11.4])
+- Casedata: `APPLICANT` och `FELLOW_APPLICANT` som kundroller och `CONTACT_PERSON` som kontaktroll. Övriga roller i
+  `SBK_MEX` klassas utifrån produktionens data.
+- party-assets: `OWNER` som kundroll ([§11.3])
+- SupportManagement: de roller som produktionens metadata visar, klassade tillsammans med verksamheterna
 
 **Valdes bort:** Att lägga in startvärdena i en Flyway-migrering.
 
@@ -413,7 +443,7 @@ En notering kan bara skapas med partyId. En tjänst som bara har personnummer h�
 ## Beslut 37: Casedata publicerar bara SBK_MEX tills vidare
 
 Casedata publicerar bara namespacet `SBK_MEX` tills dataskyddsombudet har tagit ställning till parkeringstillstånd och
-färdtjänst. Kontaktpersonsrollen för `CASE_DATA` är bara `CONTACT_PERSON`.
+färdtjänst.
 
 **Valdes bort:** Att publicera alla namespaces från början.
 
@@ -430,8 +460,9 @@ Indexnamnet `customer` behöver därför inget miljöprefix.
 
 ## Beslut 39: Vad som är sökbart
 
-Följande om kunden är sökbart: namn, adresser, kontaktuppgifter och kontaktpersoner med deras adresser, företagsprofilen
-och arbetsställena, engagemangens referens, titel och kategori, samt noteringarna. Det gäller också en skyddad kund, och
+Följande om kunden är sökbart: namn, adresser, kontaktuppgifter, kontaktpersonerna på kundens engagemang, ett företags
+funktionärer ([beslut 70]) och kontaktpersonerna som lagts till via REST, med deras adresser, företagsprofilen och
+arbetsställena, engagemangens referens, titel och kategori, samt noteringarna. Det gäller också en skyddad kund, och
 träffen har kundens skyddsnivå ([§6.2]).
 
 **Valdes bort:**
@@ -552,13 +583,11 @@ contract skickar bara stakeholders med minst en partsroll eller rollen `CONTACT_
 typen `MUNICIPALITY` ([§11.4]). Den som bara skriver under (`SIGNATORY`) eller har fullmakt (`POWER_OF_ATTORNEY_*`)
 skickas inte.
 
-**Valdes bort:** Att skicka alla stakeholders, eller att göra `SIGNATORY` och fullmaktsrollerna till
-kontaktpersonsroller.
+**Valdes bort:** Att skicka alla stakeholders, eller att göra `SIGNATORY` och fullmaktsrollerna till kontaktroller.
 
 **Skäl:** Kommunen själv kan vara part, t.ex. som `LESSOR`, och skulle då bli kund med ett engagemang per kontrakt. Den
-som bara skriver under eller har fullmakt företräder en part och är inte själv kund. Som kontaktpersonsroll skulle
-`SIGNATORY` hindra en privat hyresgäst som också skriver under från att bli kund, eftersom en part med
-kontaktpersonsroll aldrig blir kund ([beslut 15]).
+som bara skriver under eller har fullmakt företräder en part och är inte själv kund. När de inte skickas hålls deras
+personuppgifter borta från kön.
 
 ## Beslut 50: party-assets publicerar bara asset-typer på en vitlista
 
@@ -586,9 +615,10 @@ En kontaktperson sparas oavsett skydd och har en egen skyddsnivå med Citizens v
 partyId, källans `protection` och `registry_party_id`, som är personen själv eller, för en enskild firma, ägaren.
 Folkbokföringens status lagras en gång per person i `registry_person`, med samma ordningsvakt som för kunden, och hålls
 aktuell av meddelandeflödet, den nattliga kontrollen och ändringskön. Nivån räknas fram när raden läses: den högsta
-av källans `protection` och kundens nivå om kontaktpersonen är kund i kommunen, annars personens status. Raderna tas
-bort när personen raderas, också automatiskt. Anger källan fortfarande personen som kontaktperson kommer raden
-tillbaka nästa gång objektet ändras i källan.
+av källans `protection` och kundens nivå om kontaktpersonen är kund i kommunen, annars personens status. Raderna från
+källornas objekt tas bort när personen raderas, också automatiskt. Anger källan fortfarande personen som kontaktperson
+kommer raden tillbaka nästa gång objektet ändras i källan. Funktionärernas rader tas bara bort när personen raderas med
+`CUSTOMER DELETE` eller via REST ([beslut 70]).
 
 **Valdes bort:**
 
@@ -599,13 +629,13 @@ tillbaka nästa gång objektet ändras i källan.
 - Att aldrig spara en enskild firma som kontaktperson.
 - Att raderna ligger kvar när personen raderas automatiskt som kund.
 
-**Skäl:** Vägledningen räknar arbetsgivare som en skyddsvärd uppgift, och en kontaktperson visar just kopplingen till
-ett företag. Uppgifterna får sparas, men nivån ska synas och vara aktuell ([beslut 27]). Utan partyId på raden skulle
-varken ett nytt skydd eller en radering enligt GDPR nå personens kontaktrader, och utan ägaren skulle ägarens skydd
-inte nå en enskild firmas rader. Med statusen kopierad till varje rad skulle ett äldre svar från Citizen kunna skriva
-över ett nyare på alla personens rader, och en ny nivå skulle skriva om och låsa tusentals rader för en person som är
-kontaktperson på många ärenden. Med en rad per person räcker en skrivning, och ordningsvakten fungerar som för kunden.
-Uppgifter sparas inte längre än de behövs, och källan anger personen igen när objektet ändras.
+**Skäl:** Vägledningen räknar arbetsgivare som en skyddsvärd uppgift, och en kontaktperson visar kopplingen till ett
+företag eller en annan person. Uppgifterna får sparas, men nivån ska synas och vara aktuell ([beslut 27]). Utan partyId
+på raden skulle varken ett nytt skydd eller en radering enligt GDPR nå personens kontaktrader, och utan ägaren skulle
+ägarens skydd inte nå en enskild firmas rader. Med statusen kopierad till varje rad skulle ett äldre svar från Citizen
+kunna skriva över ett nyare på alla personens rader, och en ny nivå skulle skriva om och låsa tusentals rader för en
+person som är kontaktperson på många ärenden. Med en rad per person räcker en skrivning, och ordningsvakten fungerar som
+för kunden. Uppgifter sparas inte längre än de behövs, och källan anger personen igen när objektet ändras.
 
 ## Beslut 53: Skyddet från `CUSTOMER`-meddelanden lagras per källa
 
@@ -681,7 +711,7 @@ Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med
 - Att spara företagets framräknade SNI-koder.
 - Arbetsställets adresser som kolumner på arbetsställets rad.
 - En egen tabell med SCB:s SNI-klassifikation.
-- Funktionärer och firmateckning (`officers`, `fullSignatureDescription`).
+- Firmateckningen (`fullSignatureDescription`).
 - Organisationsnumret.
 - Ett tak för antalet arbetsställen.
 
@@ -690,7 +720,8 @@ i en egen takt och ersätts som en helhet. Med typade kolumner ser schemakontrol
 på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger bara arbetsställenas koder, utan andelar.
 Företagets koder följer av arbetsställenas, så att spara dem vore att spara samma uppgift två gånger. Arbetsställets
 adresser har samma form som kundens och kontaktpersonens. LegalEntity ger kodernas namn, så ingen klassifikation behöver
-underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna anges med namn och personnummer. Kunden
+underhållas, inte heller när SNI 2025 ersatte SNI 2007. Firmateckningen är fritext med namn och personnummer, och
+funktionärerna sparas i stället som kontaktpersoner ([beslut 70]). Kunden
 identifieras med partyId:t, och ett organisationsnummer mappas alltid till det ([beslut 54]). Ett tak skulle ge en lista
 som inte stämmer med antalet arbetsställen, utan att det syns. Ett företag med hundratals arbetsställen skrivs om bara
 när profilen har ändrats, och då i JDBC-batchar ([§13.3]).
@@ -772,14 +803,15 @@ LegalEntity senare med företaget får kunden sin status och profil utan manuell
 
 ## Beslut 65: Verksamheter lägger till egna kontaktpersoner via REST
 
-Kontaktpersoner kan läggas till, ändras och raderas på en kund via REST ([§5.3], [§6.1]). Namespace är valfritt och
-anges i kroppen, och en kontaktperson utan namespace är global. Kundens kontaktpersoner från REST hämtas alla, eller
-filtrerade på ett eller flera namespaces, som i [beslut 7]. Kontaktpersonerna lagras i `manual_contact_person` och
-ändras med optimistisk låsning, som en notering ([beslut 61]). Skyddsnivån räknas fram som för kontaktpersoner från
-källorna ([beslut 52]). Finns kunden inte skapas den, som av en notering ([beslut 6]). En kund som har sådana
-kontaktpersoner raderas inte automatiskt. En persons kontaktpersoner från REST hos andra kunder raderas bara när
-personen raderas med `CUSTOMER DELETE` eller via REST, inte vid en automatisk radering, eftersom ingen källa kan skapa
-dem igen ([§3.6]).
+Kontaktpersoner kan läggas till, ändras och raderas på en kund via REST ([§5.3], [§6.1]). Tillsammans med ett företags
+funktionärer från LegalEntity är det kundens enda kontaktpersoner, eftersom kontaktpersonerna från källorna bara hör
+till sitt objekt ([beslut 15], [beslut 70]). Namespace är valfritt och anges i kroppen, och en kontaktperson utan
+namespace är global. Kundens kontaktpersoner från REST hämtas alla, eller filtrerade på ett eller flera namespaces, som
+i [beslut 7]. Kontaktpersonerna lagras i `manual_contact_person` och ändras med optimistisk låsning, som en notering
+([beslut 61]). Skyddsnivån räknas fram som för kontaktpersoner från källorna ([beslut 52]). Finns kunden inte skapas
+den, som av en notering ([beslut 6]). En kund som har sådana kontaktpersoner raderas inte automatiskt. En persons
+kontaktpersoner från REST hos andra kunder raderas bara när personen raderas med `CUSTOMER DELETE` eller via REST, inte
+vid en automatisk radering, eftersom ingen källa kan skapa dem igen ([§3.6]).
 
 **Valdes bort:**
 
@@ -844,6 +876,43 @@ personens transaktion, med fler lås och större risk för deadlock. En kund som
 adress utan att ha något i kommunen, och ingenting skulle någonsin radera den. Kontrollen fångar också en kund som har
 blivit tom på något annat sätt.
 
+## Beslut 70: Ett företags funktionärer blir kontaktpersoner
+
+När ett företags profil skrivs blir varje funktionär i LegalEntitys `officers`, t.ex. styrelseledamöter, firmatecknare
+och revisorer, en kontaktperson på företagskunden, med namn och funktion ([§5.5]). Funktionärens personnummer, eller
+organisationsnummer för t.ex. ett revisionsbolag, slås upp till partyId och sparas aldrig. Skyddet kontrolleras som för
+andra kontaktpersoner ([beslut 52]). Funktionärerna ersätts som helhet med profilen och är globala. En funktionärs rad
+tas bara bort när personen raderas med `CUSTOMER DELETE` eller via REST, som en kontaktperson från REST.
+
+**Valdes bort:**
+
+- Att inte spara funktionärerna.
+- Att visa kontaktpersonerna från kundens objekt på kunden ([beslut 22]).
+- Att ta bort en funktionärs rad också när personen raderas automatiskt.
+
+**Skäl:** Kundens kontaktpersoner ska vara de som företräder kunden, inte alla som förekommer i dess ärenden.
+Funktionärerna företräder företaget enligt Bolagsverket och hålls aktuella med profilen. Numret behövs bara för
+uppslaget av partyId, och med partyId fungerar skyddet och raderingen av en person som för andra kontaktpersoner.
+Profilen skrivs bara om när den har ändrats, så en rad som togs bort automatiskt skulle inte komma tillbaka.
+
+## Beslut 71: Kontaktinställningarna sparas för alla med partyId
+
+ContactSettings publicerar sina kontaktinställningar som objekttypen `CONTACT_SETTING`, med outbox och grundladdning som
+de andra publicerarna ([§11.6]). party-overview sparar varje inställning som har ett partyId i `contact_setting`, också
+för personer som inte är kunder. När personen är kund visas inställningens kanaler bland kundens kontaktuppgifter och
+är sökbara ([§5.6]). En inställning skapar ingen kund och håller ingen kund kvar.
+
+**Valdes bort:**
+
+- Att läsa ContactSettings när kunden visas.
+- Att bara spara inställningen när personen är kund, och hämta den från ContactSettings när kunden skapas.
+- Att en inställning skapar en kund.
+
+**Skäl:** Kontaktuppgifterna ska vara sökbara, och ändringar ska nå party-overview utan att varje läsning anropar
+ContactSettings. Den som har en inställning med partyId har en koppling till kommunen, så uppgifterna får sparas också
+innan personen är kund. Då behövs varken ett anrop när kunden skapas eller en nattlig hämtning, och inställningen syns
+direkt när personen blir kund. En inställning är inget engagemang och gör ingen till kund.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -852,7 +921,7 @@ blivit tom på något annat sätt.
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [§11.4]: 11-publicerare.md#114-contract-contract
-[beslut 15]: #beslut-15-party-overview-härleder-kontaktpersoner
+[beslut 15]: #beslut-15-partsrollerna-avgör-vem-som-är-kund-och-kontaktperson
 [beslut 19]: #beslut-19-supportmanagement-publicerar-bara-namespaces-med-opt-in
 [beslut 34]: #beslut-34-casedata-publicerar-ärenden-och-sekretessärenden-som-delete
 [beslut 37]: #beslut-37-casedata-publicerar-bara-sbk_mex-tills-vidare
@@ -894,4 +963,9 @@ blivit tom på något annat sätt.
 [beslut 26]: #beslut-26-supportmanagement-publicerar-inte-utkast
 [beslut 14]: #beslut-14-tre-sätt-att-radera-en-kund
 [beslut 69]: #beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
+[beslut 70]: #beslut-70-ett-företags-funktionärer-blir-kontaktpersoner
+[beslut 22]: #beslut-22-kontaktuppgifter-lagras-per-engagemang
+[§11.6]: 11-publicerare.md#116-contactsettings-contact_setting
+[§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[beslut 71]: #beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 

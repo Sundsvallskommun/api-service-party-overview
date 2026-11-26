@@ -8,14 +8,17 @@ flowchart LR
     PA[party-assets] -->|outbox + relay| EXPA((api-fabriken.<br/>party-assets))
     CT[contract] -->|outbox + relay| EXCT((api-fabriken.<br/>contract))
     CD[Casedata] -->|outbox + relay| EXCD((api-fabriken.<br/>case-data))
+    CS[ContactSettings] -->|outbox + relay| EXCS((api-fabriken.<br/>contact-settings))
     EXSM --> QSM[[api-fabriken.party-overview.<br/>support-management]]
     EXPA --> QPA[[api-fabriken.party-overview.<br/>party-assets]]
     EXCT --> QCT[[api-fabriken.party-overview.<br/>contract]]
     EXCD --> QCD[[api-fabriken.party-overview.<br/>case-data]]
+    EXCS --> QCS[[api-fabriken.party-overview.<br/>contact-settings]]
     QSM --> PO[party-overview]
     QPA --> PO
     QCT --> PO
     QCD --> PO
+    QCS --> PO
     QREG[[ändringskö för företag och personer]] -->|företag och personer som ändrats| PO
     PO --> DB[(MariaDB)]
     PO -->|sökindex via kö + relay| OS[(OpenSearch)]

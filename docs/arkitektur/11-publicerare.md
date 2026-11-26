@@ -51,9 +51,11 @@ Del av [arkitekturen för party-overview](README.md).
      party-overview tillämpar den som en rättning med samma version ([§3.4]).
 4. **Version:** objektets `@Version`. Den ska öka vid varje ändring som publiceras.
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
-6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
-   publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och partens uppgifter skickas ändå
-   ([§5.4]). Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för kommande publicerare.
+6. **Parter:** Varje part skickas med sina roller i källan, och party-overview avgör efter dem vem som blir kund och
+   vem som blir kontaktperson ([§5.3]). partyId när publiceraren har det. legalId bara när partyId saknas, och alltid
+   med `partyType`. När publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och partens
+   uppgifter skickas ändå ([§5.4]). Ingen av publicerarna har i dag någon sådan uppgift, så fältet finns för
+   kommande publicerare.
    - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort, och ett inledande `16` på ett tolvsiffrigt
      organisationsnummer tas bort. Ett värde som ändå inte följer formatet, kontrollsiffran inräknad, skickas inte, och
      parten skickas utan id.
@@ -144,7 +146,8 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   nyast. Inget namespace, så engagemangen blir globala ([beslut 23]).
 - **Utkast:** En asset med status `DRAFT` publiceras som `DELETE`. När den aktiveras har versionen ökat, och den
   publiceras som `UPDATE` ([beslut 67]).
-- **Parter:** Exakt ett: `partyId` och `partyType`, utan kontaktuppgifter.
+- **Parter:** Exakt ett: `partyId`, `partyType` och rollen `OWNER`, utan kontaktuppgifter. party-assets har ingen roll
+  på ägaren, så publiceraren sätter den, och party-overview klassar den som kundroll ([beslut 33]).
 - **Grundladdning:** `POST /{municipalityId}/asset-events/republish` skriver outbox-rader i batchar i stället för att
   publicera direkt. Den tar en valfri asset-typ som parameter ([§11.1]).
 
@@ -177,7 +180,7 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   - `type` blir partytyp: `PERSON` blir `PRIVATE`, och `ORGANIZATION`, `ASSOCIATION` och `REGION` blir `ENTERPRISE`.
     `OTHER` och null skickas utan id ([§11.1]).
   - partyId om det finns, annars `organizationNumber` som legalId med `ENTERPRISE`. `CONTACT_PERSON` skickas som en
-    vanlig part, och party-overview kopplar den till företagen ([§5.3]).
+    vanlig part, och party-overview gör den till kontaktperson i kontraktet ([§5.3]).
 - **Grundladdning:** Sidvis intern genomgång utan bilagor, som skriver outbox-rader.
 
 ## 11.5 Casedata (`ERRAND`, källan `CASE_DATA`)
@@ -218,6 +221,26 @@ och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
   namespace som anges som parameter ([§11.1]). Det läser bara id:n, 500 per batch med en transaktion per batch, och
   skriver outbox-rader utan aktiviteter.
 
+## 11.6 ContactSettings (`CONTACT_SETTING`)
+
+ContactSettings publicerar kontaktinställningarna, så att kundens e-postadresser och telefonnummer hamnar bland
+kundens kontaktuppgifter i party-overview ([§5.6], [beslut 71]). ContactSettings följer [§11.1] med följande:
+
+- **Version:** en ny kolumn `version` på `contact_setting`, med `@Version`. Migreringen är additiv, och befintliga
+  rader får 0.
+- **Publiceringspunkter:** `ContactSettingsService` (create, update och delete). Bara inställningar med partyId
+  publiceras. Virtuella inställningar, som saknar partyId, och ombuden (`Delegate`, `DelegateFilter`) publiceras inte.
+- **Envelope:** `objectId` = inställningens `id`, `sourceModified` = `modified`, annars `created`. Inget namespace,
+  inga `object`-fält och inga aktiviteter.
+- **Part:** exakt en, inställningens `partyId`, utan partytyp och roller. ContactSettings känner inte partytypen, och
+  party-overview behöver den inte här ([§3.1]).
+- **Kanaler:** `EMAIL` skickas som `EMAIL` och `SMS` som `PHONE`, med `destination` som värde. En kanal med
+  `disabled = true` skickas inte, och `alias` skickas inte.
+- **Radering:** en raderad inställning publiceras som `DELETE` med versionen från outbox-raden. Raderas en inställning
+  med partyId raderar ContactSettings också dess virtuella inställningar, och de publiceras inte.
+- **Grundladdning:** en admin-endpoint som startar ett asynkront jobb med ShedLock och skriver outbox-rader för alla
+  inställningar med partyId i kommunen ([§11.1]).
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§3.7]: 03-meddelanden.md#37-felhantering
@@ -237,4 +260,7 @@ och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
 [beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
+[beslut 33]: 00-beslutslogg.md#beslut-33-partsrollerna-sätts-via-rest-vid-driftsättning
+[§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 

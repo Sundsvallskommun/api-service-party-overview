@@ -6,7 +6,7 @@ Del av [arkitekturen för party-overview](README.md).
 
 | # |                                                                                                                                                 Fråga                                                                                                                                                 |                                                                                                            Förslag tills den är besvarad                                                                                                             |
 |---|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. Uppgifterna som beror på F1 (C5, SM1, CD1, PA1 och CT2), och de som bygger på C5, kan inte avslutas innan formatet är klart.                                                                                                   |
+| 1 | Det gemensamma meddelandeformatet (AsyncAPI) definieras senare.                                                                                                                                                                                                                                       | [§3.1] är kravlistan. Uppgifterna som beror på F1 (C5, SM1, CD1, PA1, CT2 och CS1), och de som bygger på C5, kan inte avslutas innan formatet är klart.                                                                                              |
 | 2 | Får Casedatas namespaces `SBK_PARKING_PERMIT` och `ANGE_PARKING_PERMIT` publiceras, och party-assets parkeringstillstånd för rörelsehindrade (`PARKINGPERMIT`, `PARKING_PERMIT`)? Parkeringstillstånd och färdtjänst kan avslöja hälsorelaterade förhållanden, och engagemang syns för hela kommunen. | Nej, inte förrän dataskyddsombudet har svarat ([beslut 37], [beslut 50]).                                                                                                                                                                            |
 | 3 | Ändringskön för företag och personer finns inte ännu, och dess meddelandemodell är inte fastställd ([§5.5]). Vem förvaltar den, och vad heter exchangen?                                                                                                                                              | Kraven i [§5.5]: partyId, partens typ, vad som har hänt och ett id per meddelande, enligt CloudEvents ([beslut 62]). C14, C15 och T3 kan inte avslutas innan kön finns. Tills dess skrivs profilen när kunden skapas och av den nattliga kontrollen. |
 | 4 | Hur länge ska den tekniska loggen sparas ([beslut 60])?                                                                                                                                                                                                                                               | Fem år, tills arkivfunktionen och dataskyddsombudet har svarat.                                                                                                                                                                                      |
@@ -14,13 +14,13 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 13.2 Förutsättningar före driftsättning
 
-|                                                       Förutsättning                                                       |                                                                            Behövs för                                                                             |
-|---------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]). | Meddelandeflödet (C11), noteringar och kontaktpersoner som skapar kunder (C8, C16) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
-| En egen OpenSearch-container per miljö (T2).                                                                              | Sökningen (C12, C13)                                                                                                                                              |
-| Köer och exchanges i driftkonfigurationen (T1).                                                                           | Meddelandeflödet (C11)                                                                                                                                            |
-| Ändringskön i driftkonfigurationen (T3).                                                                                  | Ändringskön (C14, C15)                                                                                                                                            |
-| Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                                         |
+|                                                                    Förutsättning                                                                     |                                                                            Behövs för                                                                             |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| party-overviews applikation i WSO2 är registrerad som behörig för `ShowClassified=true` i Metakatalogens tabell ([§5.4]).                            | Meddelandeflödet (C11), noteringar och kontaktpersoner som skapar kunder (C8, C16) och den nattliga skyddskontrollen (C10). Utan behörigheten svarar Citizen 401. |
+| En egen OpenSearch-container per miljö (T2).                                                                                                         | Sökningen (C12, C13)                                                                                                                                              |
+| Köer och exchanges i driftkonfigurationen (T1).                                                                                                      | Meddelandeflödet (C11)                                                                                                                                            |
+| Ändringskön i driftkonfigurationen (T3).                                                                                                             | Ändringskön (C14, C15)                                                                                                                                            |
+| Partsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller klassas utifrån produktionens metadata, tillsammans med verksamheterna. | Meddelandeflödet (C11). Utan rollerna blir ingen part kund.                                                                                                       |
 
 ## 13.3 Risker
 
@@ -178,15 +178,34 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Avsiktligt, eftersom källan är master. Vid radering enligt GDPR måste även källorna radera.
 
-- Det tar tid innan en ändring av kontaktpersonsrollerna slår igenom.
+- Det tar tid innan en ändring av partsrollerna slår igenom.
 
   **Hantering:** Dokumenterat ([§5.3]). En grundladdning från källan räknar om allt.
 
-- En part som har både en kontaktpersonsroll och en annan roll, t.ex. `APPLICANT` och `CONTACT_PERSON`, blir bara
-  kontaktperson och aldrig kund ([beslut 15]). Saknar objektet en företagskund ignoreras parten helt.
+- En roll som saknas i partsrollerna gör att parten ignoreras. Är det en kundroll får en ny kund inte engagemanget, och
+  ett nytt objekt där ingen part har en kundroll syns inte alls. Det gäller särskilt SupportManagement, där
+  verksamheterna kan lägga till nya roller ([beslut 15]).
 
-  **Hantering:** Accepteras tills vidare. SM har en roll per stakeholder, så det gäller Casedata och contract, där en
-  part kan ha flera roller.
+  **Hantering:** Varje roll som saknas loggas på WARN med källan och rollkoden. Ett befintligt engagemang står kvar
+  oförändrat med sin historik ([§5.3]). När rollen har lagts till räknas objektet om vid nästa ändring i källan eller
+  vid en grundladdning.
+
+- En kontaktperson i en privatpersons ärende, t.ex. en anhörig eller ett ombud, sparas och är sökbar. En sökning på
+  kontaktpersonens namn ger den kund vars ärende personen är kontaktperson i ([beslut 15]).
+
+  **Hantering:** Accepteras. Kontaktpersonen har sin egen skyddsnivå, och träffen visar `hasProtectedContacts` ([§6.2]).
+  Kontaktpersonen visas bara på ärendets engagemang, inte på kunden.
+
+- party-overview sparar kontaktinställningar från ContactSettings också för personer som inte är kunder ([§5.6]).
+
+  **Hantering:** Accepteras ([beslut 71]). Den som har en inställning med partyId har en koppling till kommunen. Raden
+  följer ContactSettings och tas bort när inställningen tas bort där.
+
+- Ett företags funktionärer sparas med namn och funktion, och de är sökbara ([§5.5]). En sökning på en styrelseledamots
+  namn ger företaget.
+
+  **Hantering:** Accepteras ([beslut 70]). Uppgifterna är offentliga hos Bolagsverket. Personnumret sparas aldrig, och
+  en skyddad funktionär visas med sin skyddsnivå.
 
 - party-overview slår upp organisationsnummer mot LegalEntity med numret i URL:en
   (`GET /{municipalityId}/{organizationNumber}/guid`). För en enskild firma är numret ett personnummer, som då kan
@@ -218,8 +237,8 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Ett meddelande som inte berör någon kund eller kontaktrad kastas efter en indexuppslagning, utan anrop
   till LegalEntity eller Citizen ([§5.5]).
 
-- En kontaktperson som källan fortfarande anger försvinner från företaget när personen raderas automatiskt som kund, och
-  kommer tillbaka först när objektet ändras i källan ([§3.6]).
+- En kontaktperson som källan fortfarande anger försvinner från andra kunders engagemang när personen raderas
+  automatiskt som kund, och kommer tillbaka först när objektet ändras i källan ([§3.6]).
 
   **Hantering:** Accepteras ([beslut 52]).
 
@@ -237,7 +256,8 @@ Del av [arkitekturen för party-overview](README.md).
 
 - LegalEntitys svar innehåller personnummer och namn på företagets funktionärer.
 
-  **Hantering:** De mappas aldrig, och ingenting ur svaret loggas ([§7.2]). C3 verifierar det.
+  **Hantering:** Funktionärerna blir kontaktpersoner med partyId, och numren slås upp och kastas utan att sparas eller
+  loggas ([beslut 70], [§7.2]). `fullSignatureDescription` mappas aldrig. C3 verifierar det.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
@@ -250,7 +270,7 @@ Del av [arkitekturen för party-overview](README.md).
 [§11.5]: 11-publicerare.md#115-casedata-errand-källan-case_data
 [§12]: 12-drift.md
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
-[beslut 15]: 00-beslutslogg.md#beslut-15-party-overview-härleder-kontaktpersoner
+[beslut 15]: 00-beslutslogg.md#beslut-15-partsrollerna-avgör-vem-som-är-kund-och-kontaktperson
 [beslut 30]: 00-beslutslogg.md#beslut-30-de-administrativa-endpoints-ligger-i-samma-api
 [beslut 32]: 00-beslutslogg.md#beslut-32-organisationsnummer-slås-upp-direkt-mot-legalentity
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
@@ -273,4 +293,7 @@ Del av [arkitekturen för party-overview](README.md).
 [§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace
 [beslut 7]: 00-beslutslogg.md#beslut-7-synlighet-för-engagemang-kontaktuppgifter-och-noteringar
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
+[§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
+[beslut 70]: 00-beslutslogg.md#beslut-70-ett-företags-funktionärer-blir-kontaktpersoner
 
