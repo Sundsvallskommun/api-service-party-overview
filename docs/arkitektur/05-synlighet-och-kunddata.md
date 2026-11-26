@@ -165,11 +165,11 @@ får lämnas ut utan prövning ([beslut 27]). Det gäller kunder och kontaktpers
 
 **Nivåer och källor.** Kundens effektiva nivå, `customer.protection_level`, är den högsta av:
 
-|                               Källa                                |              Kolumn              |                              Uppdateras                              |
-|--------------------------------------------------------------------|----------------------------------|----------------------------------------------------------------------|
-| Folkbokföringen via Citizen, för `PRIVATE` och för enskilda firmor | `customer.registry_protection`   | när kunden skapas, och varje natt                                    |
-| `CUSTOMER`-meddelanden, en rad per källa                           | `asserted_protection.protection` | när ett `CUSTOMER UPDATE` tillämpas. Den högsta källans nivå gäller. |
-| Engagemangsmeddelanden                                             | `engagement.party_protection`    | när objektet uppdateras. Försvinner med engagemanget.                |
+|                               Källa                                |              Kolumn              |                                        Uppdateras                                         |
+|--------------------------------------------------------------------|----------------------------------|-------------------------------------------------------------------------------------------|
+| Folkbokföringen via Citizen, för `PRIVATE` och för enskilda firmor | `customer.registry_protection`   | när kunden skapas, varje natt och när ändringskön säger att personen har ändrats ([§5.5]) |
+| `CUSTOMER`-meddelanden, en rad per källa                           | `asserted_protection.protection` | när ett `CUSTOMER UPDATE` tillämpas. Den högsta källans nivå gäller.                      |
+| Engagemangsmeddelanden                                             | `engagement.party_protection`    | när objektet uppdateras. Försvinner med engagemanget.                                     |
 
 Ordningen är `NONE` < `UNKNOWN` < `SECRECY_MARKING` < `PROTECTED_REGISTRATION`. Nivån räknas om i samma transaktion
 varje gång någon av källorna ändras. En ändrad nivå loggas som `PROTECTION_CHANGED` i den tekniska loggen. `UNKNOWN`
@@ -267,8 +267,8 @@ inte är `NONE` betyder att uppgifterna inte får lämnas ut utan prövning, och
 1. Namn, adresser, kontaktuppgifter, kontaktpersoner och företagsprofil sparas och uppdateras som för en oskyddad
    kund. Ingenting töms eller raderas när ett skydd tillkommer eller upphör, bara nivån ändras.
 2. Kunden indexeras i OpenSearch med alla uppgifter. Sökträffen har kundens `protectionLevel`, `classified` och
-   `protectedNR`, och `hasProtectedContacts`, som visar om någon av kundens synliga kontaktpersoner har en nivå som
-   inte är `NONE` ([§6.2]).
+   `protectedNR`, och `hasProtectedContacts`, som visar om någon av kundens synliga kontaktpersoner har nivån
+   `UNKNOWN`, `SECRECY_MARKING` eller `PROTECTED_REGISTRATION`. `UNVERIFIED` räknas inte ([§6.2], [beslut 48]).
 3. API:et returnerar uppgifterna med `protectionLevel`, `classified` och `protectedNR`, på kunden och på varje
    kontaktperson ([§5.3]). Frontend ska visa skyddet tydligt i varje vy och lista som rör kunden eller kontaktpersonen,
    skilja nivåerna åt, också `UNKNOWN`, och se till att uppgifterna inte lämnas ut utan prövning.
@@ -282,7 +282,14 @@ kund är den då null.
 
 **Nattlig kontroll.** `ProtectionRefreshScheduler` (`@Dept44Scheduled` med ShedLock) körs en gång per natt.
 
-- Den hämtar två slags kunder ([beslut 28]):
+- Först raderas de kunder som inte har något kvar: varken engagemang, noteringar, kontaktpersoner från REST eller
+  `CUSTOMER`-data ([§3.6], [beslut 69]). En sådan kund uppstår när en person raderas och kunden därmed förlorar sin
+  sista kontaktperson från REST.
+  - Kunderna hämtas med keyset på `id`, i batchar om `protection.batch-size`.
+  - Varje kund raderas i en egen transaktion med READ COMMITTED. Den låses som vid en radering via REST, och
+    kontrollen görs om efter låset, så att en kund som har hunnit få något av dem står kvar.
+  - Raderingen är automatisk och följer reglerna i [§3.6]. Den loggas som `CUSTOMER_DELETED` med kanalen `SCHEDULER`.
+- Sedan hämtas två slags kunder ([beslut 28]):
   - kunder som har `registry_party_id` eller `registry_protection = UNKNOWN`, alltså privatkunder, enskilda firmor
     och företag med okänd status, och vars `registry_checked` saknas eller är äldre än körningens start
   - företagskunder som saknar företagsprofil, vars profil hämtas från LegalEntity ([§5.5])
@@ -451,6 +458,7 @@ det och larmet går ([§12.1]). Den nattliga kontrollen finns kvar som skyddsnä
 [beslut 58]: 00-beslutslogg.md#beslut-58-företagsuppgifter-lagras-i-en-egen-profil
 [beslut 59]: 00-beslutslogg.md#beslut-59-ändringskön-uppdaterar-företagsprofilen-och-kontrollerar-personers-skydd
 [beslut 64]: 00-beslutslogg.md#beslut-64-den-nattliga-kontrollen-väntar-efter-404-från-legalentity
+[beslut 69]: 00-beslutslogg.md#beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
 [§13.1]: 13-risker-och-oppna-fragor.md#131-öppna-frågor
 [§12.1]: 12-drift.md#121-larm-för-dead-letter-köer
 [§6.1]: 06-rest-api.md#61-endpoints

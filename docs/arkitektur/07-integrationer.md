@@ -97,9 +97,10 @@ Fel från Citizen hanteras olika beroende på var anropet görs:
   firma ([§5.3], [§5.4]). Felet kastas inte vidare, så meddelandet görs inte om och källans kö står inte still ([§3.7]).
   Felet loggas på WARN med källan och antalet berörda kunder och kontaktpersoner, men utan partyId, så att det går att
   se vilka källor som kan behöva en ny grundladdning ([§13.3]).
-- *När partyId slås upp:* ett fel görs om som andra avbrott ([§3.7]), eftersom en part utan partyId inte kan
-  tillämpas.
+- *När partyId slås upp i meddelandeflödet:* ett fel görs om som andra avbrott ([§3.7]), eftersom en part utan
+  partyId inte kan tillämpas.
 - *När en notering eller en kontaktperson från REST skapar kunden:* 503, enligt steg 3 ovan.
+- *I uppslaget via REST:* 503 ([§6.1]).
 - *I den nattliga kontrollen:* en batch som misslyckas loggas, och dess kunder tas med nästa natt.
 - *401:* betyder att behörigheten i Metakatalogen saknas. Det är ett konfigurationsfel. I meddelandeflödet blir det en
   `ClientProblem`, och meddelandet dead-letteras så att larmet går ([§12.1]). README beskriver åtgärden: registrera
@@ -131,4 +132,5 @@ Förebilder:
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.2]: 05-synlighet-och-kunddata.md#52-namn-och-adress
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[§6.1]: 06-rest-api.md#61-endpoints
 

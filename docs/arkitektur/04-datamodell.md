@@ -118,7 +118,9 @@ Index:
 - `idx_customer_party_id`: ändringskön, som hittar en part i alla kommuner ([§5.5])
 - `idx_customer_registry_party_id`: ändringskön, som hittar de enskilda firmor som en person äger ([§5.5])
 
-Den nattliga kontrollen går i primärnyckelns ordning och har inget eget index ([§5.4]).
+Den nattliga kontrollen går i primärnyckelns ordning och har inget eget index ([§5.4]). När den letar efter kunder
+som inte har något kvar används indexen som börjar med `customer_id` i `engagement`, `note` och
+`manual_contact_person`, och nyckeln i `source_object` ([§3.6]).
 
 **`customer_address`**: kundens adresser ([§5.2], [beslut 57]).
 
@@ -424,7 +426,8 @@ att en raderad kund finns kvar i kön tills den har tagits bort ur indexet.
 | `priority`        | bit         | nej  | Satt när markeringen gäller en radering ([§6.2]). Sänks aldrig av en senare markering. |
 | `queued`          | datetime(6) | nej  |                                                                                        |
 
-Index: `idx_search_index_queue_priority_queued (priority, queued)`.
+Index: `idx_search_index_queue_priority_queued (priority, queued)`. Relayn läser de prioriterade raderna och övriga
+rader med var sin fråga, med likhet på `priority`, så att indexet ger `queued`-ordningen ([§6.2]).
 
 **`shedlock`**: standardtabellen för dept44-starter-scheduler.
 

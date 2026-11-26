@@ -15,36 +15,36 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Inga TODO:s.
 - README är uppdaterad när konfiguration eller drift påverkas.
 
-| Steg | Id  |                       Uppgift                        |            Beror på            |
-|------|-----|------------------------------------------------------|--------------------------------|
-| 1    | C1  | Projektgrund                                         | —                              |
-| 2    | C2  | Datamodell, Flyway och schemaverifiering             | C1                             |
-| 3    | C3  | Integrationer mot Citizen och LegalEntity            | C1, behörighet i Metakatalogen |
-| 4    | C4  | Kontaktpersonsroller via REST                        | C2                             |
-| 5    | C5  | Meddelandekärnan                                     | C2, C3, C4, F1                 |
-| 6    | C6  | Kundmeddelanden (`CUSTOMER`)                         | C5                             |
-| 7    | C7  | Läs-API för kund, kontakter, engagemang och historik | C2, C3                         |
-| 8    | C8  | Noteringar                                           | C3, C5                         |
-| 9    | C9  | Kundradering via REST och API för teknisk logg       | C5                             |
-| 10   | C10 | Skyddad identitet: nattlig kontroll                  | C3, C5                         |
-| 11   | T2  | Egen OpenSearch-container per miljö                  | —                              |
-| 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, C3, T2                     |
-| 13   | C13 | Sök-endpoint                                         | C5, C7, C12                    |
-| 14   | T1  | Köer och exchanges i driftkonfigurationen            | —                              |
-| 15   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                     |
-| 16   | SM1 | SupportManagement: outbox, relay och publicering     | F1                             |
-| 17   | SM2 | SupportManagement: grundladdning                     | SM1                            |
-| 18   | CD1 | Casedata: outbox, relay och publicering              | F1                             |
-| 19   | CD2 | Casedata: grundladdning                              | CD1                            |
-| 20   | PA1 | party-assets: outbox, relay och publicering          | F1                             |
-| 21   | PA2 | party-assets: grundladdning via outbox               | PA1                            |
-| 22   | CT1 | contract: tidsstämplar                               | —                              |
-| 23   | CT2 | contract: outbox, relay och publicering              | CT1, F1                        |
-| 24   | CT3 | contract: grundladdning                              | CT2                            |
-| 25   | T3  | Ändringskön i driftkonfigurationen                   | F2                             |
-| 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2            |
-| 27   | C15 | Skyddskontroll från ändringskön                      | C10, C14, F2                   |
-| 28   | C16 | Kontaktpersoner via REST                             | C7, C8, C9, C13                |
+| Steg | Id  |                       Uppgift                        |              Beror på              |
+|------|-----|------------------------------------------------------|------------------------------------|
+| 1    | C1  | Projektgrund                                         | —                                  |
+| 2    | C2  | Datamodell, Flyway och schemaverifiering             | C1                                 |
+| 3    | C3  | Integrationer mot Citizen och LegalEntity            | C1, C2, behörighet i Metakatalogen |
+| 4    | C4  | Kontaktpersonsroller via REST                        | C2                                 |
+| 5    | C5  | Meddelandekärnan                                     | C2, C3, C4, F1                     |
+| 6    | C6  | Kundmeddelanden (`CUSTOMER`)                         | C5                                 |
+| 7    | C7  | Läs-API för kund, kontakter, engagemang och historik | C2, C3                             |
+| 8    | C8  | Noteringar                                           | C3, C5                             |
+| 9    | C9  | Kundradering via REST och API för teknisk logg       | C5                                 |
+| 10   | C10 | Skyddad identitet: nattlig kontroll                  | C3, C5, C9                         |
+| 11   | T2  | Egen OpenSearch-container per miljö                  | —                                  |
+| 12   | C12 | Sökindex: Hibernate Search, kö och relay             | C2, C3, C5, T2                     |
+| 13   | C13 | Sök-endpoint                                         | C5, C7, C12                        |
+| 14   | T1  | Köer och exchanges i driftkonfigurationen            | —                                  |
+| 15   | C11 | RabbitMQ-lyssnare och `MessageIT`                    | C5, C6, T1                         |
+| 16   | SM1 | SupportManagement: outbox, relay och publicering     | F1                                 |
+| 17   | SM2 | SupportManagement: grundladdning                     | SM1                                |
+| 18   | CD1 | Casedata: outbox, relay och publicering              | F1                                 |
+| 19   | CD2 | Casedata: grundladdning                              | CD1                                |
+| 20   | PA1 | party-assets: outbox, relay och publicering          | F1                                 |
+| 21   | PA2 | party-assets: grundladdning via outbox               | PA1                                |
+| 22   | CT1 | contract: tidsstämplar                               | —                                  |
+| 23   | CT2 | contract: outbox, relay och publicering              | CT1, F1                            |
+| 24   | CT3 | contract: grundladdning                              | CT2                                |
+| 25   | T3  | Ändringskön i driftkonfigurationen                   | F2                                 |
+| 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2                |
+| 27   | C15 | Skyddskontroll från ändringskön                      | C10, C14, F2                       |
+| 28   | C16 | Kontaktpersoner via REST                             | C7, C8, C9, C10, C13               |
 
 ## C1 — Projektgrund
 
@@ -58,7 +58,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Lägg in `application.yml` och profilerna enligt [§12], och `SourceProperties` (`integration.sources`, `@Validated`),
   som C4 och C11 använder.
 - `SentBy`, som hämtar anroparen ur dept44:s `Identifier` och ger 400 enligt [§6] när `X-Sent-By` saknas, inte går att
-  tolka eller har ett värde över 255 tecken. C4, C8, C9 och C12 använder den.
+  tolka eller har ett värde över 255 tecken. C4, C8, C9, C12 och C16 använder den.
 - README skrivs om efter detta dokument.
 
 **Acceptans:**
@@ -84,7 +84,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `search_index_queue` ([§6.2]). Frågorna för ett visst flöde läggs till i uppgiften som bygger flödet.
 - Valet av modell för `contact_channel` ([§4.2]), med primärnyckeln `(contact_id, type, value)` i båda fallen.
 - `DeadlockRetry`, som gör om en hel transaktion högst tre gånger vid `PessimisticLockingFailureException`, utanför
-  transaktionen ([§3.6]). C4, C8, C9 och C10 använder den.
+  transaktionen ([§3.6]). C4, C8, C9, C10 och C16 använder den.
 - `schema.sql`, `truncate.sql`, `CascadeIT` och `SchemaParityIT`.
 
 **Acceptans:**
@@ -366,8 +366,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `UNKNOWN` betyder okänd skyddsstatus som ska hanteras som skyddad, och att en nivå som inte är `NONE` betyder att
   uppgifterna inte får lämnas ut utan prövning. `classified` och `protectedNR` beskrivs som Citizens värden ([§5.4]).
 - Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Finns inte numret eller
-  kunden blir svaret 404. Numret finns aldrig i svar, loggrader eller Problem-detail. En enskild firma slås upp med
-  `ENTERPRISE` och ägarens personnummer, med 10 eller 12 siffror, och ger firman och inte ägaren ([§3.1]).
+  kunden blir svaret 404. Svarar Citizen eller LegalEntity inte, eller med 5xx, blir svaret 503. Numret finns aldrig
+  i svar, loggrader eller Problem-detail. En enskild firma slås upp med `ENTERPRISE` och ägarens personnummer, med 10
+  eller 12 siffror, och ger firman och inte ägaren ([§3.1]).
 - Historiken för ett engagemang sorteras förvalt på `occurredAt,desc` och pagineras ([§6.1]).
 - Engagemang från alla namespaces visas utan filter. `namespace`, som kan anges flera gånger, och `objectType`
   filtrerar. Med ett namespace-filter kommer engagemang utan namespace också med ([§5.1]). Förvald sortering är
@@ -472,9 +473,21 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   skyddsnivån, `PROTECTION_CHANGED`, ifyllnaden av namn och folkbokföringsadress och markering av ändrade kunder för
   omindexering.
 - Passet över `registry_person`, med keyset på `id`, och rensningen av rader som ingen kontaktrad pekar på ([§5.4]).
+- Rensningen av kunder som inte har något kvar, först i körningen, med samma låsning som raderingen via REST i C9
+  ([§3.6], [§5.4], [beslut 69]).
 
 **Acceptans:**
 
+- En kund utan engagemang, noteringar, kontaktpersoner från REST och `CUSTOMER`-data raderas och loggas som
+  `CUSTOMER_DELETED` med kanalen `SCHEDULER`. Personens kontaktrader från källorna hos andra kunder raderas och loggas
+  som `CONTACT_REMOVED`, och personens kontaktpersoner från REST står kvar ([§3.6]). En kund som har något av de fyra
+  står kvar, med ett testfall per slag.
+- Samtidighetstest: ett meddelande ger en tom kund ett engagemang medan rensningen kör. Antingen står kunden kvar med
+  engagemanget, eller så raderas kunden först och skapas på nytt av meddelandet. Engagemanget finns i båda fallen, och
+  inget FK-fel uppstår.
+- En kund som rensningen raderar tas inte med i kontrollen mot Citizen samma natt.
+- `EXPLAIN` i ett repository-test visar att rensningens urval använder indexen som börjar med `customer_id` i
+  `engagement`, `note` och `manual_contact_person`, och nyckeln i `source_object` ([§4.3]).
 - Alla kunder med `registry_party_id` eller `registry_protection = UNKNOWN` vars `registry_checked` saknas eller är
   äldre än körningens start tas med, även en kund som skapades kl. 10 dagen före. Undantaget är ett företag med
   `UNKNOWN` utan `registry_party_id` under uppehållet efter 404 från LegalEntity. Ett företag med känd status som inte
@@ -539,7 +552,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `contacts_global`.
 - Arbetsställenas namn och adresser hamnar i `workplaces`, med högst 500 värden, och telefonnumren i `phones_global`.
 - Företagsprofilens SNI-namn och verksamhetsbeskrivning hamnar i `business`. En kund utan profil har inget `business`.
-- Telefonnummer i formaten `+46 70-123 45 67`, `0046701234567` och `070-1234567` ger samma värde.
+- Telefonnummer i formaten `+46 70-123 45 67`, `0046701234567` och `070-1234567` ger samma värde. Ett telefonvärde
+  utan siffror, t.ex. `-`, indexeras inte.
 - Engagemangens titel och kategori hamnar i `engagements_ns_<namespace>` och referensen i `references_ns_<namespace>`,
   och för ett engagemang utan namespace i `engagements_global` och `references_global`. Noteringar hamnar i
   `notes_ns_<namespace>`, och noteringar utan namespace i `notes_global`.
@@ -553,7 +567,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   - avslutar körningen efter `search.relay.max-run-time`
 - `OpenSearchHealthIndicator` blir `DOWN` när någon rad har `attempts ≥ 5` och ingår inte i `readiness`.
 - En markering från `CONTACT_REMOVED` eller `CUSTOMER_DELETED` sätter `priority`, och relayn tar de prioriterade raderna
-  före äldre rader utan prioritet ([§6.2]). En senare markering utan prioritet tar inte bort den.
+  före äldre rader utan prioritet ([§6.2]). En senare markering utan prioritet tar inte bort den. `EXPLAIN` i ett
+  repository-test visar att relayns två frågor läser `idx_search_index_queue_priority_queued` utan filesort.
 - `POST /search/reindex` utan `X-Sent-By` ger 400.
 - Reindexeringen svarar 202, 409 om låset redan är taget och 503 om sökningen är avstängd. Den pausar relayn medan den
   pågår, och låset förlängs med `KeepAliveLockProvider`.
@@ -594,7 +609,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   utan omindexering. Nivåerna läses med en fråga per sida.
 
 - Ett telefonnummer hittas oavsett format, också när det bara finns i en kontaktperson i ett namespace och sökningen
-  saknar filter.
+  saknar filter. En fråga utan siffror tar inte med telefonfälten, med och utan filter ([§6.2]).
 
 - AND gäller över alla fält med och utan filter: "Anna Sundsvall" träffar en kund där Anna finns i en kontaktperson i
   namespace X och Sundsvall i kundens adress, både utan filter och med `namespace=X`.
@@ -652,7 +667,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `MessageListener` med en direct-container per kö i `integration.sources` ([beslut 68]), registrerade med
   `RabbitListenerConfigurer`, och källan från `CONSUMER_QUEUE` ([§9]).
 - `DeadLetterHealthIndicator` enligt [§12.1].
-- `MessageIT` enligt [§10].
+- `MessageIT` enligt [§10], utom fallet med ändringskön, som C14 lägger till.
 
 **Acceptans:**
 
@@ -902,8 +917,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   senaste anropet till LegalEntity.
 - 404 från LegalEntity lämnar profilen orörd, skriver `PROFILE_NOT_FOUND` i den tekniska loggen och loggar WARN utan
   id ([§8.1]).
-- När LegalEntity inte svarar, eller svarar 5xx, 429 eller 408, görs meddelandet om, och efter `delivery-limit`
-  hamnar det i dead letter-kön. 429 och 408 görs om till ett avbrott, som när partyId slås upp ([§3.7]).
+- När LegalEntity inte svarar, svarar 429 eller 408, eller har öppen circuit breaker, är det ett avbrott: meddelandet
+  läggs tillbaka i kön och hamnar efter `delivery-limit` i dead letter-kön. 429 och 408 görs om till ett avbrott, som
+  när partyId slås upp. 5xx görs om i lyssnaren och dead-letteras sedan direkt ([§3.7]).
 - Ett meddelande om en person ger inget anrop till LegalEntity (C15 kontrollerar personen).
 - Ett meddelande utan partyId eller partens typ, eller vars id inte är ett UUID, dead-letteras direkt ([§5.5]).
 - En profil med samma `content_hash` som den sparade flyttar bara fram `fetched`, utan loggrad och utan omindexering.
@@ -980,11 +996,15 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `DELETE` på en kund och `CUSTOMER DELETE` raderar personens kontaktpersoner från REST hos andra kunder i kommunen, i
   alla namespaces, och loggar `CONTACT_REMOVED` för de kunderna ([§3.6]). En automatisk radering av personen som
   kund lämnar dem orörda.
+- En kund som på det sättet förlorar sin sista kontaktperson från REST, och inget annat har kvar, står kvar tills den
+  nattliga kontrollen raderar den med `CUSTOMER_DELETED` och kanalen `SCHEDULER` ([beslut 69]).
 - `DELETE` på en kund som bara finns som kontaktperson från REST hos en annan kund raderar raden och ger 204.
 - En kontaktperson med namespace hamnar i `contacts_ns_<namespace>`, med telefonnumren i `phones_ns_<namespace>`, och
   en utan namespace i `contacts_global` och `phones_global` ([§6.2]).
 - Om ett meddelande raderar kunden medan en kontaktperson skapas blir det inget FK-fel, eftersom kunden är låst
   ([§3.6]).
+- Varje skrivning av en kontaktperson låser kunden först och körs med READ COMMITTED ([§3.6]). En skrivning som faller
+  på deadlock görs om med `DeadlockRetry` från C2.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
@@ -1030,4 +1050,5 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 [beslut 61]: 00-beslutslogg.md#beslut-61-noteringar-ändras-med-optimistisk-låsning
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 [beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
+[beslut 69]: 00-beslutslogg.md#beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
 

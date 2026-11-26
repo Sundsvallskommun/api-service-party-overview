@@ -310,8 +310,9 @@ En kund raderas i följande fall:
 | `DELETE /{municipalityId}/customers/{partyId}`                                                                                                                                  | `REST`         | —                                    |
 | Sista engagemanget är borta, och kunden har varken noteringar, kontaktpersoner från REST eller `CUSTOMER`-data                                                                  | `MESSAGE`      | det objekt som tog bort engagemanget |
 | Sista noteringen eller sista kontaktpersonen från REST raderas, och kunden har inget annat kvar: varken engagemang, noteringar, kontaktpersoner från REST eller `CUSTOMER`-data | `REST`         | —                                    |
+| Den nattliga kontrollen hittar en kund som inte har något kvar ([§5.4], [beslut 69])                                                                                            | `SCHEDULER`    | —                                    |
 
-De två sista är automatisk radering. Kontaktpersoner från REST är de som har lagts till i `manual_contact_person`
+De tre sista är automatisk radering. Kontaktpersoner från REST är de som har lagts till i `manual_contact_person`
 ([§5.3]). `CUSTOMER`-data betyder att kunden har en rad i `source_object` för `CUSTOMER`, alltså att någon källa har
 skickat ett `CUSTOMER UPDATE` för den. Raden bär källans kontaktuppgifter och skydd ([§3.5]), och de ska inte försvinna
 för att kundens sista engagemang gör det.
@@ -326,7 +327,8 @@ för att kundens sista engagemang gör det.
   objektet ändras i källan ([beslut 52]).
 - Personens kontaktpersoner från REST hos andra kunder (`manual_contact_person.party_id`) raderas bara när personen
   raderas med `CUSTOMER DELETE` eller via REST, aldrig vid en automatisk radering ([beslut 65]). En kund som på det
-  sättet förlorar sin sista kontaktperson från REST raderas inte automatiskt.
+  sättet förlorar sin sista kontaktperson från REST, och inget annat har kvar, raderas av den nattliga kontrollen
+  ([§5.4], [beslut 69]).
 - Varje kund som förlorar kontaktrader loggas som `CONTACT_REMOVED` ([§8.1]).
 - Den nattliga kontrollen raderar personens rad i `registry_person` när ingen kontaktrad pekar på den längre ([§5.4]).
 - Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
@@ -340,7 +342,7 @@ för att kundens sista engagemang gör det.
   en raderad kund inte skapas på nytt. Transaktionen körs med READ COMMITTED, som i [§3.3]. Annars kan ett meddelande
   hinna ge kunden ett engagemang som kontrollen inte ser, eller radera kunden medan en ny notering väntar på sin
   FK-kontroll.
-- REST-anropen som skriver och den nattliga kontrollens batchar görs om, högst tre gånger, vid deadlock eller lock
+- REST-anropen som skriver och den nattliga kontrollens transaktioner görs om, högst tre gånger, vid deadlock eller lock
   timeout (`PessimisticLockingFailureException`). Omförsöket görs utanför transaktionen, så att hela transaktionen körs
   om. Startern gör om meddelanden ([§3.7]).
 
@@ -353,7 +355,7 @@ dept44-starter-rabbitmq klassar felen (`TransientFailures`):
 | Valideringsfel (`ConstraintViolationException`), okänd objekttyp eller kanaltyp, saknad version                                                                             | Dead letter direkt                                                                                                                                                                                |
 | Ett legalId finns inte hos Citizen eller LegalEntity, eller har fel format och skickas därför aldrig ([§7.1])                                                               | Parten hoppas över och resten av meddelandet tillämpas, även raderingen av engagemang för kunder som inte längre är parter ([beslut 16]). WARN loggas med källa och `objectId`, men utan legalId. |
 | 5xx från Citizen eller LegalEntity när partyId slås upp (`ServerProblem`)                                                                                                   | Omförsök i cirka 8 minuter, sedan dead letter. Utan partyId kan parten inte tillämpas.                                                                                                            |
-| 429 eller 408, eller öppen circuit breaker, när partyId slås upp                                                                                                            | Avbrott: omförsök, sedan tillbaka till kön. Integrationen gör om svaret till ett avbrott, eftersom startern annars dead-letterar en 4xx direkt.                                                   |
+| Citizen eller LegalEntity svarar inte, svarar 429 eller 408, eller har öppen circuit breaker när partyId slås upp                                                           | Avbrott: omförsök, sedan tillbaka till kön. Integrationen gör om svaret till ett avbrott, eftersom startern annars dead-letterar en 4xx direkt.                                                   |
 | Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när skyddsstatusen hämtas                                                                   | Inget fel. Nya kunder och kontaktpersoner får skyddsstatusen `UNKNOWN`, och meddelandet tillämpas ([§5.4]).                                                                                       |
 | LegalEntity eller Citizen svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när en ny företagskunds organisationsnummer eller ägare hämtas            | Inget fel. Kunden får `UNKNOWN` utan `registry_party_id`, och den nattliga kontrollen gör om uppslaget ([§5.4]).                                                                                  |
 | LegalEntity svarar inte, svarar 5xx, 429 eller 408, eller har öppen circuit breaker när profilen hämtas för en ny företagskund vars organisationsnummer finns i meddelandet | Inget fel. Kunden skapas utan företagsprofil, och den nattliga kontrollen hämtar den ([§5.5]).                                                                                                    |
@@ -392,4 +394,5 @@ konsument i en egen virtuell tråd ([§9], [§12]), så under ett omförsök st�
 [beslut 62]: 00-beslutslogg.md#beslut-62-meddelandeformaten-följer-cloudevents
 [beslut 66]: 00-beslutslogg.md#beslut-66-köernas-inställningar-sätts-med-policyer
 [beslut 65]: 00-beslutslogg.md#beslut-65-verksamheter-lägger-till-egna-kontaktpersoner-via-rest
+[beslut 69]: 00-beslutslogg.md#beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
 

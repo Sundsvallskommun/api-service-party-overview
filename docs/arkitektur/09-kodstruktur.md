@@ -55,6 +55,6 @@ se.sundsvall.partyoverview
 - **Inga TODO:s** och ingen bortkommenterad kod.
 
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
-[beslut 17]: 00-beslutslogg.md#beslut-17-en-lyssnare-och-en-mappning-för-alla-köer
+[beslut 17]: 00-beslutslogg.md#beslut-17-en-lyssnare-och-en-mappning-för-alla-källors-köer
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 

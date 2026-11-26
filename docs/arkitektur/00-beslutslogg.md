@@ -132,7 +132,7 @@ grundladdning skulle då väcka det till liv. Övriga tombstones innehåller ing
 ## Beslut 13: Radlås och single-active-consumer
 
 Samtidighet hanteras med radlås på `source_object` och kunder (IODKU + `SELECT … FOR UPDATE`, kunderna i
-partyId-ordning) med READ COMMITTED, plus `x-single-active-consumer` på varje kö.
+partyId-ordning) med READ COMMITTED, plus `x-single-active-consumer` på varje källas kö.
 
 **Valdes bort:** Att lita enbart på single-active-consumer, som POC:en gör.
 
@@ -142,7 +142,10 @@ ska komma i rätt ordning.
 ## Beslut 14: Tre sätt att radera en kund
 
 En kund raderas av ett CUSTOMER DELETE-meddelande, av REST DELETE eller automatiskt när kunden saknar engagemang,
-noteringar, kontaktpersoner från REST och data från `CUSTOMER`-meddelanden ([§3.6]).
+noteringar, kontaktpersoner från REST och data från `CUSTOMER`-meddelanden ([§3.6]). Den automatiska raderingen görs
+direkt när kundens sista engagemang försvinner eller dess sista notering eller kontaktperson från REST raderas. När
+kunden förlorar sin sista kontaktperson från REST för att personen raderas, görs den av den nattliga kontrollen
+([beslut 69]).
 
 **Valdes bort:** —
 
@@ -172,15 +175,16 @@ inte finns blir inte bättre av omförsök. Ett nummer som aldrig går att mappa
 engagemang raderas för parter som har lämnat objektet. Tillfälliga fel görs om och når aldrig tillämpningen
 ([§3.7]).
 
-## Beslut 17: En lyssnare och en mappning för alla köer
+## Beslut 17: En lyssnare och en mappning för alla källors köer
 
-En lyssnarklass och en mappning hanterar alla köer, med en listener-container per kö ([§9]). Källan bestäms av kön,
-inte av något i meddelandet.
+En lyssnarklass och en mappning hanterar alla källors köer, med en listener-container per kö ([§9]). Källan bestäms av
+kön, inte av något i meddelandet. Ändringskön har en egen lyssnare ([§5.5]).
 
 **Valdes bort:** Ett paket och en översättare per källa, som i POC:en, eller en enda container för alla köer.
 
-**Skäl:** Det gemensamma formatet gör översättarna onödiga. Kön kan bara nås via källans egen exchange. Med en enda
-container delar köerna en konsumenttråd, och ett omförsök på en källa stoppar alla.
+**Skäl:** Det gemensamma formatet gör översättarna onödiga. Kön kan bara nås via källans egen exchange. Med en
+container per kö syns varje kö för sig i dept44:s hälsokontroll `rabbitListeners`, och varje kö kan stoppas och startas
+för sig.
 
 ## Beslut 18: Historiken kommer från källans aktiviteter
 
@@ -823,6 +827,23 @@ markerar då liveness som `BROKEN`, så att podden startas om.
 felkonfigurerad kö ska larma, inte ta ner kundvyn för hela kommunen. Startern kör varje direct-konsument i en egen
 virtuell tråd, så köerna väntar inte på varandra.
 
+## Beslut 69: Den nattliga kontrollen raderar kunder utan innehåll
+
+Den nattliga kontrollen raderar de kunder som inte har något kvar: varken engagemang, noteringar, kontaktpersoner från
+REST eller `CUSTOMER`-data ([§3.6], [§5.4]). En sådan kund uppstår när en person raderas med `CUSTOMER DELETE` eller
+via REST, och kunden därmed förlorar sin sista kontaktperson från REST ([beslut 65]). Raderingen är automatisk, som i
+[beslut 14], och loggas med kanalen `SCHEDULER`.
+
+**Valdes bort:**
+
+- Att radera kunden direkt, i samma transaktion som personen.
+- Att låta kunden ligga kvar.
+
+**Skäl:** Personen kan vara kontaktperson hos många kunder. En direkt radering skulle låsa och kontrollera dem alla i
+personens transaktion, med fler lås och större risk för deadlock. En kund som ligger kvar är sökbar med namn och
+adress utan att ha något i kommunen, och ingenting skulle någonsin radera den. Kontrollen fångar också en kund som har
+blivit tom på något annat sätt.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -871,4 +892,6 @@ virtuell tråd, så köerna väntar inte på varandra.
 [§3.2]: 03-meddelanden.md#32-topologi
 [§11.1]: 11-publicerare.md#111-gemensamt-för-alla-publicerare
 [beslut 26]: #beslut-26-supportmanagement-publicerar-inte-utkast
+[beslut 14]: #beslut-14-tre-sätt-att-radera-en-kund
+[beslut 69]: #beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
 

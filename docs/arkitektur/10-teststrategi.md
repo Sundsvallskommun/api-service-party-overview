@@ -9,8 +9,9 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
 - **`SchemaVerificationTest`**: `schema.sql` stämmer med entiteterna, inklusive `on delete cascade`.
 - **Repository-tester** (`@DataJpaTest`, junit-profil): Att IODKU är idempotent, `FOR UPDATE`, synlighetsfrågorna,
   sortering och paginering, raderingen av "kunder som inte längre är parter", radering av teknisk logg med `LIMIT`,
-  urvalet till den nattliga skyddskontrollen. Ett samtidighetstest där två trådar skapar samma kund (`NOT_SUPPORTED`,
-  `TransactionTemplate` och latch) och resultatet blir en kund utan undantag.
+  urvalet till den nattliga skyddskontrollen och till rensningen av kunder utan innehåll. Ett samtidighetstest där två
+  trådar skapar samma kund (`NOT_SUPPORTED`, `TransactionTemplate` och latch) och resultatet blir en kund utan
+  undantag.
 - **Servicetester** (Mockito): Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna, Citizens flaggor
   och `UNKNOWN` ([§5.4]), att namn, adresser, kontaktuppgifter och profil sparas och står kvar när kunden blir skyddad,
   att en kontaktpersons nivå räknas fram från källans `protection`, kunden, `registry_person` och den fasta nivån
@@ -19,7 +20,8 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   alla celler i [§3.4]. Klassningen av parter ([§5.3]), "nyast vinner" för namn och adresser, valet av
   kontaktpersonens adress, historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden men inte
   när den har noteringar eller kontaktpersoner från REST, att en automatisk radering inte tar personens kontaktpersoner
-  från REST hos andra kunder, legalId-mappning och 404, valideringsfel, notering och kontaktperson som skapar kund
+  från REST hos andra kunder, att den nattliga kontrollen raderar en kund som inte har något kvar ([§3.6]),
+  legalId-mappning och 404, valideringsfel, notering och kontaktperson som skapar kund
   (PRIVATE, ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall.
 - **Integrationstester (enhet)**: `CitizenIntegration`, `LegalEntityIntegration`: mappning,
   `Optional.empty` vid 404, att undantag inte sväljs och att legalId inte finns i några meddelanden. `MessageListener`:
@@ -55,4 +57,5 @@ i PR:en mot driftkonfigurationen.
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[§3.6]: 03-meddelanden.md#36-kundradering
 

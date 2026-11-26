@@ -50,10 +50,12 @@ Den tekniska loggen gallras efter en lagringstid ([beslut 60]). Den raderas inte
 - Båda raderar i batchar om `technical-log.delete-batch-size` (förval 1 000) med `LIMIT` och en transaktion per batch,
   så att låsen hålls korta.
 
-Inget annat gallras automatiskt:
+Inget annat gallras efter en lagringstid:
 
 - Historik och kontakter följer sina engagemang och sin kund. Undantaget är en kontaktpersons rader, som också raderas
   när parten raderas, även automatiskt ([§5.3]).
+- En kund som inte har något kvar raderas av den nattliga kontrollen ([§3.6], [§5.4]).
+- En persons rad i `registry_person` raderas av den nattliga kontrollen när ingen kontaktrad pekar på den ([§5.4]).
 - Tombstones i `source_object` sparas för alltid ([beslut 12]). Rader för `CUSTOMER`, som innehåller partyId, blir
   aldrig tombstones och raderas med kunden ([§3.6]).
 
