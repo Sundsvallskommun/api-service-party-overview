@@ -136,8 +136,9 @@ partyId-ordning) med READ COMMITTED, plus `x-single-active-consumer` på varje k
 
 **Valdes bort:** Att lita enbart på single-active-consumer, som POC:en gör.
 
-**Skäl:** Flera köer och REST kan skriva till samma kund. Single-active-consumer behövs ändå för att objektets historik
-ska komma i rätt ordning.
+**Skäl:** Flera köer och REST kan skriva till samma kund. Single-active-consumer gör att en källas meddelanden
+tillämpas i den ordning de publicerades, så att färre blir inaktuella och färre transaktioner väntar på samma lås.
+Historiken beror inte på ordningen ([beslut 70]).
 
 ## Beslut 14: Tre sätt att radera en kund
 
@@ -355,7 +356,8 @@ De administrativa endpoints (kundradering, teknisk logg och kontaktpersonsroller
 ## Beslut 31: Dead letter-köer utan TTL, med larm
 
 Dead letter-köerna har ingen TTL, och drift och utvecklare har åtkomst. En health-indikator i party-overview blir `DOWN`
-när någon av dem innehåller meddelanden, och Spring Boot Admin larmar då till Slack ([§12.1]).
+när någon av dem innehåller meddelanden, och Spring Boot Admin larmar då till Slack ([§12.1]). Spring Boot Admin
+påminner så länge statusen är `DOWN` ([beslut 72]).
 
 **Valdes bort:** TTL på köerna, eller larm i brokerns egen övervakning.
 
@@ -540,7 +542,7 @@ ersätts bara när källan skriver om kontaktpersonen. Det räknas inte i söktr
 - Att kontaktpersoner som inte kan kontrolleras får `UNKNOWN`.
 
 **Skäl:** Med single-active-consumer skulle hela källans kö stå still i cirka 8 minuter per meddelande. Meddelanden som
-flyttas tillbaka från dead letter-kön kommer i fel ordning och tappar sina aktiviteter. Uppgifterna sparas, och
+flyttas tillbaka från dead letter-kön kommer i fel ordning. Uppgifterna sparas, och
 `UNKNOWN` visar att de ska hanteras som skyddade tills statusen är känd. Ett eget värde visar att statusen är okänd, i
 stället för en skyddsnivå som personen kanske inte har. `UNKNOWN` betyder alltid att den nattliga kontrollen ersätter
 värdet. Kontaktpersoner utan id är vanliga. Med `UNKNOWN` för dem skulle `hasProtectedContacts` vara sant för nästan
@@ -844,6 +846,44 @@ personens transaktion, med fler lås och större risk för deadlock. En kund som
 adress utan att ha något i kommunen, och ingenting skulle någonsin radera den. Kontrollen fångar också en kund som har
 blivit tom på något annat sätt.
 
+## Beslut 70: Aktiviteter har ett id, och historiken skrivs oavsett version
+
+Varje aktivitet har ett id från publiceraren, som är detsamma varje gång aktiviteten publiceras ([§3.1], [§11.1]).
+party-overview skriver aktiviteterna från varje `UPDATE` på de engagemangsrader det når, också från ett inaktuellt, och
+en aktivitet som redan finns på raden skrivs inte igen ([§3.5]). Versionsvakten styr bara tillståndet.
+Publicerarnas relay läser objektets rader före tillståndet och tar inget lås.
+
+**Valdes bort:** Historik bara när raden är ny eller versionen är högre än den lagrade, med ett delat lås på källraden i
+relayn tills brokern har bekräftat.
+
+**Skäl:** Ett meddelande som flyttas tillbaka från dead letter-kön efter ett nyare om samma objekt är inaktuellt, och
+dess aktiviteter skulle då aldrig hamna i historiken. Låset behövdes för att en rad inte skulle publiceras med samma
+version som ett tidigare meddelande. Det gjorde också att publicerarnas skrivningar väntade när brokern var långsam
+eller larmade för minne. Med id:n spelar varken ordningen eller dubbletter någon roll för historiken.
+
+## Beslut 71: party-overview litar på publicerarnas urval
+
+Publicerarna avgör vilka namespaces, asset-typer och objekt som publiceras ([beslut 19], [beslut 37], [beslut 50],
+[beslut 51]). party-overview tillämpar det som kommer och har ingen egen lista över vad som får visas.
+
+**Valdes bort:** En egen lista per källa i party-overview över tillåtna namespaces och kategorier, där ett meddelande
+utanför listan dead-letteras eller tillämpas som `DELETE`.
+
+**Skäl:** Källsystemen är master och avgör vad som får visas. En egen lista skulle behöva ändras på två ställen varje
+gång ett namespace eller en asset-typ slås på, och ett fel i den skulle dölja data eller fylla dead letter-kön.
+
+## Beslut 72: Larmen påminner, och varje signal har ett mätvärde
+
+Spring Boot Admin påminner till Slack så länge en instans är `DOWN` eller `OFFLINE`. Varje signal bakom
+party-overviews `DOWN` har dessutom ett eget mätvärde i `/actuator/metrics` ([§12.1]).
+
+**Valdes bort:** Bara notifieringar när statusen ändras, eller en egen larmkanal från party-overview till Slack.
+
+**Skäl:** Spring Boot Admin notifierar bara när statusen ändras. Ett meddelande i en dead letter-kö som ingen tar hand
+om håller tjänsten `DOWN`, och nästa fel ger då inget nytt larm, trots att en dead-letterad `DELETE` lämnar
+personuppgifter kvar tills någon agerar ([beslut 31]). Spring Boot Admin larmar inte på mätvärden, men med dem kan en
+larmregel per signal läggas till utan att koden ändras.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -894,4 +934,7 @@ blivit tom på något annat sätt.
 [beslut 26]: #beslut-26-supportmanagement-publicerar-inte-utkast
 [beslut 14]: #beslut-14-tre-sätt-att-radera-en-kund
 [beslut 69]: #beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
+[beslut 31]: #beslut-31-dead-letter-köer-utan-ttl-med-larm
+[beslut 70]: #beslut-70-aktiviteter-har-ett-id-och-historiken-skrivs-oavsett-version
+[beslut 72]: #beslut-72-larmen-påminner-och-varje-signal-har-ett-mätvärde
 

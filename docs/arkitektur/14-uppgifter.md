@@ -45,6 +45,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 26   | C14 | Företagsprofilen från ändringskön                    | C3, C5, C11, T3, F2                |
 | 27   | C15 | Skyddskontroll från ändringskön                      | C10, C14, F2                       |
 | 28   | C16 | Kontaktpersoner via REST                             | C7, C8, C9, C10, C13               |
+| 29   | T4  | Påminnelser i Spring Boot Admin                      | —                                  |
 
 ## C1 — Projektgrund
 
@@ -225,6 +226,10 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Versionsmatrisen i [§3.4] testas tabelldrivet, och varje cell har ett eget fall.
 - Om samma meddelande tillämpas två gånger blir det ingen dubblerad historik, och den andra loggraden blir
   `ENGAGEMENT_UPDATED`.
+- Ett inaktuellt `UPDATE` skriver sina aktiviteter på engagemangsraderna för de kundparter som har en rad i objektet,
+  och ändrar inget annat ([§3.5]). Testfall: v=8 tillämpas och sedan v=7, och historiken har båda meddelandenas
+  aktiviteter.
+- En aktivitet vars id redan finns på raden skrivs inte igen, men samma id på en annan rad skrivs ([§4.3]).
 - En part som försvinner ur objektet ger `ENGAGEMENT_REMOVED`. Var det kundens sista engagemang och har kunden inga
   noteringar ger det dessutom `CUSTOMER_DELETED`. En kund med en notering finns kvar.
 - En kontaktpersonsroll ger en `CONTACT_PERSON`-kontakt på varje `ENTERPRISE`-kund och aldrig en egen kund. Ett objekt
@@ -565,7 +570,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   - avbryter körningen utan att ändra `attempts` när OpenSearch inte går att nå eller svarar med timeout, 5xx eller 429
   - ökar `attempts` på en rad vars dokument inte går att bygga, och fortsätter med de andra raderna
   - avslutar körningen efter `search.relay.max-run-time`
-- `OpenSearchHealthIndicator` blir `DOWN` när någon rad har `attempts ≥ 5` och ingår inte i `readiness`.
+- `OpenSearchHealthIndicator` blir `DOWN` när någon rad har `attempts ≥ 5` och ingår inte i `readiness`. Mätvärdet
+  `partyoverview.search.failed` visar antalet sådana rader ([§12.1]).
 - En markering från `CONTACT_REMOVED` eller `CUSTOMER_DELETED` sätter `priority`, och relayn tar de prioriterade raderna
   före äldre rader utan prioritet ([§6.2]). En senare markering utan prioritet tar inte bort den. `EXPLAIN` i ett
   repository-test visar att relayns två frågor läser `idx_search_index_queue_priority_queued` utan filesort.
@@ -684,6 +690,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `DeadLetterHealthIndicator` är `DOWN` med köns namn. När kön skapas börjar lyssnaren konsumera utan omstart. Samma
   sak gäller när AMQP-användaren saknas ([§12]).
 - Med `dept44.rabbitmq.enabled=false` finns ingen `DeadLetterHealthIndicator`, och tjänsten startar.
+- `DeadLetterHealthIndicator` uppdaterar `partyoverview.deadletter.messages` och `partyoverview.queue.missing` per kö
+  varje gång den körs ([§12.1]).
 - README beskriver hur dead letters hanteras, och att kontaktpersonsrollerna sätts innan lyssnarna slås på ([§12]).
 
 ## SM1 — SupportManagement: outbox, relay och publicering
@@ -706,10 +714,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - En stakeholders adress skickas som `POSTAL_ADDRESS` ([§11.2]). En stakeholder vars adressfält alla är tomma skickas
   utan adress.
 - Ett nytt ärende, som saknar `modified`, publiceras med `sourceModified = created`.
-- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
-  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
-  meddelande med den nya versionen och båda ändringarnas aktiviteter. En ändring som committas medan relayn
-  publicerar hamnar i nästa meddelande, med sin egen version.
+- Relayn läser objektets väntande rader före tillståndet, utan lås, och håller ingen transaktion öppen medan brokern
+  bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
+  ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
+  skrivning till objektet inte väntar medan relayn publicerar.
+- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - E-post, sms och webbmeddelanden till och från ett ärende ger ingen outbox-rad, så länge ärendet självt inte ändras
   ([beslut 55]).
 - Ett namespace med `accessControl = true` kan inte slå på publiceringen. Slås åtkomstkontrollen på för ett namespace
@@ -760,9 +769,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `organizationNumber` skickas utan bindestreck och utan ett inledande `16` ([§3.1]). En enskild firmas nummer, med 10
   eller 12 siffror, skickas med `ENTERPRISE`. Ett värde som inte följer formatet, kontrollsiffran inräknad, skickas
   inte.
-- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
-  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
-  meddelande med den nya versionen och båda ändringarnas aktiviteter.
+- Relayn läser objektets väntande rader före tillståndet, utan lås, och håller ingen transaktion öppen medan brokern
+  bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
+  ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
+  skrivning till objektet inte väntar medan relayn publicerar.
+- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - Casedata exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - `ProcessService.updateProcess` anropas i exakt samma fall som tidigare.
@@ -805,9 +816,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `PR3Importer` sparar varje asset och skickar händelsen i en `TransactionTemplate`, så att asseten och outbox-raden
   committas tillsammans ([§11.1]).
 - En radering publiceras som `DELETE` med versionen från outbox-raden.
-- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
-  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
-  meddelande med den nya versionen och båda ändringarnas aktiviteter.
+- Relayn läser objektets väntande rader före tillståndet, utan lås, och håller ingen transaktion öppen medan brokern
+  bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
+  ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
+  skrivning till objektet inte väntar medan relayn publicerar.
+- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - party-assets exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
@@ -864,9 +877,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Ett kontrakt utan `modified` publiceras med `sourceModified` = `1970-01-01T00:00:00Z` ([§11.4]).
 - `Identifier` fångas när `X-Sent-By` finns och blir `performedBy`. Ett anrop utan headern fungerar som tidigare.
 - En radering publiceras som `DELETE` med versionen från outbox-raden.
-- Relayn låser objektraden som första sats, med READ COMMITTED, innan den läser raderna och tillståndet ([§11.1]). En
-  relay som startar medan en ändring är ocommittad skickar inget förrän ändringen är committad. Sedan skickas ett
-  meddelande med den nya versionen och båda ändringarnas aktiviteter.
+- Relayn läser objektets väntande rader före tillståndet, utan lås, och håller ingen transaktion öppen medan brokern
+  bekräftar ([§11.1]). En ändring som committas mellan läsningarna ger ett meddelande med den nya versionen, och
+  ändringens egen rad publiceras i nästa meddelande med samma version och sina aktiviteter. Ett IT visar att en
+  skrivning till objektet inte väntar medan relayn publicerar.
+- Varje aktivitet har id:t `<radens id>-<index>`, och samma rad publicerad två gånger ger samma id:n ([§11.1]).
 - En health-indikator blir `DOWN` när den äldsta väntande outbox-raden är för gammal ([§11.1]).
 - contract exponerar sitt AsyncAPI-dokument enligt det gemensamma formatet.
 - En ändring som rullas tillbaka publiceras inte. En publicering som misslyckas ligger kvar i outboxen och skickas vid
@@ -1006,6 +1021,20 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Varje skrivning av en kontaktperson låser kunden först och körs med READ COMMITTED ([§3.6]). En skrivning som faller
   på deadlock görs om med `DeadlockRetry` från C2.
 
+## T4 — Påminnelser i Spring Boot Admin
+
+**Bygg:**
+
+- En `RemindingNotifier` runt Slack-notifieraren i spring-boot-admin, som påminner så länge en instans är `DOWN` eller
+  `OFFLINE` ([beslut 72]).
+
+**Acceptans:**
+
+- En instans som är `DOWN` längre än påminnelseintervallet ger en ny notifiering i Slack, och en instans som har blivit
+  `UP` ger inga fler.
+- Intervallet är konfigurerbart och avstämt med dem som tar emot larmen. Påminnelserna gäller alla tjänster i Spring
+  Boot Admin.
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
@@ -1051,4 +1080,5 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 [beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
 [beslut 69]: 00-beslutslogg.md#beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
+[beslut 72]: 00-beslutslogg.md#beslut-72-larmen-påminner-och-varje-signal-har-ett-mätvärde
 

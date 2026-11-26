@@ -195,7 +195,8 @@ Grupperingen är en ren funktion som går att enhetstesta.
    `shedlock-lock-at-most-for`, så att två relayer aldrig skriver samtidigt.
 
 3. *Larm:* `OpenSearchHealthIndicator`, kopierad från SM, blir `DOWN` när OpenSearch inte svarar eller när någon rad i
-   kön har `attempts ≥ 5`. Spring Boot Admin larmar då som i [§12.1]. Indikatorn ingår inte i `readiness`.
+   kön har `attempts ≥ 5`. Spring Boot Admin larmar då som i [§12.1]. Indikatorn ingår inte i `readiness`, och den
+   visar antalet sådana rader i mätvärdet `partyoverview.search.failed`.
 
 4. *Radering direkt i databasen:* når inte kön ([beslut 25a]). Träffen filtreras bort när den laddas från databasen, och
    dokumentet försvinner vid nästa reindexering. README beskriver att reindexering ska köras efter en sådan radering.

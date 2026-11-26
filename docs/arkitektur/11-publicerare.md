@@ -21,6 +21,8 @@ Del av [arkitekturen för party-overview](README.md).
      transaktion får en, t.ex. med `TransactionTemplate` per asset i `PR3Importer` i party-assets. Outbox-raden skrivs
      aldrig i en egen transaktion, eftersom ändringen och raden då kan committas var för sig.
    - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter.
+   - Varje aktivitet får id:t `<radens id>-<index>`, där index är aktivitetens plats på raden från 0, t.ex. `4711-0`.
+     Id:t blir detsamma varje gång raden publiceras ([§3.1], [beslut 70]).
 3. **Relay:**
    - Körs direkt efter commit och schemalagt med ShedLock.
    - Väntande rader grupperas per objekt i den ordning de skrevs. Relayn läser objektets **aktuella** tillstånd, bygger
@@ -28,27 +30,26 @@ Del av [arkitekturen för party-overview](README.md).
      eller inte ska synas: soft-deletat (SM), ett utkast (SM, party-assets och contract, [beslut 67]),
      sekretessmarkerat (Casedata), i ett namespace utan opt-in eller med åtkomstkontroll (SM), eller av en asset-typ
      som inte står på vitlistan (party-assets).
-   - Relayn tar ett delat lås på objektets rad innan den läser raderna och tillståndet, så att de hör ihop. I MariaDB
-     heter det `SELECT … LOCK IN SHARE MODE`, eftersom `FOR SHARE` ger syntaxfel i både 10.6 och 11.4. I JPA används
-     `@Lock(PESSIMISTIC_READ)`, som Hibernates MariaDB-dialekt skriver om till `lock in share mode`. Utan låset kan en
-     ändring committas mellan läsningarna. Tillståndet blir då version N+1 medan bara raden för N är läst, och när raden
-     för N+1 publiceras senare har den samma version. party-overview tolkar den som en rättning, och dess aktiviteter
-     hamnar aldrig i historiken ([§3.4]). Låset hålls tills brokern har bekräftat, och en skrivning till objektet väntar
-     under tiden.
-   - Relayn körs med READ COMMITTED, som `MessageWriter` ([§3.3]), och låset är transaktionens första sats. Vilka
-     objekt som har väntande rader läses utanför transaktionen. Raderna läses utan lås och tas bort på id. Med
-     MariaDB:s förval REPEATABLE READ läser en vanlig fråga ögonblicksbilden från transaktionens första läsning.
-     Relayn kan då få den nya versionen genom låset men bara de gamla raderna. Raderna låses inte, eftersom Hibernate
-     kan skriva outbox-raden innan objektet uppdateras, och en relay som håller objektet och sedan låser raderna kan
-     då hamna i deadlock med en skrivare. SM:s `ProcessEventRelay` låser sina rader och är därför inget mönster för
-     den delen.
-   - Raderna tas bort först när brokern har bekräftat meddelandet. En rad som misslyckas blockerar senare rader för
-     samma objekt.
+   - Relayn läser objektets väntande rader först och tillståndet sedan, var för sig och utan lås ([beslut 70]). Ingen
+     databastransaktion är öppen medan brokern bekräftar, så en skrivning till objektet väntar aldrig på relayn.
+   - Raden och ändringen committas tillsammans, så ett tillstånd som läses efter raderna är minst lika nytt som dem. En
+     ändring som committas mellan läsningarna ger ett meddelande med den nya versionen och de lästa radernas
+     aktiviteter. Ändringens egen rad ligger kvar och publiceras i nästa meddelande, med samma version och sina egna
+     aktiviteter. party-overview tillämpar det som en rättning och skriver aktiviteterna, eftersom de har egna id
+     ([§3.4]).
+   - Ordningen är fast. Läses tillståndet före raderna kan en rad för en senare version tas bort utan att dess
+     tillstånd publiceras.
+   - Är objektet borta men ingen av de lästa raderna är raderingens rad, publicerar relayn inget för objektet. Nästa
+     körning får raderingens rad och dess version.
+   - SM:s `ProcessEventRelay` låser sina rader i en transaktion och är därför inget mönster för den delen.
+   - Raderna tas bort på id först när brokern har bekräftat meddelandet. En rad som misslyckas blockerar senare rader
+     för samma objekt.
    - En health-indikator blir `DOWN` när den äldsta väntande raden är äldre än en konfigurerbar gräns, som
      `ProcessEventRelay.findHealthFault` i SM. Annars märks det inte om publiceringen har stannat, t.ex. för att
      brokern returnerar meddelandena.
    - `message-id` är ett nytt UUID per publicering. En publicering som görs om efter `TIMEOUT` kan ge en dubblett, och
-     party-overview tillämpar den som en rättning med samma version ([§3.4]).
+     party-overview tillämpar den som en rättning med samma version, utan att skriva aktiviteterna igen ([§3.4]).
+     Detsamma gäller om två körningar av relayn hinner publicera samma rad.
 4. **Version:** objektets `@Version`. Den ska öka vid varje ändring som publiceras.
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
 6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
@@ -235,6 +236,6 @@ och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
 [beslut 50]: 00-beslutslogg.md#beslut-50-party-assets-publicerar-bara-asset-typer-på-en-vitlista
 [beslut 51]: 00-beslutslogg.md#beslut-51-namespaces-med-åtkomstkontroll-i-sm-publiceras-inte
 [beslut 55]: 00-beslutslogg.md#beslut-55-kommunikation-i-sm-publiceras-inte
-[§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [beslut 67]: 00-beslutslogg.md#beslut-67-utkast-publiceras-inte-i-party-assets-och-contract
+[beslut 70]: 00-beslutslogg.md#beslut-70-aktiviteter-har-ett-id-och-historiken-skrivs-oavsett-version
 

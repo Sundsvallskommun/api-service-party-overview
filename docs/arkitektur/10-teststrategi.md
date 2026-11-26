@@ -16,13 +16,14 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   och `UNKNOWN` ([§5.4]), att namn, adresser, kontaktuppgifter och profil sparas och står kvar när kunden blir skyddad,
   att en kontaktpersons nivå räknas fram från källans `protection`, kunden, `registry_person` och den fasta nivån
   ([§5.3]), och `PROTECTION_CHANGED`. Uppslag på personnummer.
-  `DeadLetterHealthIndicator` (tom kö, kö med meddelanden, kö som saknas). Hela versionsmatrisen, tabelldrivet med
-  alla celler i [§3.4]. Klassningen av parter ([§5.3]), "nyast vinner" för namn och adresser, valet av
-  kontaktpersonens adress, historik bara när raden är ny eller `v > s`, att sista engagemanget tar bort kunden men inte
-  när den har noteringar eller kontaktpersoner från REST, att en automatisk radering inte tar personens kontaktpersoner
-  från REST hos andra kunder, att den nattliga kontrollen raderar en kund som inte har något kvar ([§3.6]),
-  legalId-mappning och 404, valideringsfel, notering och kontaktperson som skapar kund
-  (PRIVATE, ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall.
+  `DeadLetterHealthIndicator` (tom kö, kö med meddelanden, kö som saknas, och mätvärdena). Hela versionsmatrisen,
+  tabelldrivet med alla celler i [§3.4]. Klassningen av parter ([§5.3]), "nyast vinner" för namn och adresser, valet av
+  kontaktpersonens adress, att aktiviteterna skrivs från varje meddelande som når en befintlig rad, också från ett
+  inaktuellt, men aldrig två gånger, att sista engagemanget tar bort kunden men inte när den har noteringar eller
+  kontaktpersoner från REST, att en automatisk radering inte tar personens kontaktpersoner från REST hos andra kunder,
+  att den nattliga kontrollen raderar en kund som inte har något kvar ([§3.6]), legalId-mappning och 404,
+  valideringsfel, notering och kontaktperson som skapar kund (PRIVATE, ENTERPRISE, Citizen tom, okänd part),
+  synlighetsregler och 404-fall.
 - **Integrationstester (enhet)**: `CitizenIntegration`, `LegalEntityIntegration`: mappning,
   `Optional.empty` vid 404, att undantag inte sväljs och att legalId inte finns i några meddelanden. `MessageListener`:
   källan slås upp från kön.

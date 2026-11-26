@@ -137,7 +137,16 @@ resilience4j:
 - Indikatorn finns bara när RabbitMQ är påslaget (`@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, [§9]).
   Med `dept44.rabbitmq.enabled=false` finns ingen `ConnectionFactory`, och tjänsten ska ändå starta (C1).
 - Indikatorn blir `DOWN`, med köernas namn och antal i detaljerna, när någon kö inte är tom. Spring Boot Admin
-  notifierar då till Slack, som för andra statusändringar.
+  notifierar då till Slack, som för andra statusändringar, och påminner så länge statusen är `DOWN` (T4,
+  [beslut 72]).
+- Ett nytt fel medan statusen redan är `DOWN` ger ingen egen notifiering. Den som tar emot en påminnelse läser därför
+  indikatorernas detaljer och mätvärdena nedan.
+- Varje signal har ett eget mätvärde i `/actuator/metrics`, som indikatorerna uppdaterar varje gång de körs:
+  - `partyoverview.deadletter.messages` (gauge, tagg `queue`): antal meddelanden i dead letter-kön
+  - `partyoverview.queue.missing` (gauge, tagg `queue`): 1 när kön eller dead letter-kön saknas, annars 0
+  - `partyoverview.search.failed` (gauge): rader i `search_index_queue` med `attempts ≥ 5` ([§6.2])
+- Spring Boot Admin larmar inte på mätvärden. De visar vilken signal som larmar, och en larmregel per signal kan
+  läggas till utan kodändring.
 - En dead letter-kö som saknas ger också `DOWN`, eftersom det är ett fel i topologin.
 - Indikatorn ingår inte i grupperna `liveness` och `readiness`, så tjänsten fortsätter att ta emot trafik.
 - T1 och T3 verifierar att AMQP-användaren får göra en passiv deklaration av sina köer och dead letter-köer.
@@ -152,4 +161,6 @@ resilience4j:
 [§3.2]: 03-meddelanden.md#32-topologi
 [§12.1]: #121-larm-för-dead-letter-köer
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
+[beslut 72]: 00-beslutslogg.md#beslut-72-larmen-påminner-och-varje-signal-har-ett-mätvärde
+[§6.2]: 06-rest-api.md#62-kundsökning-opensearch
 

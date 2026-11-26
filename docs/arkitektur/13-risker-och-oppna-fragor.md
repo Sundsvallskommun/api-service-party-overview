@@ -21,6 +21,7 @@ Del av [arkitekturen för party-overview](README.md).
 | Köer och exchanges i driftkonfigurationen (T1).                                                                           | Meddelandeflödet (C11)                                                                                                                                            |
 | Ändringskön i driftkonfigurationen (T3).                                                                                  | Ändringskön (C14, C15)                                                                                                                                            |
 | Kontaktpersonsrollerna är satta via REST innan lyssnarna slås på ([§12]). SM:s roller tas fram ur produktionens metadata. | Meddelandeflödet (C11). Utan rollerna blir kontaktpersoner med id kunder.                                                                                         |
+| Påminnelser i Spring Boot Admin (T4).                                                                                     | Larmen ([§12.1])                                                                                                                                                  |
 
 ## 13.3 Risker
 
@@ -165,10 +166,10 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** "Nyast vinner" på `sourceModified` ger ett deterministiskt resultat ([beslut 21]). Källorna bör vårda
   sina uppgifter.
 
-- Ett meddelande som är äldre än lagrad version tappar sina aktiviteter.
+- Ett meddelande som flyttas tillbaka från dead letter-kön efter ett nyare om samma objekt ändrar inte tillståndet.
 
-  **Hantering:** Single-active-consumer och outbox per objekt ger ordning. Det kan bara hända om ett meddelande läggs
-  tillbaka efter ett fel.
+  **Hantering:** Tillståndet kommer från det nyare meddelandet, och det äldres aktiviteter skrivs ändå, eftersom
+  historiken inte styrs av versionen ([beslut 70]).
 
 - Index i Flyway och entiteter glider isär.
 
@@ -273,4 +274,5 @@ Del av [arkitekturen för party-overview](README.md).
 [§5.1]: 05-synlighet-och-kunddata.md#51-synlighet-per-namespace
 [beslut 7]: 00-beslutslogg.md#beslut-7-synlighet-för-engagemang-kontaktuppgifter-och-noteringar
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
+[beslut 70]: 00-beslutslogg.md#beslut-70-aktiviteter-har-ett-id-och-historiken-skrivs-oavsett-version
 
