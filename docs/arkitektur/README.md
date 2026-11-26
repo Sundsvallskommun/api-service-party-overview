@@ -31,8 +31,8 @@ listar de krav party-overview ställer på det.
 | 13 | [Risker och öppna frågor](13-risker-och-oppna-fragor.md)                | Öppna frågor, förutsättningar före driftsättning och risker                                             |
 | 14 | [Uppgifter att bygga](14-uppgifter.md)                                  | Uppgifterna att bygga, med acceptanskriterier                                                           |
 
-En hänvisning som §5.4 pekar på avsnitt 5.4, som ligger i filen som börjar med `05-`. En hänvisning som
-"beslut 12" pekar på beslut 12 i beslutsloggen.
+En hänvisning som §5.4 pekar på avsnitt 5.4 i filen som börjar med `05-`, och "beslut 12" pekar på beslut 12 i
+beslutsloggen.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§14]: 14-uppgifter.md

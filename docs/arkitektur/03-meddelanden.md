@@ -4,8 +4,8 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 3.1 Krav på det gemensamma formatet
 
-Formatet bygger på AsyncAPI och fastställs separat. party-overview kräver följande. Ett fält markerat **krav** saknas
-inte i ett giltigt meddelande, och ett meddelande som bryter mot kraven dead-letteras direkt.
+Formatet bygger på AsyncAPI och fastställs separat. party-overview kräver följande. Ett fält markerat **krav** måste
+finnas, och ett meddelande som bryter mot kraven dead-letteras direkt.
 
 **AMQP-egenskaper**
 
@@ -150,15 +150,13 @@ genereras med ZenWave SDK ([§9]).
 | contract          | `api-fabriken.contract`           | `api-fabriken.party-overview.contract`           | `CONTRACT`           |
 | Casedata          | `api-fabriken.case-data`          | `api-fabriken.party-overview.case-data`          | `CASE_DATA`          |
 
-Varje kö deklareras som en quorum-kö i party-overviews driftkonfiguration (spring-boot-chart, [§12]). Bara det som
-inte går att sätta med en policy är kö-argument, eftersom en befintlig kö inte kan få nya eller ändrade argument utan
-att skapas om ([beslut 66]):
+Varje kö deklareras som en quorum-kö i party-overviews driftkonfiguration (spring-boot-chart, [§12]). Bara det som inte
+går att sätta med en policy är kö-argument ([beslut 66]):
 
 - `x-queue-type: quorum`
-- `x-single-active-consumer: true`. Det går inte att sätta med en policy och inte att lägga till på en befintlig kö,
-  så det måste finnas när kön skapas.
+- `x-single-active-consumer: true`. Det går inte att lägga till på en befintlig kö och måste finnas när kön skapas.
 
-Resten sätts med en policy per kö, som går att ändra på en befintlig kö:
+Resten sätts med en policy per kö:
 
 - `dead-letter-exchange` och `dead-letter-routing-key`, som leder till köns egen dead letter-kö (`….dlq`)
 - `delivery-limit: 5`
@@ -171,13 +169,11 @@ samma policy, och den har högre prioritet än andra policyer vars mönster matc
 
 Kön binds till publicerarens exchange med `#` och tar emot alla objekttyper från källan.
 
-Dead letter-köerna har ingen TTL, och ett meddelande ligger kvar tills någon har tagit hand om det. Köerna kan
-innehålla personuppgifter, t.ex. ett legalId eller namn, och därför har bara drift och utvecklare åtkomst. Det larmas
-när en dead letter-kö inte är tom ([§12.1]).
+Dead letter-köerna har ingen TTL. Köerna kan innehålla personuppgifter, t.ex. ett legalId eller namn, och därför har
+bara drift och utvecklare åtkomst. Det larmas när en dead letter-kö inte är tom ([§12.1]).
 
 Ändringskön för företag och personer ([§5.5]) deklareras på samma sätt, med en egen policy men utan
-`x-single-active-consumer`, och
-binds till exchangen hos köns förvaltare ([§13.1]).
+`x-single-active-consumer`, och binds till exchangen hos köns förvaltare ([§13.1]).
 
 party-overview deklarerar ingen topologi själv, och dess AMQP-användare saknar configure-rättighet.
 
@@ -252,8 +248,8 @@ MessageListener (alla köer)                          ingen transaktion
   `CUSTOMER` med partyId:t, även när kunden saknas. Kunden kan ha skapats av engagemang från andra källor ([§3.5]).
 - Om samma meddelande levereras igen blir det en rättning med samma version, och därmed ingen dubblerad historik.
   Därför behövs inget register över message-id.
-- En grundladdning medan publiceraren är i drift är ofarlig. En ögonblicksbild som är äldre än en DELETE stoppas av
-  tombstonen.
+- En grundladdning medan publiceraren är i drift är ofarlig. Tombstonen stoppar en ögonblicksbild som är äldre än en
+  DELETE.
 - Raderade `source_object`-rader (tombstones) sparas för alltid och innehåller inga personuppgifter, eftersom rader för
   `CUSTOMER` aldrig blir tombstones utan tas bort med kunden ([§3.6]).
 
@@ -315,13 +311,13 @@ En kund raderas i följande fall:
 | Sista engagemanget är borta, och kunden har varken noteringar, kontaktpersoner från REST eller `CUSTOMER`-data                                                                  | `MESSAGE`      | det objekt som tog bort engagemanget |
 | Sista noteringen eller sista kontaktpersonen från REST raderas, och kunden har inget annat kvar: varken engagemang, noteringar, kontaktpersoner från REST eller `CUSTOMER`-data | `REST`         | —                                    |
 
-De två sista är automatisk radering. Kontaktpersoner från REST är de som har lagts till i
-`manual_contact_person` ([§5.3]). `CUSTOMER`-data betyder att kunden har en rad i `source_object` för `CUSTOMER`,
-alltså att någon källa har skickat ett `CUSTOMER UPDATE` för den. Raden bär källans kontaktuppgifter och skydd
-([§3.5]), och de ska inte försvinna för att kundens sista engagemang gör det.
+De två sista är automatisk radering. Kontaktpersoner från REST är de som har lagts till i `manual_contact_person`
+([§5.3]). `CUSTOMER`-data betyder att kunden har en rad i `source_object` för `CUSTOMER`, alltså att någon källa har
+skickat ett `CUSTOMER UPDATE` för den. Raden bär källans kontaktuppgifter och skydd ([§3.5]), och de ska inte försvinna
+för att kundens sista engagemang gör det.
 
-- Raderingen görs som en bulk-delete (`@Modifying(flushAutomatically = true, clearAutomatically = true)`).
-  Databasens kaskad tar resten. Hibernate får alltså inte ha barnrader laddade som det sedan försöker skriva tillbaka.
+- Raderingen görs som en bulk-delete (`@Modifying(flushAutomatically = true, clearAutomatically = true)`). Databasens
+  kaskad tar resten. Hibernate får inte ha barnrader laddade som det sedan försöker skriva tillbaka.
 - Raderingen görs sist i transaktionen, efter `source_object` och all omräkning. `clearAutomatically` kopplar loss alla
   laddade entiteter, så en ändring som görs på en entitet efter raderingen skrivs aldrig.
 - Den tekniska loggraden `CUSTOMER_DELETED` skrivs i samma transaktion som raderingen.
@@ -329,29 +325,28 @@ alltså att någon källa har skickat ett `CUSTOMER UPDATE` för den. Raden bär
   (`contact.party_id`, [§5.3]). Anger källan fortfarande personen som kontaktperson kommer raden tillbaka nästa gång
   objektet ändras i källan ([beslut 52]).
 - Personens kontaktpersoner från REST hos andra kunder (`manual_contact_person.party_id`) raderas bara när personen
-  raderas med `CUSTOMER DELETE` eller via REST, aldrig vid en automatisk radering, eftersom ingen källa kan skapa dem
-  igen ([beslut 65]). En kund som på det sättet förlorar sin sista kontaktperson från REST raderas inte automatiskt.
+  raderas med `CUSTOMER DELETE` eller via REST, aldrig vid en automatisk radering ([beslut 65]). En kund som på det
+  sättet förlorar sin sista kontaktperson från REST raderas inte automatiskt.
 - Varje kund som förlorar kontaktrader loggas som `CONTACT_REMOVED` ([§8.1]).
-- Personens rad i `registry_person` raderas av den nattliga kontrollen när ingen kontaktrad pekar på den längre
-  ([§5.4]).
+- Den nattliga kontrollen raderar personens rad i `registry_person` när ingen kontaktrad pekar på den längre ([§5.4]).
 - Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
   partyId. Ett senare, äldre `CUSTOMER UPDATE` kan då skapa kunden igen.
 - Ett senare meddelande som nämner kunden skapar den på nytt. Det är avsiktligt, eftersom källsystemet är master.
 - En kund som bara har `CUSTOMER`-data raderas aldrig automatiskt, bara av ett `CUSTOMER DELETE` eller via REST.
 - En radering via REST låser först kundens rader i `source_object` för `CUSTOMER` och sedan kunden, i samma ordning som
   meddelandeflödet ([§3.3]).
-- När en notering eller en kontaktperson skapas via REST låses kunden först med IODKU och `FOR UPDATE`. När en
-  notering eller kontaktperson ändras eller raderas låses kunden bara med `FOR UPDATE`, och saknas kunden blir svaret
-  404, så att en raderad kund inte skapas på nytt.
-  Transaktionen körs med READ COMMITTED, som i [§3.3]. Annars kan ett meddelande hinna ge kunden ett engagemang som
-  kontrollen inte ser, eller radera kunden medan en ny notering väntar på sin FK-kontroll.
+- När en notering eller en kontaktperson skapas via REST låses kunden först med IODKU och `FOR UPDATE`. När en notering
+  eller kontaktperson ändras eller raderas låses kunden bara med `FOR UPDATE`, och saknas kunden blir svaret 404, så att
+  en raderad kund inte skapas på nytt. Transaktionen körs med READ COMMITTED, som i [§3.3]. Annars kan ett meddelande
+  hinna ge kunden ett engagemang som kontrollen inte ser, eller radera kunden medan en ny notering väntar på sin
+  FK-kontroll.
 - REST-anropen som skriver och den nattliga kontrollens batchar görs om, högst tre gånger, vid deadlock eller lock
   timeout (`PessimisticLockingFailureException`). Omförsöket görs utanför transaktionen, så att hela transaktionen körs
-  om. Meddelanden görs om av startern ([§3.7]).
+  om. Startern gör om meddelanden ([§3.7]).
 
 ## 3.7 Felhantering
 
-Fel klassas av dept44-starter-rabbitmq (`TransientFailures`):
+dept44-starter-rabbitmq klassar felen (`TransientFailures`):
 
 |                                                                                     Fel                                                                                     |                                                                                               Följd                                                                                               |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

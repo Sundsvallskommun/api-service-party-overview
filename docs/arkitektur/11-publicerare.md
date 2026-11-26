@@ -15,26 +15,26 @@ Del av [arkitekturen för party-overview](README.md).
    - Raden skrivs av en `@TransactionalEventListener(phase = BEFORE_COMMIT)`, eftersom Hibernates entity-callbacks inte
      får skriva.
    - Händelsen skickas av servicemetoderna, inte från entity-callbacks. En callback som `@PostPersist` körs när
-     Hibernate flushar vid commit, efter att BEFORE_COMMIT-lyssnarna redan har körts, och då skrivs ingen rad.
+     Hibernate flushar vid commit, efter BEFORE_COMMIT-lyssnarna, och då skrivs ingen rad.
    - Varje publiceringspunkt körs i en transaktion. Utan transaktion kastas händelsen tyst, eftersom en
      `@TransactionalEventListener` har `fallbackExecution = false` som förval. En publiceringspunkt som saknar
      transaktion får en, t.ex. med `TransactionTemplate` per asset i `PR3Importer` i party-assets. Outbox-raden skrivs
      aldrig i en egen transaktion, eftersom ändringen och raden då kan committas var för sig.
-   - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter samlade på raden.
+   - Det blir en rad per objekt och transaktion, med transaktionens alla aktiviteter.
 3. **Relay:**
-   - Körs direkt efter commit och dessutom schemalagt med ShedLock.
+   - Körs direkt efter commit och schemalagt med ShedLock.
    - Väntande rader grupperas per objekt i den ordning de skrevs. Relayn läser objektets **aktuella** tillstånd, bygger
      ett meddelande med alla väntande aktiviteter och publicerar `UPDATE`. Den publicerar `DELETE` när objektet är borta
      eller inte ska synas: soft-deletat (SM), ett utkast (SM, party-assets och contract, [beslut 67]),
      sekretessmarkerat (Casedata), i ett namespace utan opt-in eller med åtkomstkontroll (SM), eller av en asset-typ
      som inte står på vitlistan (party-assets).
    - Relayn tar ett delat lås på objektets rad innan den läser raderna och tillståndet, så att de hör ihop. I MariaDB
-     heter det `SELECT … LOCK IN SHARE MODE`, eftersom `FOR SHARE` ger syntaxfel i MariaDB, både i 10.6 och i 11.4. I
-     JPA används `@Lock(PESSIMISTIC_READ)`, som Hibernates MariaDB-dialekt skriver om till `lock in share mode`. Utan
-     låset kan en ändring committas mellan läsningarna. Tillståndet blir då version N+1 medan bara raden för N är läst,
-     och när raden för N+1 publiceras senare har den samma version. party-overview tolkar den som en rättning, och dess
-     aktiviteter hamnar aldrig i historiken ([§3.4]). Låset hålls tills brokern har bekräftat, och en skrivning till
-     objektet väntar under tiden.
+     heter det `SELECT … LOCK IN SHARE MODE`, eftersom `FOR SHARE` ger syntaxfel i både 10.6 och 11.4. I JPA används
+     `@Lock(PESSIMISTIC_READ)`, som Hibernates MariaDB-dialekt skriver om till `lock in share mode`. Utan låset kan en
+     ändring committas mellan läsningarna. Tillståndet blir då version N+1 medan bara raden för N är läst, och när raden
+     för N+1 publiceras senare har den samma version. party-overview tolkar den som en rättning, och dess aktiviteter
+     hamnar aldrig i historiken ([§3.4]). Låset hålls tills brokern har bekräftat, och en skrivning till objektet väntar
+     under tiden.
    - Relayn körs med READ COMMITTED, som `MessageWriter` ([§3.3]), och låset är transaktionens första sats. Vilka
      objekt som har väntande rader läses utanför transaktionen. Raderna läses utan lås och tas bort på id. Med
      MariaDB:s förval REPEATABLE READ läser en vanlig fråga ögonblicksbilden från transaktionens första läsning.
@@ -53,12 +53,11 @@ Del av [arkitekturen för party-overview](README.md).
 5. **Vem:** `performedBy` fångas när raden skrivs, från dept44:s `Identifier` (`X-Sent-By`).
 6. **Parter:** partyId när publiceraren har det. legalId bara när partyId saknas, och alltid med `partyType`. När
    publiceraren vet att en part har skyddade personuppgifter sätts `protection`, och partens uppgifter skickas ändå
-   ([§5.4]). Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för
-   kommande publicerare.
+   ([§5.4]). Ingen av de fyra publicerarna har i dag någon sådan uppgift, så fältet finns för kommande publicerare.
    - legalId normaliseras till formatet i [§3.1]: bindestreck tas bort, och ett inledande `16` på ett tolvsiffrigt
      organisationsnummer tas bort. Ett värde som ändå inte följer formatet, kontrollsiffran inräknad, skickas inte, och
      parten skickas utan id.
-   - En enskild firmas nummer, alltså ägarens personnummer med 10 eller 12 siffror, skickas med `ENTERPRISE`.
+   - En enskild firmas nummer är ägarens personnummer med 10 eller 12 siffror och skickas med `ENTERPRISE`.
    - Källans partytyp mappas till `PRIVATE` eller `ENTERPRISE`. En part vars typ inte går att mappa skickas utan id. Den
      kan då bara bli kontaktperson, och resten av meddelandet tillämpas.
    - Textfälten hålls inom maxlängderna i [§3.1].
@@ -86,15 +85,15 @@ Del av [arkitekturen för party-overview](README.md).
 
 - **Opt-in:** En ny egenskap i `namespace_config` slår på publiceringen per namespace. En ändring i ett namespace utan
   den ger ingen outbox-rad ([§11.1]). Ett namespace med åtkomstkontroll (`accessControl = true`) kan inte slå på
-  publiceringen, eftersom SM där styr läsrätten per ärende med etiketter och trimmar fälten per roll ([beslut 51]). Slås
-  åtkomstkontrollen på för ett namespace som publicerar, behandlas det som att opt-in stängs av ([§13.3]).
+  publiceringen ([beslut 51]). Slås åtkomstkontrollen på för ett namespace som publicerar, behandlas det som att opt-in
+  stängs av ([§13.3]).
 - **Publiceringspunkter:** De ställen där ärendet självt ändras: när det skapas, ändras (även parter, status och
   klassning), raderas eller återställs. Det är de anrop till `publishToProcess` i `service/EventService.java` som
-  följer en sådan ändring. Kommunikation till och från ärendet, alltså e-post, sms och webbmeddelanden via REST,
-  `EmailReaderWorker`, `WebMessageCollectorWorker` och `MessageExchangeSyncService`, publiceras inte, så länge den inte
-  också ändrar ärendet ([beslut 55]). Ett anrop ger flera events, men det blir en outbox-rad per ärende och
-  transaktion. Mönster: `ProcessEventPublisher` och `ProcessEventRelay`.
-- **Radering:** Soft delete publiceras som `DELETE`. Restore publiceras som `UPDATE` med högre version, vilket väcker
+  följer en sådan ändring. Kommunikation till och från ärendet publiceras inte, om den inte också ändrar ärendet
+  ([beslut 55]). Det gäller e-post, sms och webbmeddelanden via REST, `EmailReaderWorker`, `WebMessageCollectorWorker`
+  och `MessageExchangeSyncService`. Ett anrop ger flera events, men det blir en outbox-rad per ärende och transaktion.
+  Mönster: `ProcessEventPublisher` och `ProcessEventRelay`.
+- **Radering:** Soft delete publiceras som `DELETE`. Restore publiceras som `UPDATE` med högre version och väcker
   objektet till liv ([§3.4]). Hård radering och purge publiceras som `DELETE`.
 - **Version:** `ErrandEntity.version`. Det måste verifieras att en ändring som bara rör stakeholders ökar versionen. Gör
   den inte det tvingas en ökning fram (`OPTIMISTIC_FORCE_INCREMENT`).
@@ -105,21 +104,20 @@ Del av [arkitekturen för party-overview](README.md).
 - **Parter:** Stakeholders: `externalId` som partyId om det är ett UUID, och `externalIdType` som partytyp.
   `externalIdType` är fritext per namespace, med värden som `PRIVATE`, `ENTERPRISE`, `EMPLOYEE` och `ADMINISTRATOR`.
   Bara `PRIVATE` och `ENTERPRISE` mappas, utan hänsyn till skiftläge. Stakeholders med `EMPLOYEE` eller `ADMINISTRATOR`
-  skickas inte, på samma sätt som handläggarna i Casedata. De kan ändå aldrig bli kunder, och deras uppgifter ska inte
-  gå över kön. Andra typer skickas utan id ([§11.1]). `role`, namn,
-  adress och `contactChannels` följer med. Adressen skickas som `POSTAL_ADDRESS`, med `address` som `street` och
-  `zipCode` som `postalCode`. Kanaltypen är fritext i SM och mappas utan hänsyn till skiftläge: `EMAIL`
-  blir `EMAIL`, och `PHONE` och `SMS` blir `PHONE` ([§11.1]). Stakeholders utan partyId skickas med, eftersom de kan
-  vara kontaktpersoner. `parameters` skickas aldrig.
+  skickas inte, som handläggarna i Casedata. De kan ändå aldrig bli kunder, och deras uppgifter ska inte gå över kön.
+  Andra typer skickas utan id ([§11.1]). `role`, namn, adress och `contactChannels` följer med. Adressen skickas som
+  `POSTAL_ADDRESS`, med `address` som `street` och `zipCode` som `postalCode`. Kanaltypen är fritext i SM och mappas
+  utan hänsyn till skiftläge: `EMAIL` blir `EMAIL`, och `PHONE` och `SMS` blir `PHONE` ([§11.1]). Stakeholders utan
+  partyId skickas med, eftersom de kan vara kontaktpersoner. `parameters` skickas aldrig.
 - **Utkast:** Ärenden med `lifecycle = DRAFT` ger ingen outbox-rad. Når grundladdningen ett utkast publicerar relayn
   `DELETE` ([beslut 26]). När ett utkast skickas in publiceras det som `UPDATE`.
 - **Skyddad identitet:** SM har i dag ingen uppgift om skyddade personuppgifter på stakeholders och skickar därför inte
   `protection`. Skyddet för SM:s kunder kommer från folkbokföringen ([§5.4]).
-- **Grundladdning:** En ny `JobType` som går igenom ett namespace med keyset, med
-  `ErrandsRepository.findIdsAfter`, som `ErrandPurgeRunner` använder. SM:s jobbvakt, en unik genererad kolumn
-  (`V1_78__add_active_job_guard.sql`) och inte ShedLock, tillåter ett aktivt jobb per typ och namespace, och en andra
-  start ger 409. Jobbet tar alltid ett namespace, eftersom `JobEntity.namespace` är `NOT NULL`. En grundladdning av
-  alla namespaces med opt-in startar ett jobb per namespace ([§11.1]).
+- **Grundladdning:** En ny `JobType` som går igenom ett namespace med keyset, med `ErrandsRepository.findIdsAfter`, som
+  `ErrandPurgeRunner` använder. SM:s jobbvakt tillåter ett aktivt jobb per typ och namespace, och en andra start
+  ger 409. Vakten är en unik genererad kolumn (`V1_78__add_active_job_guard.sql`), inte ShedLock. Jobbet tar alltid ett
+  namespace, eftersom `JobEntity.namespace` är `NOT NULL`. En grundladdning av alla namespaces med opt-in startar ett
+  jobb per namespace ([§11.1]).
 
 ## 11.3 party-assets (`ASSET`)
 
@@ -135,9 +133,9 @@ commit. Den har också en republish-endpoint och ett AsyncAPI-dokument. Den bygg
   kommer tillbaka per asset först när versionen har ökat ([§11.1]).
 - **Outbox:** Servicemetoderna och `PR3Importer` skickar en Spring-händelse, och en `BEFORE_COMMIT`-lyssnare skriver
   outbox-raden. `PR3Importer` saknar i dag transaktion och får en `TransactionTemplate` per asset ([§11.1]).
-  `AssetEntityListener` kan inte skicka händelsen, eftersom dess callbacks körs när Hibernate flushar vid commit och då
-  kommer efter BEFORE_COMMIT ([§11.1]). Det täcker `createAsset`, `updateAsset` (även originalet som blir `REPLACED`),
-  `deleteAsset`, `AssetExpirationWorker` och `PR3Importer`, som sparar direkt i repositoryt.
+  `AssetEntityListener` kan inte skicka händelsen, eftersom dess callbacks körs efter BEFORE_COMMIT ([§11.1]). Det
+  täcker `createAsset`, `updateAsset` (även originalet som blir `REPLACED`), `deleteAsset`, `AssetExpirationWorker` och
+  `PR3Importer`, som sparar direkt i repositoryt.
 - **Version:** `AssetEntity.version`, inte `revision`, som inte ökar för drafts och delete.
 - **Vem:** `Identifier` sparas med typ, även vid delete.
 - **Envelope:** `objectId` = `id`, UUID:t som `GET /{municipalityId}/assets/{id}` tar, `reference` = `assetId`,
@@ -208,12 +206,11 @@ och ingen RabbitMQ idag. Analysen är gjord på `origin/main` (2026-10-19).
   `sourceModified` = `updated` (annars `created`), `namespace`. `externalCaseId`, `description` och `phase` skickas
   inte.
 - **Parter:** `errand.stakeholders`, där `PERSON` blir `PRIVATE` och `ORGANIZATION` blir `ENTERPRISE`. `personId`
-  skickas som partyId bara om det är ett UUID, och aldrig annars. `organizationNumber` skickas som legalId bara när
-  partyId saknas. `roles`, namn, alla adresser och `contactChannels` följer med, där `CELLPHONE` och `PHONE` blir
-  `PHONE`. Adresserna skickas med sin `addressCategory` som typ, och `street` och `houseNumber` blir `street` med
-  mellanslag emellan. Parter med rollen `ADMINISTRATOR` eller med `adAccount`, alltså handläggare,
-  skickas inte. Parter utan id skickas med, eftersom de kan vara kontaktpersoner. `extraParameters` och
-  `authorizedSignatory` skickas aldrig.
+  skickas som partyId bara om det är ett UUID. `organizationNumber` skickas som legalId bara när partyId saknas.
+  `roles`, namn, alla adresser och `contactChannels` följer med, där `CELLPHONE` och `PHONE` blir `PHONE`. Adresserna
+  skickas med sin `addressCategory` som typ, och `street` och `houseNumber` blir `street` med mellanslag emellan. Parter
+  med rollen `ADMINISTRATOR` eller med `adAccount` (handläggare) skickas inte. Parter utan id skickas med, eftersom de
+  kan vara kontaktpersoner. `extraParameters` och `authorizedSignatory` skickas aldrig.
 - **Loggning:** `StakeholderEntity.toString` skriver ut personId och organisationsnummer, och `ErrandEntity` är `@Data`.
   Publiceraren får aldrig logga entiteter.
 - **Grundladdning:** En admin-endpoint startar ett asynkront jobb med ShedLock, enligt mönstret i

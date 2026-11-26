@@ -42,8 +42,8 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
 - **Sök (enhet)**: `CustomerDocumentBinder`: deduplicering, gruppering per namespace, att en skyddad kund
   indexeras med alla fält, telefonnormalisering och taket på 500 värden. `SearchIndexRelay`: kund som finns, kund som
   saknas, fel i batch, fel på enskild rad och `attempts`. `CustomerSearchService`: 503, gränsen för result window,
-  sortering och att träffens `protectionLevel` kommer från databasen. Fasaden mot Hibernate Search mockas, men DSL:en
-  mockas inte.
+  sortering och att träffens `protectionLevel` kommer från databasen. Fasaden mot Hibernate Search mockas, men inte
+  DSL:en.
 - **Sök (IT)**: `CustomerSearchIT` med en OpenSearch-testcontainer, som startas av en `EnvironmentPostProcessor` som i
   SM. Happy case: sökning på namn, en av flera adresser och telefon i ett annat format, kontakt i ett namespace och
   globalt, med och utan namespace-filter, ett meddelande som via relayn blir sökbart, och reindexering.

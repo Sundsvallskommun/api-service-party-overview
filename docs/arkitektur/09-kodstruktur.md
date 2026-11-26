@@ -39,13 +39,13 @@ se.sundsvall.partyoverview
     genereras med ZenWave SDK (`zenwave-sdk-maven-plugin` med `asyncapi-jsonschema2pojo`, 2.8.1), som på grenen
     `publish-events` i det här repot.
 - **Entiteter:** ingen Lombok, utan `create()`/`withX()` och `equals`/`hashCode`/`toString` som i POC:en.
-- **Lyssnaren:** en klass, `MessageListener`, men en direct-container per kö ([beslut 68]). Endpointerna registreras med
-  `RabbitListenerConfigurer`, en per post i `integration.sources`, så att de ligger i Springs listener-register och får
-  dept44-starterns loggning och request-id. Med en enda `@RabbitListener` för alla köer delar köerna en konsumenttråd,
-  och ett omförsök på en källa stoppar alla ([§3.7]). Ingen `@ConditionalOnProperty` på lyssnaren, eftersom startern
-  inte startar lyssnare när RabbitMQ är avstängt. Ingen `@EnableRabbit`, och ingen `MessageConverter` av egen.
-  Ändringskön har ett annat format och en egen klass, `RegistryChangeListener`, med en egen container ([§5.5]). Den
-  finns bara när `integration.registry-changes.queue` har ett värde, så att tjänsten startar innan kön finns.
+- **Lyssnaren:** en klass, `MessageListener`, men en direct-container per kö ([beslut 17], [beslut 68]). Endpointerna
+  registreras med `RabbitListenerConfigurer`, en per post i `integration.sources`, så att de ligger i Springs
+  listener-register och får dept44-starterns loggning och request-id. Ingen `@ConditionalOnProperty` på lyssnaren,
+  eftersom startern inte startar lyssnare när RabbitMQ är avstängt. Ingen `@EnableRabbit`, och ingen egen
+  `MessageConverter`. Ändringskön har ett annat format och en egen klass, `RegistryChangeListener`, med en egen
+  container ([§5.5]). Den finns bara när `integration.registry-changes.queue` har ett värde, så att tjänsten startar
+  innan kön finns.
 - **`DeadLetterHealthIndicator`:** villkorad med `@ConditionalOnBooleanProperty("dept44.rabbitmq.enabled")`, samma
   tolkning som startern. `@ConditionalOnBean(ConnectionFactory.class)` fungerar inte på en komponent som tjänsten själv
   skannar in, eftersom villkoret utvärderas innan auto-konfigurationens `ConnectionFactory` finns. Då skulle
@@ -54,7 +54,7 @@ se.sundsvall.partyoverview
   som transaktionsgränser och felvägar, står med.
 - **Inga TODO:s** och ingen bortkommenterad kod.
 
-[§3.7]: 03-meddelanden.md#37-felhantering
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
+[beslut 17]: 00-beslutslogg.md#beslut-17-en-lyssnare-och-en-mappning-för-alla-köer
 [beslut 68]: 00-beslutslogg.md#beslut-68-lyssnarna-använder-direct-containern
 

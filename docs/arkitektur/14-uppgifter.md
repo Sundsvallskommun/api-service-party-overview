@@ -92,7 +92,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Namn, kolumner, index och FK stämmer exakt med [§4.3]. Varje FK under `customer` har `on delete cascade`, både i
   Flyway och i `schema.sql`.
 - `SchemaVerificationTest` och `SchemaParityIT` är gröna. Om ett index tas bort i bara den ena källan blir
-  `SchemaParityIT` röd. Det ska provas manuellt en gång.
+  `SchemaParityIT` röd. Det provas manuellt en gång.
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `customer_address`, `engagement`,
   `engagement_history`, `contact`, `contact_channel`, `manual_contact_person`, `manual_contact_person_channel`,
   `note`, `note_history`, `asserted_protection`, `enterprise_profile`, `enterprise_workplace`,
@@ -156,8 +156,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - Partytypen: en person som Citizen känner ger `PRIVATE`, ett företag som bara LegalEntity känner ger `ENTERPRISE`,
   ett partyId som ingen av dem känner ger `Optional.empty`, och 5xx från någon av dem ger ett fel och aldrig
   `Optional.empty`.
-- Utan behörighet i Metakatalogen svarar Citizen 401 och inte ett filtrerat svar. Det verifieras i testmiljön, eftersom
-  [§5.4] bygger på det.
+- Utan behörighet i Metakatalogen svarar Citizen 401 och inte ett filtrerat svar. Det verifieras i testmiljön ([§5.4]).
 - I testmiljön verifieras också:
   - att `guid/batch` ger `personId` även för personer med skyddade personuppgifter
   - att Citizen svarar 5xx på hela `guid/batch`-anropet, och inte per element, när felet är tillfälligt ([§7.1])
@@ -203,7 +202,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 - `PUT` ersätter källans roller som en helhet. En tom lista tar bort alla.
 - Ett `PUT` som faller på deadlock görs om med `DeadlockRetry` från C2.
-- En okänd källa, alltså en som saknas i `integration.sources`, ger 400. En tom eller blank roll ger 400.
+- En källa som saknas i `integration.sources` ger 400. En tom eller blank roll ger 400.
 - `created_by` sätts från `X-Sent-By`, och ett anrop utan den headern ger 400.
 - Resource-test, failure-test och IT (happy case).
 
@@ -238,8 +237,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   en företagskund och frågas inte i Citizens batch. En enskild firma får ägaren som `registry_party_id`, och ett annat
   företag får `fallback_protection = NONE` utan `registry_party_id`. Partens `protection` sparas som
   `party_protection`.
-- En kontaktperson utan `registry_party_id`, för att det inte gick att avgöra om den är en enskild firma eller för att
-  den saknar både partyId och legalId, får `fallback_protection = UNVERIFIED` ([§5.3]).
+- En kontaktperson som saknar både partyId och legalId, eller där det inte gick att avgöra om den är en enskild firma,
+  får `fallback_protection = UNVERIFIED` utan `registry_party_id` ([§5.3]).
 - Varje `registry_party_id` på en kontaktrad har en rad i `registry_person` efter commit. Citizen anropas bara för de
   personer som saknar rad eller har `UNKNOWN`. Svarar Citizen inte, eller saknar post, skapas raden med `UNKNOWN`.
 - Två meddelanden som hämtar Citizen för samma person och skriver i omvänd ordning ger svaret från det anrop som
@@ -248,8 +247,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   meddelandena ([§5.3]).
 - En automatisk radering av kunden raderar partens kontaktrader från källorna hos andra kunder i kommunen, men inte
   partens kontaktpersoner från REST. Varje kund som förlorar rader loggas som `CONTACT_REMOVED` och markeras för
-  omindexering ([§3.6]). När objektet sedan ändras i källan och fortfarande anger
-  personen som kontaktperson kommer raden tillbaka.
+  omindexering ([§3.6]). När objektet sedan ändras i källan och fortfarande anger personen som kontaktperson kommer
+  raden tillbaka.
 - En ny `ENTERPRISE`-kund vars organisationsnummer är ett personnummer, med 10 eller 12 siffror, får ägarens partyId
   som `registry_party_id` och ägarens skydd från Citizen. Firman och ägaren blir två olika kunder. Ett vanligt
   organisationsnummer ger `registry_party_id = null` ([§5.4]).
@@ -274,8 +273,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   meddelandet efter commit. Barnraderna ersätts utan att kunden kopplas loss ([§4.2]).
 - En ny privatkund får sin skyddsstatus och Citizens värden för `classified` och `protectedNR` från Citizen innan den
   skapas. Om Citizen inte svarar, svarar 5xx, 429 eller 408, har en öppen circuit breaker eller saknar en post för
-  personen, skapas kunden med `UNKNOWN`, med namn, adresser och egna kontaktuppgifter från meddelandet, och
-  meddelandet tillämpas utan omförsök. 401 från Citizen kastas som `ClientProblem` ([§5.4]).
+  personen, skapas kunden med `UNKNOWN` och med namn, adresser och egna kontaktuppgifter från meddelandet. Meddelandet
+  tillämpas då utan omförsök. 401 från Citizen kastas som `ClientProblem` ([§5.4]).
 - `UNKNOWN` från folkbokföringen ger den effektiva nivån `UNKNOWN`, men en källas `SECRECY_MARKING` eller
   `PROTECTED_REGISTRATION` går före.
 - README och javadoc för `ProtectionLevel` beskriver alla fem värden, också `UNVERIFIED`, som bara gäller
@@ -283,8 +282,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   kontrollen ersätter det. Det står att en nivå som inte är `NONE` betyder att uppgifterna inte får lämnas ut utan
   prövning ([§5.4]).
 - En part med `protection` ger `engagement.party_protection`, och kunden räknas som skyddad. Namn, adresser och egna
-  kontaktuppgifter sparas, och befintliga står kvar. Skyddet upphör när inget engagemang längre anger det och
-  folkbokföringen inte gör det heller.
+  kontaktuppgifter sparas, och befintliga står kvar. Skyddet upphör när varken något engagemang eller folkbokföringen
+  längre anger det.
 - En ändrad skyddsnivå loggas som `PROTECTION_CHANGED`.
 - Varje kund som får en rad i den tekniska loggen, utom `IGNORED_STALE`, markeras i `search_index_queue` i samma
   transaktion, och markeringarna skrivs i `customer_id`-ordning ([§6.2]).
@@ -315,7 +314,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   uppgifter och engagemangens kontakter lämnas orörda.
 - `DELETE` raderar kunden med allt den äger och skriver `CUSTOMER_DELETED` med kanalen `MESSAGE` och objekttypen
   `CUSTOMER`.
-- Versionsvakten fungerar likadant som för andra objekt, nycklad på partyId.
+- Versionsvakten fungerar som för andra objekt, nycklad på partyId.
 - `DELETE` raderar kunden även när källan aldrig har skickat `CUSTOMER UPDATE` för den, och när kunden har raderats och
   skapats på nytt av ett engagemang ([§3.4]). Ett `DELETE` utan part ger valideringsfel. Kundens rader i
   `source_object` raderas med den.
@@ -343,10 +342,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Acceptans:**
 
 - Ingen sökväg har namespace ([§6]). Utan filter visas kundens alla kontakter. Med `namespace=A` visas A:s och de
-  globala, men aldrig B:s, och med `namespace=A&namespace=B` både A:s, B:s och de globala. Ett ogiltigt namespace i
-  filtret ger 400. Dubbletter slås ihop, men två kontaktpersoner som bara skiljer sig i adress eller namespace visas
-  båda. En ihopslagen kontaktperson får den högsta nivån bland
-  raderna, med den radens värden från Citizen.
+  globala, men aldrig B:s, och med `namespace=A&namespace=B` visas A:s, B:s och de globala. Ett ogiltigt namespace
+  i filtret ger 400. Dubbletter slås ihop, men två kontaktpersoner som bara skiljer sig i adress eller namespace visas
+  båda. En ihopslagen kontaktperson får den högsta nivån bland raderna, med den radens värden från Citizen.
 - Kunden returneras med alla sina adresser, i ordningen i [§5.2], och varje kontaktperson med sin adress, sin
   `protectionLevel` och Citizens värden ([§5.3]).
 - En kontaktpersons nivå räknas fram enligt [§5.3], tabelldrivet med ett fall per gren: kontaktpersonen är kund i
@@ -364,16 +362,15 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   okänd kund ger 404.
 - En skyddad kund, också en med `UNKNOWN`, returneras med `protectionLevel`, `classified`, `protectedNR`, namn,
   adresser och kontaktkanaler.
-- `protectionLevel` i OpenAPI-specen beskriver alla fem värden, också `UNVERIFIED` för kontaktpersoner, att `UNKNOWN`
-  betyder okänd skyddsstatus som ska hanteras som skyddad, och att en nivå som inte är `NONE` betyder att uppgifterna
-  inte får lämnas ut utan prövning.
-  `classified` och `protectedNR` beskrivs som Citizens värden ([§5.4]).
-- Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Om numret inte finns, eller
-  om kunden saknas, blir det 404. Numret finns aldrig i svar, loggrader eller Problem-detail. En enskild firma slås upp
-  med `ENTERPRISE` och ägarens personnummer, med 10 eller 12 siffror, och ger firman och inte ägaren ([§3.1]).
+- `protectionLevel` i OpenAPI-specen beskriver alla fem värden, också `UNVERIFIED` för kontaktpersoner. Där står att
+  `UNKNOWN` betyder okänd skyddsstatus som ska hanteras som skyddad, och att en nivå som inte är `NONE` betyder att
+  uppgifterna inte får lämnas ut utan prövning. `classified` och `protectedNR` beskrivs som Citizens värden ([§5.4]).
+- Uppslaget tar `legalId` och `partyType` i kroppen och ger samma svar som `GET` på kunden. Finns inte numret eller
+  kunden blir svaret 404. Numret finns aldrig i svar, loggrader eller Problem-detail. En enskild firma slås upp med
+  `ENTERPRISE` och ägarens personnummer, med 10 eller 12 siffror, och ger firman och inte ägaren ([§3.1]).
 - Historiken för ett engagemang sorteras förvalt på `occurredAt,desc` och pagineras ([§6.1]).
 - Engagemang från alla namespaces visas utan filter. `namespace`, som kan anges flera gånger, och `objectType`
-  filtrerar, och med ett namespace-filter kommer engagemang utan namespace också med ([§5.1]). Förvald sortering är
+  filtrerar. Med ett namespace-filter kommer engagemang utan namespace också med ([§5.1]). Förvald sortering är
   `sourceModified,desc`, och paginering med `size > 100` begränsas till 100.
 - Ett engagemang som tillhör en annan kund ger 404.
 - Ett sorteringsfält som inte är tillåtet ger 400, och sidorna är stabila när sorteringsnyckeln är lika ([§6.1]).
@@ -446,11 +443,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `DELETE` på kund raderar kunden med allt den äger, inklusive dess rader i `source_object` för `CUSTOMER`, och skriver
   `CUSTOMER_DELETED` med kanalen `REST` och `performed_by`.
 - `DELETE` på kund raderar också personens kontaktrader hos andra kunder i kommunen, i `contact` och i
-  `manual_contact_person` (`party_id`), även när personen bara är kontaktperson, loggar `CONTACT_REMOVED` för de
-  kunderna och markerar dem för omindexering. Kontaktrader i en annan kommun lämnas orörda. 404 blir det bara när
-  varken kund eller kontaktrader i någon av tabellerna finns.
+  `manual_contact_person` (`party_id`), även när personen bara är kontaktperson. De kunderna loggas som
+  `CONTACT_REMOVED` och markeras för omindexering. Kontaktrader i en annan kommun lämnas orörda. Svaret blir 404 bara
+  när varken kund eller kontaktrader i någon av tabellerna finns.
 - `DELETE` på kund låser kundens rader i `source_object` för `CUSTOMER` före kunden ([§3.6]). Samtidighetstest: ett
-  `CUSTOMER UPDATE` för samma kund tillämpas samtidigt, och båda blir klara utan att någon av dem misslyckas.
+  `CUSTOMER UPDATE` för samma kund tillämpas samtidigt, och båda lyckas.
 - En radering som faller på deadlock görs om med `DeadlockRetry` från C2.
 - Båda `DELETE`-anropen kräver `X-Sent-By`, och ett anrop utan den ger 400.
 - Den tekniska loggen kan läsas efter raderingen, sorteras förvalt på `created,desc` och pagineras.
@@ -495,13 +492,13 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   Ifyllnaden loggas som `NAME_ADDRESS_FILLED` med kanalen `SCHEDULER`, och kunden markeras för omindexering, också
   när nivån inte ändrades.
 - Ett företag med `UNKNOWN` utan `registry_party_id` slås upp i LegalEntity igen. En enskild firma får ägaren som
-  `registry_party_id` och ägarens nivå, och ett annat företag får `registry_protection = null`, får sin profil från
-  samma svar och tas inte med igen.
+  `registry_party_id` och ägarens nivå. Ett annat företag får `registry_protection = null` och sin profil från samma
+  svar, och tas inte med igen.
 - En företagskund utan profil tas med och får sin profil, loggad som `PROFILE_UPDATED`, också när den är skyddad
   ([§5.5]).
 - Svarar LegalEntity 404 får kunden `legal_entity_not_found`. Ett företag med `UNKNOWN` utan `registry_party_id`, och
-  ett företag utan profil, tas då inte med förrän `protection.legal-entity-retry` har gått. Testet har en kund
-  vars `legal_entity_not_found` ligger inom intervallet och en vars värde ligger utanför. En enskild firma med
+  ett företag utan profil, tas då inte med förrän `protection.legal-entity-retry` har gått. Testet har en kund vars
+  `legal_entity_not_found` ligger inom intervallet och en vars värde ligger utanför. En enskild firma med
   `registry_party_id` inom intervallet kontrolleras mot Citizen men får ingen profil. 5xx från LegalEntity ändrar inte
   `legal_entity_not_found`, och ett svar med företaget sätter den till null ([§5.4]).
 - När en kund blir skyddad står namn, adresser, egna kontaktuppgifter och profil kvar, och kunden markeras för
@@ -555,9 +552,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   - ökar `attempts` på en rad vars dokument inte går att bygga, och fortsätter med de andra raderna
   - avslutar körningen efter `search.relay.max-run-time`
 - `OpenSearchHealthIndicator` blir `DOWN` när någon rad har `attempts ≥ 5` och ingår inte i `readiness`.
-- En markering från `CONTACT_REMOVED` eller `CUSTOMER_DELETED` sätter `priority`, och relayn tar
-  de prioriterade raderna före äldre rader utan prioritet ([§6.2]). En senare markering utan prioritet tar inte bort
-  den.
+- En markering från `CONTACT_REMOVED` eller `CUSTOMER_DELETED` sätter `priority`, och relayn tar de prioriterade raderna
+  före äldre rader utan prioritet ([§6.2]). En senare markering utan prioritet tar inte bort den.
 - `POST /search/reindex` utan `X-Sent-By` ger 400.
 - Reindexeringen svarar 202, 409 om låset redan är taget och 503 om sökningen är avstängd. Den pausar relayn medan den
   pågår, och låset förlängs med `KeepAliveLockProvider`.
@@ -593,9 +589,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   inaktuellt ([§6.2]).
 
 - En sökning på namnet på en skyddad kontaktperson hos ett oskyddat företag ger företaget med
-  `hasProtectedContacts = true`. En kontaktperson med `UNVERIFIED` ger inte `true`, men en med `UNKNOWN` gör
-  det. En kontaktperson som filtret utesluter påverkar inte värdet, och en ändrad
-  nivå i `registry_person` syns i nästa sökning utan omindexering. Nivåerna läses med en fråga per sida.
+  `hasProtectedContacts = true`. En kontaktperson med `UNVERIFIED` ger inte `true`, men en med `UNKNOWN` gör det. En
+  kontaktperson som filtret utesluter påverkar inte värdet, och en ändrad nivå i `registry_person` syns i nästa sökning
+  utan omindexering. Nivåerna läses med en fråga per sida.
 
 - Ett telefonnummer hittas oavsett format, också när det bara finns i en kontaktperson i ett namespace och sökningen
   saknar filter.
@@ -619,8 +615,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 
 **Bygg:**
 
-- En OpenSearch-container för party-overview i test och produktion, uppsatt på samma sätt som SupportManagements,
-  tills ett riktigt kluster finns ([beslut 38]).
+- En OpenSearch-container för party-overview i test och produktion, uppsatt som SupportManagements, tills ett riktigt
+  kluster finns ([beslut 38]).
 - Inloggningen som sealed secrets.
 
 **Acceptans:**
@@ -633,9 +629,9 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 **Bygg:**
 
 - Publicerarnas exchanges i deras egen driftkonfiguration, och party-overviews köer i party-overviews, enligt [§3.2]:
-  quorum-köer med `x-single-active-consumer: true`
-  som argument, dead letter-köer, och en policy per kö med `dead-letter-exchange`, `dead-letter-routing-key`,
-  `delivery-limit: 5`, `dead-letter-strategy: at-least-once` och `overflow: reject-publish`.
+  quorum-köer med `x-single-active-consumer: true` som argument, dead letter-köer, och en policy per kö med
+  `dead-letter-exchange`, `dead-letter-routing-key`, `delivery-limit: 5`, `dead-letter-strategy: at-least-once` och
+  `overflow: reject-publish`.
 - AMQP-användare: publicerarna får write på sin exchange, och party-overview får read på sina köer. Ingen får
   configure.
 
@@ -965,8 +961,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   båda samtidigt, ger 400.
 - Ett `legalId` mappas till partyId och finns aldrig i någon tabell, loggrad, svar eller Problem-detail. Finns numret
   inte blir svaret 400.
-- En person får sig själv som `registry_party_id`, en enskild firma ägaren, och ett annat företag
-  `fallback_protection = NONE`, och en kontaktperson utan id `UNVERIFIED`. Varje `registry_party_id` har en rad i
+- En person får sig själv som `registry_party_id`, en enskild firma ägaren, ett annat företag
+  `fallback_protection = NONE` och en kontaktperson utan id `UNVERIFIED`. Varje `registry_party_id` har en rad i
   `registry_person` efter commit. Citizen anropas bara när raden saknas eller har `UNKNOWN`, och svarar Citizen inte
   skapas raden med `UNKNOWN`.
 - En kontaktperson som pekar på en skyddad person returneras med den skyddade nivån och Citizens värden, och kunden får

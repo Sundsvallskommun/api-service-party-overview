@@ -48,9 +48,9 @@ Del av [arkitekturen för party-overview](README.md).
 
 - Grundladdningen av SupportManagement (cirka 800 000 ärenden) går via en enda konsument.
 
-  **Hantering:** Prefetch 1 och 10–20 ms per meddelande ger 50–100 meddelanden/s, alltså 2–5 timmar. Det blir
-  långsammare när nya privatkunder kräver ett Citizen-anrop. Grundladdningen körs utanför kontorstid, och tiden mäts i
-  test först. Casedata (cirka 5 000) tar några minuter.
+  **Hantering:** Prefetch 1 och 10–20 ms per meddelande ger 50–100 meddelanden/s, så grundladdningen tar 2–5 timmar. Det
+  blir långsammare när nya privatkunder kräver ett Citizen-anrop. Grundladdningen körs utanför kontorstid, och tiden
+  mäts i test först. Casedata (cirka 5 000) tar några minuter.
 
 - Den nattliga skyddskontrollen belastar Citizen: antalet privatkunder och enskilda firmor plus antalet personer i
   `registry_person`, delat med 100, anrop per natt. En person som både är kund och kontaktperson kontrolleras två
@@ -58,8 +58,8 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** `batch-size` är konfigurerbar. Belastningen stäms av med den som förvaltar Citizen.
 
-- Om Citizen inte svarar får nya privatkunder och kontaktpersoner skyddsstatusen `UNKNOWN` tills den nattliga
-  kontrollen har fått svar från Citizen ([§5.4]).
+- Om Citizen inte svarar får nya privatkunder och kontaktpersoner skyddsstatusen `UNKNOWN` tills den nattliga kontrollen
+  har fått svar ([§5.4]).
 
   **Hantering:** Avsiktligt ([beslut 48]). Uppgifterna sparas, frontend hanterar `UNKNOWN` som skyddat tills statusen
   är känd, och köerna står inte still medan Citizen är nere.
@@ -70,8 +70,7 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Skyddsnivån och Citizens flaggor finns på kunden, på varje kontaktperson och i varje sökträff, och
   sökträffen visar med `hasProtectedContacts` om en kontaktperson är skyddad ([§6.2]). OpenAPI-specen beskriver vad
-  fälten betyder ([§5.4]). Åtkomsten till API:t avgör vem som kan läsa uppgifterna
-  ([beslut 30]).
+  fälten betyder ([§5.4]). Åtkomsten till API:t avgör vem som kan läsa uppgifterna ([beslut 30]).
 
 - Den tekniska loggen växer under lagringstiden, som är fem år som förval.
 
@@ -193,8 +192,8 @@ Del av [arkitekturen för party-overview](README.md).
   (`GET /{municipalityId}/{organizationNumber}/guid`). För en enskild firma är numret ett personnummer, som då kan
   hamna i gatewayens och LegalEntitys loggar.
 
-  **Hantering:** Accepteras ([beslut 32]). LegalEntity saknar ett uppslag med numret i kroppen och är inte vår tjänst.
-  Anropet undantas från party-overviews payload-logg, och PII-maskningen är påslagen ([§7.1]).
+  **Hantering:** Accepteras ([beslut 32]). Anropet undantas från party-overviews payload-logg, och PII-maskningen är
+  påslagen ([§7.1]).
 
 - En kontaktperson utan partyId och legalId kan inte kontrolleras mot folkbokföringen. Den sparas med `UNVERIFIED`,
   som inte räknas i sökträffens `hasProtectedContacts` ([§5.3], [beslut 48]). En sådan kontaktperson kan ändå ha
@@ -206,8 +205,8 @@ Del av [arkitekturen för party-overview](README.md).
 - För en enskild firma med ett tiosiffrigt organisationsnummer framgår inte århundradet, som Citizens uppslag av
   personnummer behöver. party-overview antar att ägaren är yngre än 100 år ([§5.4]).
 
-  **Hantering:** Accepteras. En ägare som är 100 år eller äldre får fel århundrade, och då hittas ingen ägare, så att
-  kunden får `UNKNOWN`, eller i värsta fall en annan person med samma nummer i ett annat århundrade.
+  **Hantering:** Accepteras. En ägare som är 100 år eller äldre får fel århundrade. Då hittas ingen ägare, och kunden
+  får `UNKNOWN`. I värsta fall hittas en annan person med samma nummer i ett annat århundrade.
 
 - En företagsprofil är inaktuell om ett meddelande i ändringskön har dead-letterats, och tills kön finns ([§5.5]).
 
@@ -222,7 +221,7 @@ Del av [arkitekturen för party-overview](README.md).
 - En kontaktperson som källan fortfarande anger försvinner från företaget när personen raderas automatiskt som kund, och
   kommer tillbaka först när objektet ändras i källan ([§3.6]).
 
-  **Hantering:** Accepteras ([beslut 52]). Uppgifter sparas inte längre än de behövs.
+  **Hantering:** Accepteras ([beslut 52]).
 
 - Företagets SNI-koder räknas fram ur arbetsställenas, eftersom LegalEntity inte ger företagets egna. För ett företag
   med flera arbetsställen kan ordningen skilja sig från SCB:s, som bygger på andelar av omsättningen ([beslut 58]).
@@ -233,8 +232,8 @@ Del av [arkitekturen för party-overview](README.md).
 - Ett företag kan ha hundratals arbetsställen. Profilen ersätts då som helhet med alla arbetsställen, deras adresser och
   SNI-koder, under kundens lås, och ett meddelande om samma kund väntar under tiden ([§5.5]).
 
-  **Hantering:** Accepteras, utan tak, så att listan stämmer med antalet arbetsställen ([beslut 58]). Profilen skrivs
-  bara om när den har ändrats, och raderna skrivs i JDBC-batchar. C5 testar en profil med 2 000 arbetsställen.
+  **Hantering:** Accepteras, utan tak ([beslut 58]). Profilen skrivs bara om när den har ändrats, och raderna skrivs i
+  JDBC-batchar. C5 testar en profil med 2 000 arbetsställen.
 
 - LegalEntitys svar innehåller personnummer och namn på företagets funktionärer.
 

@@ -47,8 +47,7 @@ anges i kroppen när den skapas. En notering utan namespace är global. Notering
 
 **Valdes bort:**
 
-- Noteringar från källsystem, t.ex. api-service-notes. Deras noteringar är ärendedata, inte envelope-data, och samlas
-  inte in.
+- Noteringar från källsystem, t.ex. api-service-notes. Deras noteringar är ärendedata, inte envelope-data.
 - Att varje notering måste ha ett namespace.
 
 **Skäl:** Noteringar är kundvyns egna anteckningar. En verksamhet ser sina egna genom att filtrera på sitt namespace,
@@ -65,11 +64,10 @@ En notering på en kund som inte finns skapar kunden. Citizen eller LegalEntity 
 
 ## Beslut 7: Synlighet för engagemang, kontaktuppgifter och noteringar
 
-En kund har inget namespace. Namespace finns på engagemang, kontaktuppgifter, kontaktpersoner och noteringar, och det
-är alltid valfritt: något utan namespace är globalt. Ingen sökväg har namespace. Vid läsning är `namespace` ett
-valfritt filter som kan anges flera gånger, och det ger de angivna namespacena plus det globala. Utan filter
-returneras allt. När en notering eller kontaktperson skapas anges namespace i kroppen, och det krävs aldrig
-([§5.1], [§6.1]).
+En kund har inget namespace. Namespace finns på engagemang, kontaktuppgifter, kontaktpersoner och noteringar, och det är
+alltid valfritt: något utan namespace är globalt. Ingen sökväg har namespace. Vid läsning är `namespace` ett valfritt
+filter som kan anges flera gånger, och det ger de angivna namespacena plus det globala. Utan filter returneras allt. När
+en notering eller kontaktperson skapas anges namespace i kroppen ([§5.1], [§6.1]).
 
 **Valdes bort:**
 
@@ -79,20 +77,20 @@ returneras allt. När en notering eller kontaktperson skapas anges namespace i k
 **Skäl:** En kund tillhör ingen verksamhet. Den kan ha ärenden, assets och kontrakt från många namespaces, och alla
 anropare hör inte till en verksamhet. Namespace hör till det som en verksamhet äger, och den som läser väljer själv
 vilka namespaces den vill se. Vem som får läsa styrs av åtkomsten till API:t ([beslut 30]). Kundvyn ska ge helheten.
-Engagemang kan synas för hela kommunen, eftersom det som är känsligt aldrig
-publiceras. SupportManagement publicerar bara namespaces som har slagit på det ([beslut 19]) och aldrig namespaces med
-åtkomstkontroll ([beslut 51]). Casedata publicerar inte sekretessmarkerade ärenden ([beslut 34]) och tills vidare bara
-`SBK_MEX` ([beslut 37]). party-assets publicerar bara asset-typer på en vitlista ([beslut 50]).
+Engagemang kan synas för hela kommunen, eftersom det som är känsligt aldrig publiceras. SupportManagement publicerar
+bara namespaces som har slagit på det ([beslut 19]) och aldrig namespaces med åtkomstkontroll ([beslut 51]). Casedata
+publicerar inte sekretessmarkerade ärenden ([beslut 34]) och tills vidare bara `SBK_MEX` ([beslut 37]). party-assets
+publicerar bara asset-typer på en vitlista ([beslut 50]).
 
 ## Beslut 8: En engagemangsrad per kund
 
-Ett engagemang lagras som en rad per kund. Ett ärende med tre kunder blir alltså tre rader.
+Ett engagemang lagras som en rad per kund. Ett ärende med tre kunder blir tre rader.
 
 **Valdes bort:** En delad rad med kopplingstabell.
 
-**Skäl:** Det är det enda alternativet där `DELETE FROM customer` direkt i databasen tar med allt kunden äger och inte
-lämnar föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data. Personens kontaktrader hos
-andra företag ägs av företagen och raderas via `contact.party_id` ([beslut 52]).
+**Skäl:** Bara med en rad per kund raderar `DELETE FROM customer` direkt i databasen allt som kunden äger, utan att
+lämna föräldralösa rader med personuppgifter. Det som dupliceras är bara envelope-data. Personens kontaktrader hos andra
+företag ägs av företagen och raderas via `contact.party_id` ([beslut 52]).
 
 ## Beslut 9: En tabell för alla engagemangstyper
 
@@ -153,7 +151,7 @@ noteringar, kontaktpersoner från REST och data från `CUSTOMER`-meddelanden ([�
 ## Beslut 15: party-overview härleder kontaktpersoner
 
 party-overview härleder kontaktpersoner. En part med kontaktpersonsroll blir kontaktperson på objektets företagskunder
-men blir aldrig själv kund. Vilka roller som räknas som kontaktpersonsroller konfigureras per kommun och källa via REST.
+men blir aldrig själv kund. Kontaktpersonsrollerna konfigureras per kommun och källa via REST.
 
 **Valdes bort:** Att publiceraren kopplar ihop dem, eller en lista i `application.yml`.
 
@@ -181,8 +179,8 @@ inte av något i meddelandet.
 
 **Valdes bort:** Ett paket och en översättare per källa, som i POC:en, eller en enda container för alla köer.
 
-**Skäl:** Det gemensamma formatet gör översättarna onödiga. Kön kan dessutom bara nås via källans egen exchange. Med en
-enda container delar köerna en konsumenttråd, och ett omförsök på en källa stoppar alla.
+**Skäl:** Det gemensamma formatet gör översättarna onödiga. Kön kan bara nås via källans egen exchange. Med en enda
+container delar köerna en konsumenttråd, och ett omförsök på en källa stoppar alla.
 
 ## Beslut 18: Historiken kommer från källans aktiviteter
 
@@ -204,8 +202,8 @@ per ärende publiceras inte alls ([beslut 51]).
 
 ## Beslut 20: Transaktionell outbox hos varje publicerare
 
-Varje publicerare har en transaktionell outbox och en relay som körs direkt efter commit och dessutom schemalagt med
-ShedLock. Grundladdningen går genom samma outbox.
+Varje publicerare har en transaktionell outbox och en relay som körs direkt efter commit och schemalagt med ShedLock.
+Grundladdningen går genom samma outbox.
 
 **Valdes bort:** En gemensam outbox i dept44, eller att publicera efter commit utan outbox.
 
@@ -221,7 +219,7 @@ namnet och adresserna från det senaste meddelandet som hade något av dem ([§5
 - Att den som skrev senast vinner.
 - Att slå ihop adresserna per typ eller per källa.
 
-**Skäl:** Ordningen blir deterministisk oavsett i vilken ordning meddelandena kommer, även vid grundladdning. Slogs
+**Skäl:** Resultatet blir deterministiskt oavsett i vilken ordning meddelandena kommer, även vid grundladdning. Slogs
 adresserna ihop per typ eller källa skulle en adress som källan har tagit bort ligga kvar för alltid, eftersom inget
 meddelande säger att den ska bort.
 
@@ -255,8 +253,8 @@ kroppen. Numret mappas till partyId via Citizen eller LegalEntity och kastas sed
 ## Beslut 25: Fritextsökning med Hibernate Search och en indexeringskö
 
 Kunder kan sökas med fritext via OpenSearch, med Hibernate Search som i SupportManagement ([§6.2]). Hibernate Search
-sköter mappning, schema, fråge-DSL och MassIndexer, men dess automatiska lyssnare är avstängda. I stället markeras
-kunder för indexering i tabellen `search_index_queue` i samma transaktion som ändringen, och en relay skriver till
+sköter mappning, schema, fråge-DSL och MassIndexer, men dess automatiska lyssnare är avstängda. I stället markerar
+tjänsten kunder för indexering i tabellen `search_index_queue`, i samma transaktion som ändringen. En relay skriver till
 indexet.
 
 **Valdes bort:**
@@ -266,7 +264,7 @@ indexet.
 
 **Skäl:** Lyssnarna ser varken IODKU, bulk-delete eller databasens kaskad. Asynkron indexering utan kö kan tappa
 ändringar. Kön ger leveransgaranti och slår ihop ändringar per kund, vilket behövs vid grundladdning. En reindexering
-sker sällan och tar några minuter, så att sökningen är tom under tiden är godtagbart.
+sker sällan och tar några minuter, så det är godtagbart att sökningen är tom under tiden.
 
 ## Beslut 25a: Ingen databastrigger för raderingar i sökindexet
 
@@ -322,10 +320,10 @@ att förlita sig på party-overviews tolkning.
 
 ## Beslut 28: Skyddsstatus från Citizen vid skapandet och varje natt
 
-Folkbokföringens skyddsstatus hämtas från Citizen (`ShowClassified=true`) när en privatkund eller enskild firma
-skapas, och dessutom varje natt för dem och för kunder med okänd status. Natten tar med varje sådan kund vars senaste
-kontroll är äldre än körningens start ([§5.4]). Ett företag som LegalEntity har svarat 404 för väntar enligt
-[beslut 64]. Personerna i `registry_person` kontrolleras också varje natt ([§5.4]).
+Folkbokföringens skyddsstatus hämtas från Citizen (`ShowClassified=true`) när en privatkund eller enskild firma skapas,
+och varje natt för dem och för kunder med okänd status. Natten tar med varje sådan kund vars senaste kontroll är äldre
+än körningens start ([§5.4]). Ett företag som LegalEntity har svarat 404 för väntar enligt [beslut 64]. Personerna i
+`registry_person` kontrolleras också varje natt ([§5.4]).
 
 **Valdes bort:** Att bara kontrollera vid skapandet, eller att bara lita på meddelandena. Att välja kunder vars senaste
 kontroll är äldre än en fast ålder, t.ex. ett dygn.
@@ -368,9 +366,9 @@ i URL:en. Anropet undantas från dept44:s payload-logg ([§7.1]).
 **Valdes bort:** En ny POST-endpoint i api-service-party med numren i kroppen.
 
 **Skäl:** LegalEntity saknar ett uppslag med numret i kroppen och är inte vår tjänst. En POST-endpoint i Party skulle
-ändå ha anropat LegalEntity med numret i URL:en, så den skulle bara flytta URL:en ett steg och kräva en ändring i en
-annan tjänst. För en enskild firma är numret ägarens personnummer. Det hålls borta från party-overviews payload-logg,
-och att det syns i gatewayens och LegalEntitys loggar är en accepterad risk ([§13.3]).
+ändå anropa LegalEntity med numret i URL:en. Den skulle bara flytta URL:en ett steg och kräva en ändring i en annan
+tjänst. För en enskild firma är numret ägarens personnummer. Det hålls borta från party-overviews payload-logg. Att det
+syns i gatewayens och LegalEntitys loggar är en accepterad risk ([§13.3]).
 
 ## Beslut 33: Kontaktpersonsrollerna sätts via REST vid driftsättning
 
@@ -383,7 +381,7 @@ SupportManagement de roller som produktionens metadata visar ([§12]).
 
 ## Beslut 34: Casedata publicerar ärenden, och sekretessärenden som DELETE
 
-Casedata blir en publicerare av `ERRAND` med källan `CASE_DATA` ([§11.5]). Ärenden med `confidential = true` publiceras
+Casedata är en publicerare av `ERRAND` med källan `CASE_DATA` ([§11.5]). Ärenden med `confidential = true` publiceras
 som `DELETE`.
 
 **Valdes bort:** Att publicera sekretessmarkerade ärenden.
@@ -428,10 +426,9 @@ Indexnamnet `customer` behöver därför inget miljöprefix.
 
 ## Beslut 39: Vad som är sökbart
 
-I princip allt om kunden är sökbart: namn, adresser, kontaktuppgifter och kontaktpersoner med deras adresser,
-företagsprofilen och arbetsställena, engagemangens referens, titel
-och kategori, samt noteringarna. Det gäller också en skyddad kund, och träffen har kundens
-skyddsnivå ([§6.2]).
+Följande om kunden är sökbart: namn, adresser, kontaktuppgifter och kontaktpersoner med deras adresser, företagsprofilen
+och arbetsställena, engagemangens referens, titel och kategori, samt noteringarna. Det gäller också en skyddad kund, och
+träffen har kundens skyddsnivå ([§6.2]).
 
 **Valdes bort:**
 
@@ -443,8 +440,8 @@ kan hantera dem som skyddade ([beslut 27]).
 
 ## Beslut 40: Sökindexets relay körs efter commit och var 10:e sekund
 
-Sökindexets relay körs direkt efter varje commit som markerar kunder, och dessutom var 10:e sekund som skyddsnät. En
-ändring blir sökbar inom någon sekund.
+Sökindexets relay körs direkt efter varje commit som markerar kunder, och var 10:e sekund som skyddsnät. En ändring blir
+sökbar inom någon sekund.
 
 **Valdes bort:** Bara schemalagd körning.
 
@@ -462,7 +459,7 @@ nivån.
 
 **Skäl:** "NR" betyder folkbokföring (jämför fältet `nrDate`), och Citizen-dokumentationen skiljer på sekretessmarkerade
 personer och personer med skyddad folkbokföring. Det verifieras mot testpersoner i C3. Med Citizens värden sparade kan
-verksamheten avgöra hanteringen själv, också om tolkningen skulle visa sig vara fel.
+verksamheten avgöra hanteringen själv, också om tolkningen visar sig vara fel.
 
 ## Beslut 42: Kontaktkanalens typ är en fast uppräkning
 
@@ -516,34 +513,34 @@ versionsregistret har inget meddelande-id ([§4.2]).
 
 **Valdes bort:** `message_id` och `last_message_id` på varje rad som ett meddelande skriver.
 
-**Skäl:** Den tekniska loggen har redan id:t för varje meddelande och kund, även för inaktuella meddelanden. I
-applikationsloggarna maskeras id:t, eftersom det är ett UUID ([§12]), så det är den tekniska loggen som knyter en
-ändring till sitt meddelande. Kolumnerna på datatabellerna gav ingen spårbarhet utöver den.
+**Skäl:** Den tekniska loggen har redan id:t för varje meddelande och kund, även för inaktuella meddelanden.
+Applikationsloggarna maskerar id:t, eftersom det är ett UUID ([§12]). Det är den tekniska loggen som knyter en ändring
+till sitt meddelande. Kolumnerna på datatabellerna skulle inte ge någon spårbarhet utöver den.
 
 ## Beslut 48: Okänd skyddsstatus när Citizen inte svarar
 
-Om Citizen eller LegalEntity inte svarar, svarar 5xx, har en öppen circuit breaker eller saknar en post för personen
-när ett meddelande skapar en kund eller skriver en kontaktperson, får kunden eller kontaktpersonen skyddsstatusen
-`UNKNOWN`, som ska hanteras som skyddad tills den nattliga kontrollen har fått svar ([§5.4]). Meddelandet tillämpas
-ändå. När en notering eller en kontaktperson från REST skapar kunden blir svaret i stället 503, eftersom partytypen
-då inte går att avgöra ([§7.2]). 401 dead-letteras som tidigare, eftersom det är ett konfigurationsfel. README,
-javadoc och OpenAPI-specen beskriver värdet.
+Ett meddelande som skapar en kund eller skriver en kontaktperson tillämpas även om Citizen eller LegalEntity inte
+svarar, svarar 5xx, har en öppen circuit breaker eller saknar en post för personen. Kunden eller kontaktpersonen får då
+skyddsstatusen `UNKNOWN`, som ska hanteras som skyddad tills den nattliga kontrollen har fått svar ([§5.4]). När en
+notering eller en kontaktperson från REST skapar kunden blir svaret i stället 503, eftersom partytypen då inte går att
+avgöra ([§7.2]). Vid 401 dead-letteras meddelandet, eftersom det är ett konfigurationsfel. README, javadoc och
+OpenAPI-specen beskriver värdet.
 
-En kontaktperson som inte kan kontrolleras alls, för att den saknar id eller för att det inte gick att avgöra om ett
-företag är en enskild firma, får i stället `UNVERIFIED` ([§5.3]). Det värdet ersätts inte av den nattliga kontrollen,
-bara när källan skriver om kontaktpersonen, och det räknas inte i sökträffens `hasProtectedContacts` ([§6.2]).
+En kontaktperson som inte kan kontrolleras alls, för att den saknar id eller för att det inte går att avgöra om ett
+företag är en enskild firma, får i stället `UNVERIFIED` ([§5.3]). Den nattliga kontrollen ersätter inte det värdet. Det
+ersätts bara när källan skriver om kontaktpersonen. Det räknas inte i sökträffens `hasProtectedContacts` ([§6.2]).
 
 **Valdes bort:**
 
 - Att göra om meddelandet tills Citizen svarar, och att sedan dead-lettera det.
 - Att kontaktpersoner som inte kan kontrolleras får `UNKNOWN`.
 
-**Skäl:** Med single-active-consumer stod hela källans kö still i cirka 8 minuter per meddelande, och meddelanden som
-flyttades tillbaka från dead letter-kön kom i fel ordning och tappade sina aktiviteter. Uppgifterna sparas, och
-`UNKNOWN` visar att de ska hanteras som skyddade tills statusen är känd. Ett eget värde visar att statusen är okänd,
-i stället för en skyddsnivå som personen kanske inte har. `UNKNOWN` betyder alltid att den nattliga kontrollen
-ersätter värdet. Kontaktpersoner utan id är vanliga, och med `UNKNOWN` för dem skulle `hasProtectedContacts` vara sant
-för nästan alla företag och inte längre skilja ut dem som har skyddade kontaktpersoner.
+**Skäl:** Med single-active-consumer skulle hela källans kö stå still i cirka 8 minuter per meddelande. Meddelanden som
+flyttas tillbaka från dead letter-kön kommer i fel ordning och tappar sina aktiviteter. Uppgifterna sparas, och
+`UNKNOWN` visar att de ska hanteras som skyddade tills statusen är känd. Ett eget värde visar att statusen är okänd, i
+stället för en skyddsnivå som personen kanske inte har. `UNKNOWN` betyder alltid att den nattliga kontrollen ersätter
+värdet. Kontaktpersoner utan id är vanliga. Med `UNKNOWN` för dem skulle `hasProtectedContacts` vara sant för nästan
+alla företag och inte skilja ut dem som har skyddade kontaktpersoner.
 
 ## Beslut 49: contract publicerar bara avtalsparter
 
@@ -636,8 +633,8 @@ publiceras inte ([§11.2]).
 
 **Valdes bort:** Att publicera kommunikationen som aktiviteter i historiken.
 
-**Skäl:** Kundbilden visar ärendet, inte meddelandena som skickas till och från det. Kommunikationen ökar dessutom inte
-ärendets version, så den kunde ändå inte publiceras som en egen ändring.
+**Skäl:** Kundbilden visar ärendet, inte meddelandena som skickas till och från det. Kommunikationen ökar inte ärendets
+version, så den kan inte publiceras som en egen ändring.
 
 ## Beslut 56: party-overview anropar inte api-service-party
 
@@ -647,9 +644,9 @@ partyId slås upp direkt mot Citizen och LegalEntity, och partytypen avgörs med
 **Valdes bort:** Att slå upp partyId och partytyp via api-service-party.
 
 **Skäl:** api-service-party är ett tunt lager ovanpå Citizen och LegalEntity, och partyId är deras id: Citizens
-`personId` för en person och LegalEntitys id för ett företag. Tjänsten anropar redan båda, så Party gav bara ett
-beroende till. Direkt syns fel per element i Citizens batchsvar, som Party annars gör om till att numret inte finns,
-och partytypen avgörs utan att personnummer hämtas.
+`personId` för en person och LegalEntitys id för ett företag. Tjänsten anropar redan båda, så Party skulle bara ge ett
+beroende till. Med direkta anrop syns fel per element i Citizens batchsvar, som Party gör om till att numret inte finns.
+Partytypen avgörs också utan att personnummer hämtas.
 
 ## Beslut 57: En kund kan ha flera adresser, och en kontaktperson har en
 
@@ -684,20 +681,20 @@ Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med
 - Organisationsnumret.
 - Ett tak för antalet arbetsställen.
 
-**Skäl:** Kundraden låses i varje meddelande och ska vara smal, och kolumnerna gäller inte privatkunder. Profilen
-hämtas i en egen takt och ersätts som en helhet. Med typade kolumner ser schemakontrollen
-fälten, och SNI-koderna går att fråga på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger
-bara arbetsställenas koder, utan andelar. Företagets koder följer av arbetsställenas, så att spara dem vore att spara
-samma uppgift två gånger. Arbetsställets adresser har samma form som kundens och kontaktpersonens. LegalEntity ger
-kodernas namn, så ingen klassifikation behöver underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna
-anges med namn och personnummer. Kunden identifieras med partyId:t, och ett organisationsnummer mappas alltid till det
-([beslut 54]). Ett tak skulle ge en lista som inte stämmer med antalet arbetsställen, utan att det syns. Ett företag
-med hundratals arbetsställen skrivs om bara när profilen har ändrats, och då i JDBC-batchar ([§13.3]).
+**Skäl:** Kundraden låses i varje meddelande och ska vara smal, och kolumnerna gäller inte privatkunder. Profilen hämtas
+i en egen takt och ersätts som en helhet. Med typade kolumner ser schemakontrollen fälten, och SNI-koderna går att fråga
+på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger bara arbetsställenas koder, utan andelar.
+Företagets koder följer av arbetsställenas, så att spara dem vore att spara samma uppgift två gånger. Arbetsställets
+adresser har samma form som kundens och kontaktpersonens. LegalEntity ger kodernas namn, så ingen klassifikation behöver
+underhållas, inte heller när SNI 2025 ersatte SNI 2007. Funktionärerna anges med namn och personnummer. Kunden
+identifieras med partyId:t, och ett organisationsnummer mappas alltid till det ([beslut 54]). Ett tak skulle ge en lista
+som inte stämmer med antalet arbetsställen, utan att det syns. Ett företag med hundratals arbetsställen skrivs om bara
+när profilen har ändrats, och då i JDBC-batchar ([§13.3]).
 
 ## Beslut 59: Ändringskön uppdaterar företagsprofilen och kontrollerar personers skydd
 
-party-overview lyssnar på en kö med ändringar av alla företag och personer. Ett meddelande om ett företag som är kund
-får party-overview att hämta företaget från LegalEntity och skriva profilen. Den senaste hämtningen vinner. Ett
+party-overview lyssnar på en kö med ändringar av alla företag och personer. För ett meddelande om ett företag som är
+kund hämtar party-overview företaget från LegalEntity och skriver profilen. Den senaste hämtningen vinner. Ett
 meddelande om en person som är kund, äger en enskild firma som är kund eller är kontaktperson startar kontrollen av
 skyddad identitet direkt ([§5.5]). Övriga meddelanden kastas.
 
@@ -775,7 +772,7 @@ Kontaktpersoner kan läggas till, ändras och raderas på en kund via REST ([§5
 anges i kroppen, och en kontaktperson utan namespace är global. Kundens kontaktpersoner från REST hämtas alla, eller
 filtrerade på ett eller flera namespaces, som i [beslut 7]. Kontaktpersonerna lagras i `manual_contact_person` och
 ändras med optimistisk låsning, som en notering ([beslut 61]). Skyddsnivån räknas fram som för kontaktpersoner från
-källorna ([beslut 52]). Finns kunden inte skapas den, som av en notering ([beslut 6]), och en kund som har sådana
+källorna ([beslut 52]). Finns kunden inte skapas den, som av en notering ([beslut 6]). En kund som har sådana
 kontaktpersoner raderas inte automatiskt. En persons kontaktpersoner från REST hos andra kunder raderas bara när
 personen raderas med `CUSTOMER DELETE` eller via REST, inte vid en automatisk radering, eftersom ingen källa kan skapa
 dem igen ([§3.6]).
@@ -815,8 +812,8 @@ utanför sin vanliga lista över assets (`GET /{municipalityId}/assets`).
 
 ## Beslut 68: Lyssnarna använder direct-containern
 
-party-overviews lyssnare använder Spring AMQP:s direct-container i stället för dept44:s förval, simple-containern, med
-`missing-queues-fatal: false` ([§12]). Saknas en kö eller AMQP-användaren försöker containern igen tills de finns.
+party-overviews lyssnare använder Spring AMQP:s direct-container med `missing-queues-fatal: false` ([§12]), i stället
+för dept44:s förval, simple-containern. Saknas en kö eller AMQP-användaren försöker containern igen tills de finns.
 `DeadLetterHealthIndicator` kontrollerar köerna och larmar under tiden ([§12.1]).
 
 **Valdes bort:** Simple-containern. När den saknar sin kö eller sin användare stoppas den för gott, och dept44-startern

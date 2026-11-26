@@ -60,10 +60,9 @@ fristående, utan FK.
 - En adress har samma kolumner i `customer_address`, `contact`, `manual_contact_person` och
   `enterprise_workplace_address`: `address_type varchar(32)`, `care_of`, `street`, `city` och `country varchar(255)`
   samt `postal_code varchar(16)`. Alla fyra entiteterna använder samma `@Embeddable`, med nullbara kolumner, `equals`
-  och `hashCode` ([§5.2]).
-  `customer_address` och `enterprise_workplace_address` gör `address_type` obligatorisk med `@AttributeOverride`. En
-  inbäddad adress vars kolumner alla är null läses som null, och det betyder att kontaktraden saknar adress.
-- Kolumner som slutar på `_id` men inte är FK och inte pekar på någon tabell i party-overview:
+  och `hashCode` ([§5.2]). `customer_address` och `enterprise_workplace_address` gör `address_type` obligatorisk med
+  `@AttributeOverride`. En inbäddad adress vars kolumner alla är null läses som null, och då saknar kontaktraden adress.
+- Kolumner som slutar på `_id` men inte pekar på någon tabell i party-overview:
   - `municipality_id`
   - `party_id`: partens partyId, som är Citizens `personId` för en person och LegalEntitys id för ett företag
   - `registry_party_id`: det partyId vars skydd hämtas från folkbokföringen ([§5.4])
@@ -78,11 +77,11 @@ fristående, utan FK.
   `@ForeignKey(name = …)` och `@OnDelete(action = CASCADE)` på barnet, medan föräldern inte har någon kollektion. På
   `@ElementCollection` sitter `@OnDelete` på kollektionen. Om Hibernate inte genererar kaskaden för kollektionstabellen,
   vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne` och samma
-  primärnyckel. Valet görs i C2. `enterprise_profile` har `@OneToOne(fetch = LAZY)`
-  med `@MapsId`, så att kundens id också är profilens, och profilens barn har sina FK mot profilen.
+  primärnyckel. Valet görs i C2. `enterprise_profile` har `@OneToOne(fetch = LAZY)` med `@MapsId`, så att kundens id
+  också är profilens, och profilens barn har sina FK mot profilen.
 - Index, unika nycklar och FK har samma namn i `@Table`/`@ForeignKey` och i Flyway: `uq_<tabell>_<kolumner>`,
-  `idx_<tabell>_<kolumner>` och `fk_<tabell>_<kolumn>`. Ett namn får vara högst 64 tecken, som är MariaDB:s gräns för
-  identifierare. Den enda nyckel som skulle gå över gränsen, engagemangets unika nyckel, namnges därför efter vad den
+  `idx_<tabell>_<kolumner>` och `fk_<tabell>_<kolumn>`. Ett namn får vara högst 64 tecken, MariaDB:s gräns för
+  identifierare. Engagemangets unika nyckel är den enda som skulle gå över gränsen och namnges därför efter vad den
   betyder ([§4.3]).
 - Enum-kolumner lagras som `varchar` och har inga check-constraints, så att ett nytt värde inte kräver en migrering.
 - `text`-kolumner mappas med `@Column(columnDefinition = "text")`, så att `schema.sql` och Flyway får samma typ.
@@ -242,8 +241,8 @@ Index: `idx_enterprise_proceeding_customer_id`.
 Index:
 
 - `uq_engagement_source_object_customer_id (municipality_id, object_type, source, object_id, customer_id)`: en rad per
-  källobjekt och kund. Prefixet utan `customer_id` används också för att hitta alla rader för ett källobjekt. Nyckeln
-  är cirka 1,6 kB och ryms inom InnoDB:s gräns på 3072 byte.
+  källobjekt och kund. Prefixet utan `customer_id` hittar också alla rader för ett källobjekt. Nyckeln är cirka 1,6 kB
+  och ryms inom InnoDB:s gräns på 3072 byte.
 - `idx_engagement_customer_id_source_modified`: kundvyns lista, och kontrollen om kunden har engagemang kvar.
 - `idx_engagement_customer_id_object_type_source_modified`: listan filtrerad på typ.
 

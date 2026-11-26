@@ -8,26 +8,24 @@ Alla sökvägar validerar med `@ValidMunicipalityId` och `@ValidUuid`. Ingen sö
   Utan den returneras allt. Med den returneras de angivna namespacena och det som saknar namespace. Det gäller
   kunden, uppslaget, sökningen, engagemangen, noteringarna och kontaktpersonerna.
 - När en notering eller kontaktperson skapas är `namespace` ett valfritt fält i kroppen. Saknas det blir den global.
-  Namespace går inte att ändra efteråt, och det krävs aldrig.
-- Fältet i kroppen är valfritt och valideras med `@ValidNamespace(nullable = true)`. Varje värde i filtret valideras
-  med `@ValidNamespace`. Ett ogiltigt värde ger 400.
+  Namespace går inte att ändra efteråt.
+- Fältet i kroppen valideras med `@ValidNamespace(nullable = true)` och varje värde i filtret med `@ValidNamespace`. Ett
+  ogiltigt värde ger 400.
 
-Listor returneras som
-`Page<T>` med `@ParameterObject Pageable`, och sidstorleken är högst 100. Varje lista sorteras till sist på `id`, så att
-sidorna är stabila när sorteringsnyckeln är lika. Fel returneras som Problem. `@ValidUuid`
+Listor returneras som `Page<T>` med `@ParameterObject Pageable`, och sidstorleken är högst 100. Varje lista sorteras
+till sist på `id`, så att sidorna är stabila när sorteringsnyckeln är lika. Fel returneras som Problem. `@ValidUuid`
 sätts inte på id-fält som är READ_ONLY.
 
 `X-Sent-By` krävs för alla anrop som ändrar något: noteringar och kontaktpersoner (`POST`, `PATCH`, `DELETE`),
-kundradering, radering av den
-tekniska loggen, kontaktpersonsrollerna och `POST /search/reindex`. Läsningar kräver den inte, inte heller uppslaget och
-sökningen, som är `POST` bara för att hålla numret och frågan borta från URL:en.
+kundradering, radering av den tekniska loggen, kontaktpersonsrollerna och `POST /search/reindex`. Läsningar kräver den
+inte, inte heller uppslaget och sökningen, som är `POST` bara för att hålla numret och frågan borta från URL:en.
 
 Headern läses med dept44:s `Identifier`, och formatet är `<värde>; type=<typ>`, t.ex. `joe01doe; type=adAccount`. Ett
 ändrande anrop ger 400 om headern saknas, om den inte går att tolka, t.ex. för att `type=` saknas, eller om värdet är
-längre än 255 tecken. Det som sparas är det tolkade värdet, `Identifier.getValue()`, som `created_by` och `modified_by`
-på noteringar och kontaktpersonsroller och som `performed_by` i historiken och den tekniska loggen ([§4.3]). `parse` tar
-bort alla blanksteg, så `Anna Berg; type=custom` sparas som `AnnaBerg`, och en okänd typ, också en med fel
-skiftläge, blir `CUSTOM`.
+längre än 255 tecken. Det tolkade värdet, `Identifier.getValue()`, sparas som `created_by` och `modified_by` på
+noteringar och kontaktpersonsroller och som `performed_by` i historiken och den tekniska loggen ([§4.3]). `parse` tar
+bort alla blanksteg, så `Anna Berg; type=custom` sparas som `AnnaBerg`, och en okänd typ, också en med fel skiftläge,
+blir `CUSTOM`.
 
 ## 6.1 Endpoints
 
@@ -47,7 +45,7 @@ skiftläge, blir `CUSTOM`.
 | `PATCH /{municipalityId}/customers/{partyId}/notes/{noteId}`                     | Ändrar `subject` eller `body`. Namespace går inte att ändra. `modifiedBy` sätts från `X-Sent-By`. Kräver `If-Match` ([beslut 61]).                                                                                                                                                                                                                    | 200, 400, 404, 412, 428                                                                                                   |
 | `DELETE /{municipalityId}/customers/{partyId}/notes/{noteId}`                    | Raderar noteringen och dess historik. Har kunden sedan inget annat kvar raderas kunden och personens kontaktrader hos andra kunder ([§3.6]). Kräver `If-Match`.                                                                                                                                                                                       | 204, 400, 404, 412, 428                                                                                                   |
 | `GET /{municipalityId}/customers/{partyId}/notes/{noteId}/history`               | Noteringens historik                                                                                                                                                                                                                                                                                                                                  | 200, 404                                                                                                                  |
-| `GET /{municipalityId}/customers/{partyId}/contact-persons?namespace=`           | Kundens kontaktpersoner som har lagts till via REST, alla eller filtrerade på ett eller flera namespaces (`namespace` kan upprepas). Med ett filter kommer de globala också med ([§5.3]). Sorteras förvalt på `name,asc`.                                                                                                                             | 200, 400, 404                                                                                                             |
+| `GET /{municipalityId}/customers/{partyId}/contact-persons?namespace=`           | Kundens kontaktpersoner som har lagts till via REST, enligt filtret ([§5.3]). Sorteras förvalt på `name,asc`.                                                                                                                                                                                                                                         | 200, 400, 404                                                                                                             |
 | `POST /{municipalityId}/customers/{partyId}/contact-persons`                     | Lägger till en kontaktperson, och vid behov kunden ([§5.3], [§7.2]). Kropp: `namespace` (valfritt, saknas det blir kontaktpersonen global), `name` (krav, högst 255 tecken), `role` (högst 64), `contactChannels[]` (högst 10), `address`, och `partyId` eller `legalId`, med `partyType` när något av dem anges. `createdBy` sätts från `X-Sent-By`. | 201 med Location, 400, 404 om kundens part är okänd, 503 om partytypen eller kontaktpersonens partyId inte går att avgöra |
 | `GET /{municipalityId}/customers/{partyId}/contact-persons/{contactPersonId}`    | En kontaktperson som har lagts till via REST, med versionen som `ETag`                                                                                                                                                                                                                                                                                | 200, 404                                                                                                                  |
 | `PATCH /{municipalityId}/customers/{partyId}/contact-persons/{contactPersonId}`  | Ändrar `name`, `role`, `contactChannels[]` eller `address`. Namespace och vem kontaktpersonen är går inte att ändra. `modifiedBy` sätts från `X-Sent-By`. Kräver `If-Match`.                                                                                                                                                                          | 200, 400, 404, 412, 428                                                                                                   |
@@ -58,9 +56,8 @@ skiftläge, blir `CUSTOM`.
 | `GET /{municipalityId}/contact-person-roles`                                     | Kontaktpersonsroller per källa                                                                                                                                                                                                                                                                                                                        | 200                                                                                                                       |
 | `PUT /{municipalityId}/contact-person-roles/{source}`                            | Ersätter källans roller (kropp: lista med roller). En okänd källa ger 400.                                                                                                                                                                                                                                                                            | 204, 400                                                                                                                  |
 
-- En notering, kontaktperson eller ett engagemang som inte tillhör kunden i sökvägen ger 404. En notering,
-  kontaktperson eller ett engagemang hämtas med sitt id oavsett namespace. Bara kontaktpersoner som har lagts till via
-  REST har ett id.
+- En notering, kontaktperson eller ett engagemang som inte tillhör kunden i sökvägen ger 404. De hämtas med sitt id
+  oavsett namespace. Bara kontaktpersoner som har lagts till via REST har ett id.
 - Ett `legalId` för en kontaktperson tas bara i kroppen, mappas till partyId och sparas aldrig ([§7.1]). Finns numret
   inte blir svaret 400, och Problem-detail innehåller aldrig numret.
 - `PATCH` och `DELETE` på en notering eller en kontaktperson kräver `If-Match` med dess `ETag` ([beslut 61]):
@@ -76,11 +73,10 @@ skiftläge, blir `CUSTOM`.
 - `PATCH` ändrar bara de fält som finns i kroppen och inte är null.
 - `DELETE` på kund, den tekniska loggen och kontaktpersonsrollerna gäller hela kommunen. De finns i samma interna API
   som resten ([beslut 30]).
-- Tillåtna sorteringsfält är `sourceModified` och `sourceCreated` för engagemang, `occurredAt` för historik,
-  `created` och `modified` för noteringar, `name`, `created` och `modified` för kontaktpersoner och `created` för den
-  tekniska loggen. Ett annat fält ger 400. Arbetsställena
-  har en fast ordning: huvudarbetsstället först, sedan efter namn, där ett arbetsställe utan namn kommer sist, och sist
-  efter `id`.
+- Tillåtna sorteringsfält är `sourceModified` och `sourceCreated` för engagemang, `occurredAt` för historik, `created`
+  och `modified` för noteringar, `name`, `created` och `modified` för kontaktpersoner och `created` för den tekniska
+  loggen. Ett annat fält ger 400. Arbetsställena har en fast ordning: huvudarbetsstället först, sedan efter namn, där
+  ett arbetsställe utan namn kommer sist, och sist efter `id`.
 - Uppslaget på personnummer tar numret i kroppen och aldrig i URL:en. Om numret inte finns, eller om kunden inte
   finns i party-overview, blir svaret 404. Problem-detail innehåller aldrig numret.
 - Responsmodeller:
@@ -107,8 +103,8 @@ skiftläge, blir `CUSTOM`.
 
 ## 6.2 Kundsökning (OpenSearch)
 
-Lösningen följer SupportManagement, men med två skillnader: indexeringen går via en kö ([beslut 25]), och frågespråket
-är begränsat ([beslut 25b]). Förebilder i SM finns i `integration/db/search/` och `service/search/` på `origin/main`.
+Lösningen följer SupportManagement med två skillnader: indexeringen går via en kö ([beslut 25]), och frågespråket är
+begränsat ([beslut 25b]). Förebilder i SM finns i `integration/db/search/` och `service/search/` på `origin/main`.
 
 **Beroenden och konfiguration**
 
@@ -128,7 +124,7 @@ Lösningen följer SupportManagement, men med två skillnader: indexeringen går
 
 **Indexmodell**
 
-`@Indexed` sitter på `CustomerEntity`, och dokumentet byggs av en `CustomerDocumentBinder` (TypeBinder). Bindaren läser
+`@Indexed` sitter på `CustomerEntity`, och en `CustomerDocumentBinder` (TypeBinder) bygger dokumentet. Bindaren läser
 kundens adresser, kontakter, engagemang, noteringar och företagsprofil genom sessionen, deduplicerade och grupperade per
 namespace. Det sker med projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion ([§4.2]).
 Grupperingen är en ren funktion som går att enhetstesta.
@@ -149,7 +145,7 @@ Grupperingen är en ren funktion som går att enhetstesta.
 
 - Namespace i fältnamnet skrivs med gemener. Det är säkert, eftersom `@ValidNamespace` bara tillåter `[\w-]{2,32}`.
 - Engagemang, kontaktuppgifter och noteringar söks i de globala fälten och i de namespaces som filtret anger, eller i
-  alla namespaces när filtret saknas. Sökningen följer alltså samma filter som listorna ([§5.1]).
+  alla namespaces när filtret saknas. Sökningen följer samma filter som listorna ([§5.1]).
 - En skyddad kund indexeras som andra kunder ([beslut 39]). Skyddade kontaktpersoner indexeras också, och träffen
   visar dem med `hasProtectedContacts` (se *Svar* nedan).
 - Personnummer indexeras aldrig.
@@ -169,12 +165,12 @@ Grupperingen är en ren funktion som går att enhetstesta.
    person försvinner ur indexet före andra ändringar ([§8.1]).
 
    Markeringarna samlas per transaktion och skrivs före commit i `customer_id`-ordning. Två transaktioner tar därför
-   aldrig köns radlås i olika ordning, inte heller för företag vars kontaktrader raderas när en person raderas, och som
-   inte är låsta ([§5.3]). Övriga kunder är redan låsta ([§3.3], [§3.6]).
-   Primärnyckeln gör att det högst finns en rad per kund, även när OpenSearch ligger nere.
+   aldrig köns radlås i olika ordning. Det gäller också företag som inte är låsta och vars kontaktrader raderas när en
+   person raderas ([§5.3]). Övriga kunder är redan låsta ([§3.3], [§3.6]). Primärnyckeln gör att det högst finns en rad
+   per kund, även när OpenSearch ligger nere.
 
-2. *Relay:* `SearchIndexRelay` körs direkt efter varje commit som har markerat kunder, och dessutom var 10:e sekund som
-   skyddsnät ([beslut 40]).
+2. *Relay:* `SearchIndexRelay` körs direkt efter varje commit som har markerat kunder, och var 10:e sekund som skyddsnät
+   ([beslut 40]).
 
    - Körningen efter commit görs asynkront via `@TransactionalEventListener(AFTER_COMMIT)` och hoppas över om relayn
      redan kör. Den schemalagda körningen tar då hand om resten.
@@ -186,7 +182,7 @@ Grupperingen är en ren funktion som går att enhetstesta.
    - I en read-only `TransactionTemplate` med `writeSync`-strategi får kunder som finns `addOrUpdate`, och kunder som
    saknas får `purge`.
    - Efter lyckad skrivning körs `delete … where customer_id = ? and version = ?`. En markering som kom in under tiden
-   ligger alltså kvar.
+   ligger kvar.
    - Om OpenSearch inte går att nå, eller svarar med timeout, 5xx, 429 eller ett `cluster_block`, avbryts körningen.
    `attempts` ändras inte, och nästa körning försöker igen. Ett avbrott är inget fel i dokumenten.
    - Om OpenSearch avvisar enskilda dokument, t.ex. vid ett mappningsfel, körs raderna en och en. En rad som avvisas
@@ -219,11 +215,8 @@ Grupperingen är en ren funktion som går att enhetstesta.
 - `SearchSchemaInitializer` och `SearchAvailability` kopieras från SM. Om sökningen är avstängd eller indexet inte går
   att använda svarar endpointen 503.
 
-**Sök-endpoint:** `POST /{municipalityId}/customers/search?namespace=&page=&size=&sort=`, med `query` och
-`partyType` i kroppen.
-
-Frågan ligger i kroppen, eftersom den kan innehålla namn, adresser och personnummer. En URL hamnar i dept44:s
-payload-logg och i gatewayens loggar, medan en kropp bara loggas med de fält som står i allowlisten ([beslut 46]).
+**Sök-endpoint:** `POST /{municipalityId}/customers/search?namespace=&page=&size=&sort=`, med `query` och `partyType` i
+kroppen ([beslut 46]).
 
 *Parametrar:*
 
@@ -249,9 +242,9 @@ payload-logg och i gatewayens loggar, medan en kropp bara loggas med de fält so
   `match`). Andra namespaces fält ingår aldrig.
 - Utan filter ingår alla namespaces fält, med jokertecken i fältnamnet: `contacts_ns_*`, `engagements_ns_*`,
   `notes_ns_*`, `phones_ns_*` och `references_ns_*`. Fälten från en fieldTemplate går inte att räkna upp i förväg, så
-  hela must-klausulen byggs då som ett
-  native-predikat via `ElasticsearchExtension`: en `simple_query_string` med alla fält i samma klausul, och en
-  `multi_match` för telefon och referenser, eftersom `match` inte tar jokertecken i fältnamn.
+  hela must-klausulen byggs då som ett native-predikat via `ElasticsearchExtension`: en `simple_query_string` med alla
+  fält i samma klausul, och en `multi_match` för telefon och referenser, eftersom `match` inte tar jokertecken i
+  fältnamn.
 - `failAfter(search.timeout)`.
 
 *Träffarna:*
@@ -263,8 +256,8 @@ payload-logg och i gatewayens loggar, medan en kropp bara loggas med de fält so
 `addresses[]` och `hasProtectedContacts`, med värdena från databasen ([§5.4]). `hasProtectedContacts` är sant när någon
 av kundens kontaktpersoner som omfattas av filtret, eller alla utan filter, har nivån `UNKNOWN`, `SECRECY_MARKING` eller
 `PROTECTED_REGISTRATION`, räknad som i [§5.3]. `UNVERIFIED` räknas inte ([beslut 48]). En träff på en skyddad
-kontaktpersons namn visar därför att träffen rör en skyddad person, också
-när kunden själv är oskyddad. Nivåerna läses med en fråga för hela sidan.
+kontaktpersons namn visar därför att träffen rör en skyddad person, också när kunden själv är oskyddad. Nivåerna läses
+med en fråga för hela sidan.
 
 *Fel:* timeout ger 504, och en OpenSearch som inte svarar ger 503. `simple_query_string` ger inga parsfel.
 

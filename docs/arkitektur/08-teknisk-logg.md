@@ -53,7 +53,7 @@ Den tekniska loggen gallras efter en lagringstid ([beslut 60]). Den raderas inte
 Inget annat gallras automatiskt:
 
 - Historik och kontakter följer sina engagemang och sin kund. Undantaget är en kontaktpersons rader, som också raderas
-  när parten raderas, också automatiskt ([§5.3]).
+  när parten raderas, även automatiskt ([§5.3]).
 - Tombstones i `source_object` sparas för alltid ([beslut 12]). Rader för `CUSTOMER`, som innehåller partyId, blir
   aldrig tombstones och raderas med kunden ([§3.6]).
 
