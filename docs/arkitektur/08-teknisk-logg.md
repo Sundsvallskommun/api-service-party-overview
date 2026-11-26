@@ -14,7 +14,7 @@ Ett meddelande kan ge flera rader per kund, t.ex. `ENGAGEMENT_REMOVED` följt av
 | `ENGAGEMENT_CREATED`     | Kunden fick ett nytt engagemang                                                                                                                                                                                       |
 | `ENGAGEMENT_UPDATED`     | Ett befintligt engagemang uppdaterades. Det gäller även en rättning med samma version.                                                                                                                                |
 | `ENGAGEMENT_REMOVED`     | Objektet raderades, eller kunden är inte längre part i det                                                                                                                                                            |
-| `IGNORED_STALE`          | Meddelandet var äldre än det lagrade och ändrade ingenting                                                                                                                                                            |
+| `IGNORED_STALE`          | Meddelandet var äldre än det lagrade och ändrade inget utom historiken ([§3.5])                                                                                                                                       |
 | `PROTECTION_CHANGED`     | Kundens effektiva skyddsnivå ändrades ([§5.4]). Den nya nivån står i raden.                                                                                                                                           |
 | `CONTACT_REMOVED`        | En kontaktpersons rader hos kunden raderades, eftersom parten raderades ([§5.3]). Raden har kundens partyId, inte kontaktpersonens, och kontaktradens källa i `source`. För en kontaktperson från REST saknas källan. |
 | `PROFILE_UPDATED`        | Företagsprofilen skrevs av ändringskön eller den nattliga kontrollen ([§5.5])                                                                                                                                         |
@@ -67,4 +67,5 @@ Inget annat gallras efter en lagringstid:
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [beslut 60]: 00-beslutslogg.md#beslut-60-den-tekniska-loggen-gallras-efter-en-lagringstid
+[§3.5]: 03-meddelanden.md#35-tillämpning
 

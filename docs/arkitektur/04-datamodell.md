@@ -254,13 +254,15 @@ Index:
 |-------------------------------------|---------------------------|------|---------------------------------------------------|
 | `id`                                | varchar(36)               | nej  | PK                                                |
 | `engagement_id`                     | varchar(36)               | nej  | FK `fk_engagement_history_engagement_id`, cascade |
+| `activity_id`                       | varchar(36)               | nej  | Aktivitetens id från publiceraren ([§3.1])        |
 | `type`                              | varchar(64)               | nej  |                                                   |
 | `description`                       | varchar(1024)             | ja   |                                                   |
 | `performed_by_type`, `performed_by` | varchar(32), varchar(255) | ja   |                                                   |
 | `occurred_at`                       | datetime(6)               | nej  |                                                   |
 | `created`                           | datetime(6)               | nej  |                                                   |
 
-Index: `idx_engagement_history_engagement_id_occurred_at`.
+Index: `idx_engagement_history_engagement_id_occurred_at` och `uq_engagement_history_engagement_id_activity_id`, som
+gör att en aktivitet skrivs en gång per rad ([beslut 70]).
 
 **`contact`**: kontaktuppgifter som syns per namespace ([§5.3]).
 
@@ -354,8 +356,9 @@ Index: `idx_note_customer_id_namespace_created`.
 `joe01doe; type=adAccount` ([§6]). `created_by` sätts när noteringen skapas och ändras aldrig, och `modified_by` sätts
 vid varje ändring.
 
-**`note_history`**: samma kolumner som `engagement_history`, med `note_id` (FK `fk_note_history_note_id`, cascade) i
-stället för `engagement_id`. `type` är `CREATED` eller `UPDATED`. `performed_by` är värdet i `X-Sent-By`, och
+**`note_history`**: samma kolumner som `engagement_history` utom `activity_id`, med `note_id`
+(FK `fk_note_history_note_id`, cascade) i stället för `engagement_id`. `type` är `CREATED` eller `UPDATED`.
+`performed_by` är värdet i `X-Sent-By`, och
 `performed_by_type` är typen enligt dept44:s `Identifier.Type`: `AD_ACCOUNT`, `PARTY_ID` eller `CUSTOM`. De gemensamma
 kolumnerna ligger i en `@MappedSuperclass AbstractHistoryEntity`.
 
@@ -471,4 +474,5 @@ rader med var sin fråga, med likhet på `priority`, så att indexet ger `queued
 [beslut 63]: 00-beslutslogg.md#beslut-63-primärnycklar-är-slumpmässiga-uuid
 [beslut 52]: 00-beslutslogg.md#beslut-52-kontaktpersoner-kontrolleras-mot-skyddad-identitet
 [beslut 65]: 00-beslutslogg.md#beslut-65-verksamheter-lägger-till-egna-kontaktpersoner-via-rest
+[beslut 70]: 00-beslutslogg.md#beslut-70-aktiviteter-har-ett-id-och-historiken-skrivs-oavsett-version
 
