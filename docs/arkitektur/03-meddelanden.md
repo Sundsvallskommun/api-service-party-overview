@@ -341,6 +341,8 @@ för att kundens sista engagemang gör det.
   ([§5.4], [beslut 69]).
 - Personens rad i `contact_setting` raderas bara när personen raderas med `CUSTOMER DELETE` eller via REST ([§5.6]).
   Den håller ingen kund kvar, så en kund som bara har den raderas automatiskt som andra.
+- Etiketter håller inte heller någon kund kvar. En kund som bara har etiketter raderas automatiskt som andra, och dess
+  rader i `customer_label` raderas med den. Etiketterna själva finns kvar i katalogen ([§5.7]).
 - Varje kund som förlorar kontaktrader loggas som `CONTACT_REMOVED` ([§8.1]).
 - Den nattliga kontrollen raderar personens rad i `registry_person` när ingen kontaktrad pekar på den längre ([§5.4]).
 - Med kunden raderas också raderna i `source_object` för `CUSTOMER` med kundens partyId, eftersom de innehåller
@@ -350,10 +352,10 @@ för att kundens sista engagemang gör det.
 - En radering via REST låser först kundens rader i `source_object` för `CUSTOMER` och sedan kunden, i samma ordning som
   meddelandeflödet ([§3.3]).
 - När en notering eller en kontaktperson skapas via REST låses kunden först med IODKU och `FOR UPDATE`. När en notering
-  eller kontaktperson ändras eller raderas låses kunden bara med `FOR UPDATE`, och saknas kunden blir svaret 404, så att
-  en raderad kund inte skapas på nytt. Transaktionen körs med READ COMMITTED, som i [§3.3]. Annars kan ett meddelande
-  hinna ge kunden ett engagemang som kontrollen inte ser, eller radera kunden medan en ny notering väntar på sin
-  FK-kontroll.
+  eller kontaktperson ändras eller raderas, och när kunden får eller förlorar en etikett, låses kunden bara med
+  `FOR UPDATE`, och saknas kunden blir svaret 404, så att en raderad kund inte skapas på nytt. Transaktionen körs med
+  READ COMMITTED, som i [§3.3]. Annars kan ett meddelande hinna ge kunden ett engagemang som kontrollen inte ser, eller
+  radera kunden medan en ny notering väntar på sin FK-kontroll.
 - REST-anropen som skriver och den nattliga kontrollens transaktioner görs om, högst tre gånger, vid deadlock eller lock
   timeout (`PessimisticLockingFailureException`). Omförsöket görs utanför transaktionen, så att hela transaktionen körs
   om. Startern gör om meddelanden ([§3.7]).
@@ -411,4 +413,5 @@ konsument i en egen virtuell tråd ([§9], [§12]), så under ett omförsök st�
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 [§11.6]: 11-publicerare.md#116-contactsettings-contact_setting
 [beslut 70]: 00-beslutslogg.md#beslut-70-ett-företags-funktionärer-blir-kontaktpersoner
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 

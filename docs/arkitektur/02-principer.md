@@ -10,21 +10,23 @@ Del av [arkitekturen för party-overview](README.md).
    därför är dept44:s PII-maskning påslagen med alla kategorier ([§12]). Uppslaget av organisationsnummer mot
    LegalEntity har numret i URL:en och undantas därför från payload-loggen ([§7.1]).
 3. **Källan är master.** Meddelanden innehåller alltid hela tillståndet, och party-overview gör upsert. party-overview
-   äger bara noteringarna, kontaktpersonerna som läggs till via REST och konfigurationen av partsroller.
+   äger bara noteringarna, kontaktpersonerna som läggs till via REST, etiketterna och konfigurationen av partsroller.
 4. **Allt som hör till en kund raderas med kunden.** Det gäller både via JPA och via `DELETE FROM customer` direkt i
    databasen, eftersom varje FK under `customer` har `on delete cascade`. Undantagen saknar FK. Den tekniska loggen
    raderas för sig ([§8.2]), och sökindexets kö töms av relayn ([§6.2]). Versionsregistrets rader för `CUSTOMER` raderas
    med kunden ([§3.6]), och dess övriga rader innehåller inga kunduppgifter ([§4.3]). Tjänsten raderar personens
    kontaktrader hos andra kunder via `party_id` ([§5.3]). Vid en radering direkt i databasen raderas undantagen för sig,
    och README beskriver hur. `registry_person` hör inte till någon kund och rensas av den nattliga kontrollen ([§5.4]).
-   `contact_setting` hör inte heller till någon kund och följer ContactSettings ([§5.6]).
+   `contact_setting` hör inte heller till någon kund och följer ContactSettings ([§5.6]). Etiketterna i `label` hör
+   inte heller till någon kund. Kundens referenser till dem i `customer_label` raderas med kunden och med etiketten
+   ([§5.7]).
 5. **Spårbarhet.** Tabellerna har `created`, utom kollektionstabellerna `contact_channel`,
    `manual_contact_person_channel` och `contact_setting_channel`, `search_index_queue`, som har `queued`, och profilens
    barntabeller, som ersätts med profilen. De tabeller som uppdateras har även `modified`.
-   Noteringar har `created_by`/`modified_by` och partsroller `created_by`, och för andra ändringar via REST
-   står anroparen i den tekniska loggens `performed_by`. Varje ändring av en kund eller dess engagemang, vare sig den
-   kom via meddelande, REST, ändringskön eller ett schemalagt jobb, syns i den tekniska loggen med id:t på meddelandet
-   eller anropet bakom den ([beslut 47]). Noteringar har en egen historik.
+   Noteringar har `created_by`/`modified_by`, och partsroller, etiketter och kundens etiketter `created_by`. För andra
+   ändringar via REST står anroparen i den tekniska loggens `performed_by`. Varje ändring av en kund eller dess
+   engagemang, vare sig den kom via meddelande, REST, ändringskön eller ett schemalagt jobb, syns i den tekniska loggen
+   med id:t på meddelandet eller anropet bakom den ([beslut 47]). Noteringar har en egen historik.
 6. **Skyddad identitet syns alltid.** Uppgifterna om en kund eller kontaktperson med skyddade personuppgifter sparas,
    och skyddsnivån visas i varje svar och varje sökträff, så att konsumenten kan pröva ett utlämnande ([§5.4]).
 7. **Ingen över-engineering.** Det finns en lyssnarklass för källornas köer (med en container per kö) och en för
@@ -41,4 +43,5 @@ Del av [arkitekturen för party-overview](README.md).
 [§7.1]: 07-integrationer.md#71-uppslag-av-partyid
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 

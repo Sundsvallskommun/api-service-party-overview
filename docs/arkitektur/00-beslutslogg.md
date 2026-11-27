@@ -65,10 +65,10 @@ En notering på en kund som inte finns skapar kunden. Citizen eller LegalEntity 
 
 ## Beslut 7: Synlighet för engagemang, kontaktuppgifter och noteringar
 
-En kund har inget namespace. Namespace finns på engagemang, kontaktuppgifter, kontaktpersoner och noteringar, och det är
-alltid valfritt: något utan namespace är globalt. Ingen sökväg har namespace. Vid läsning är `namespace` ett valfritt
-filter som kan anges flera gånger, och det ger de angivna namespacena plus det globala. Utan filter returneras allt. När
-en notering eller kontaktperson skapas anges namespace i kroppen ([§5.1], [§6.1]).
+En kund har inget namespace. Namespace finns på engagemang, kontaktuppgifter, kontaktpersoner, noteringar och
+etiketter, och det är alltid valfritt: något utan namespace är globalt. Ingen sökväg har namespace. Vid läsning är
+`namespace` ett valfritt filter som kan anges flera gånger, och det ger de angivna namespacena plus det globala. Utan
+filter returneras allt. När en notering, kontaktperson eller etikett skapas anges namespace i kroppen ([§5.1], [§6.1]).
 
 **Valdes bort:**
 
@@ -307,8 +307,8 @@ en manuell undantagsåtgärd.
 ## Beslut 25b: Begränsad frågesyntax och kontaktfält per namespace
 
 Sökfrågan är `simple_query_string` med AND, och klienten får inte använda full Lucene-syntax. Kontaktuppgifter,
-engagemang och noteringar indexeras i ett fält per namespace, t.ex. `contacts_ns_<namespace>`, och i ett globalt fält,
-inte som `nested`.
+engagemang, noteringar och etiketter indexeras i ett fält per namespace, t.ex. `contacts_ns_<namespace>`, och i ett
+globalt fält, inte som `nested`.
 
 **Valdes bort:** SM:s fulla Lucene-syntax och `nested`-dokument.
 
@@ -462,8 +462,8 @@ Indexnamnet `customer` behöver därför inget miljöprefix.
 
 Följande om kunden är sökbart: namn, adresser, kontaktuppgifter, kontaktpersonerna på kundens engagemang, ett företags
 funktionärer ([beslut 70]) och kontaktpersonerna som lagts till via REST, med deras adresser, företagsprofilen och
-arbetsställena, engagemangens referens, titel och kategori, samt noteringarna. Det gäller också en skyddad kund, och
-träffen har kundens skyddsnivå ([§6.2]).
+arbetsställena, engagemangens referens, titel och kategori, noteringarna och kundens etiketter ([beslut 73]). Det
+gäller också en skyddad kund, och träffen har kundens skyddsnivå ([§6.2]).
 
 **Valdes bort:**
 
@@ -933,6 +933,33 @@ varje kodrad skulle samma sökväg upprepas för tusentals arbetsställen, och e
 skrivs om. Med en FK skulle varje kod behöva en nod innan dess sökväg är känd, och en kod som inte följer SNI:s form
 skulle inte gå att spara. Med alla fem nivåerna väljer konsumenten vilka den visar.
 
+## Beslut 73: Etiketter finns i en katalog som kunden pekar på
+
+Verksamheterna sätter etiketter på kunder, som etiketter i Jira ([§5.7]). Etiketterna finns i `label`, en katalog per
+kommun med valfritt namespace, och kunden pekar på sina etiketter i `customer_label` ([§4.3]). Båda FK:erna i
+`customer_label` har `on delete cascade`, så referenserna raderas med kunden och med etiketten, både via Hibernate och
+direkt i databasen. Namnet är unikt per kommun och namespace utan hänsyn till stora och små bokstäver, och ett `POST`
+med ett namn som redan finns ger den befintliga etiketten. Det går inte att byta namn på en etikett. Namnet har högst
+64 tecken, och en kund har högst 50 etiketter. Etiketter skapar ingen kund och håller ingen kund kvar ([§3.6]). Namnen
+är sökbara i fritext ([§6.2]).
+
+**Valdes bort:**
+
+- Etikettens namn sparat direkt på kunden, utan katalog.
+- `@ManyToMany` från kunden till etiketterna.
+- En vanlig unik nyckel på `(municipality_id, namespace, name)`.
+- 409 när etiketten redan finns.
+- Att etiketter skapar kunden och håller den kvar, som noteringar.
+- Namnbyte.
+
+**Skäl:** Med en katalog får användaren förslag på de etiketter som redan finns, och en etikett raderas på ett ställe.
+Utan katalog skulle samma etikett stavas på flera sätt, och en radering skulle behöva hitta och ändra varje kund. Med
+`@ManyToMany` skulle Hibernate äga kopplingstabellen och kunden få en kollektion, vilket [§4.2] inte tillåter. MariaDB
+räknar varje null som ett eget värde i en unik nyckel, så en vanlig nyckel skulle släppa igenom samma globala etikett
+flera gånger. Två användare som skapar samma etikett samtidigt ska få samma, och då är den befintliga ett bättre svar
+än ett fel. En etikett beskriver kunden men är inget innehåll i sig, så en kund som inget annat har raderas som andra.
+Ett namnbyte skulle ändra etiketten hos alla kunder i alla namespaces, och det behövs inte i den första versionen.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -989,4 +1016,6 @@ skulle inte gå att spara. Med alla fem nivåerna väljer konsumenten vilka den 
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 [beslut 71]: #beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 [beslut 72]: #beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
+[beslut 73]: #beslut-73-etiketter-finns-i-en-katalog-som-kunden-pekar-på
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 

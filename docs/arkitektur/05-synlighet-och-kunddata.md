@@ -4,9 +4,9 @@ Del av [arkitekturen för party-overview](README.md).
 
 ## 5.1 Synlighet per namespace
 
-En kund tillhör inget namespace. Den kan ha ärenden, assets, kontrakt, kontaktpersoner och noteringar från många
-verksamheter. Namespace finns på det som hör till en verksamhet: engagemang, kontaktuppgifter, kontaktpersoner och
-noteringar ([beslut 7]). Det är alltid valfritt, och något som saknar namespace är globalt.
+En kund tillhör inget namespace. Den kan ha ärenden, assets, kontrakt, kontaktpersoner, noteringar och etiketter från
+många verksamheter. Namespace finns på det som hör till en verksamhet: engagemang, kontaktuppgifter, kontaktpersoner,
+noteringar och etiketter ([beslut 7]). Det är alltid valfritt, och något som saknar namespace är globalt.
 
 Ingen sökväg har namespace. Vid läsning är `namespace` ett valfritt filter som kan anges flera gånger ([§6]):
 
@@ -19,11 +19,12 @@ Ingen sökväg har namespace. Vid läsning är `namespace` ett valfritt filter s
 | Kontaktpersoner som lagts till via REST ([§5.3])   | Alla                                     | De angivna namespacena och de globala              |
 | Kontaktinställningar från ContactSettings ([§5.6]) | Alla                                     | Samma som utan filter                              |
 | Noteringar och deras historik                      | Alla                                     | De angivna namespacena och de globala              |
+| Etiketter, både kundens och katalogens ([§5.7])    | Alla                                     | De angivna namespacena och de globala              |
 | Teknisk logg                                       | Allt. Filtret finns inte.                | —                                                  |
 
-När en notering eller en kontaktperson skapas är namespace ett valfritt fält i kroppen, och det går inte att ändra
-efteråt. Namespace är ett filter och ingen behörighet. Vem som får läsa och ändra styrs av åtkomsten till API:t
-([§13.3]).
+När en notering, en kontaktperson eller en etikett skapas är namespace ett valfritt fält i kroppen, och det går inte
+att ändra efteråt. Namespace är ett filter och ingen behörighet. Vem som får läsa och ändra styrs av åtkomsten till
+API:t ([§13.3]).
 
 Frågan för kundens egna kontakter med filtret, `customer_id = ? and engagement_id is null and (namespace in (…) or
 namespace is null)`, går via `idx_contact_customer_id_engagement_id_namespace`. Engagemangens kontakter läses via
@@ -535,6 +536,59 @@ eller ett företag vill bli kontaktad på. ContactSettings publicerar dem som `C
 - När en person raderas med `CUSTOMER DELETE` eller via REST raderas också personens rad i `contact_setting`. Den
   kommer tillbaka nästa gång inställningen ändras i ContactSettings. En automatisk radering av kunden lämnar raden.
 
+## 5.7 Etiketter
+
+Verksamheterna kan sätta etiketter på kunder, som etiketter i Jira ([beslut 73]). Etiketterna finns i en katalog per
+kommun, `label`, och kunden pekar på sina etiketter i `customer_label` ([§4.3]).
+
+**Katalogen**
+
+- En etikett har kommun, namn och ett valfritt namespace. En etikett utan namespace är global. Namespace går inte att
+  ändra, och det går inte att byta namn på en etikett.
+- Namnet trimmas och ska sedan vara 1–64 tecken utan kontrolltecken, annars blir svaret 400. Det är unikt per kommun och
+  namespace utan hänsyn till stora och små bokstäver: `VIP` och `vip` är samma etikett, men `Hög` och `Hog` är olika.
+  Samma namn kan finnas globalt och i flera namespaces. Namnet visas som det skrevs när etiketten skapades.
+- Medan användaren skriver hämtas förslag med `GET /{municipalityId}/labels?query=` ([§6.1]). Svaret är de etiketter
+  vars namn innehåller texten, utan hänsyn till stora och små bokstäver, enligt filtret i [§5.1]. `%` och `_` i `query`
+  matchar sig själva.
+- Finns ingen etikett som passar skapas den med `POST /{municipalityId}/labels`. Etiketten skrivs med IODKU och läses
+  sedan med den unika nyckeln. Har den lästa raden det nya id:t skapades etiketten, och svaret blir 201. Annars fanns
+  den redan, t.ex. för att någon annan skapade den samtidigt, och den befintliga returneras med 200.
+
+**Kundens etiketter**
+
+- `POST /{municipalityId}/customers/{partyId}/labels` lägger en eller flera etiketter på kunden, och
+  `DELETE /{municipalityId}/customers/{partyId}/labels/{labelId}` tar bort en ([§6.1]). En etikett som kunden redan har
+  hoppas över, och ett id som står flera gånger i anropet räknas en gång.
+- Etiketten ska finnas i kundens kommun, annars blir svaret 400. Namespace är ett filter och ingen behörighet, så vilken
+  etikett som helst i kommunen kan läggas på ([§5.1]).
+- En kund har högst 50 etiketter. Ett anrop som skulle ge fler ger 400, och ingen etikett läggs på.
+- Etiketter skapar aldrig en kund, och saknas kunden blir svaret 404. De håller inte heller kvar en kund vid en
+  automatisk radering ([§3.6]).
+- Kunden låses med `FOR UPDATE` ([§3.6]). Sedan läses kundens etiketter, och bara de nya skrivs. Varje etikett som läggs
+  på eller tas bort loggas som `LABEL_ADDED` eller `LABEL_REMOVED` med `performed_by`, och kunden markeras för
+  omindexering ([§8.1]).
+- Kundens etiketter finns i kundens `labels[]`, sorterade på namn, och följer filtret i [§5.1].
+- Namnen indexeras i `labels_ns_<namespace>`, och namnen på etiketter utan namespace i `labels_global` ([§6.2]).
+- Etikettnamnen skrivs aldrig till applikationsloggen, eftersom de är fritext om kunden.
+
+**Radering**
+
+- När en kund raderas, på vilket av sätten i [§3.6] som helst, raderar `fk_customer_label_customer_id` kundens rader i
+  `customer_label`. Etiketterna finns kvar i katalogen.
+- `DELETE /{municipalityId}/labels/{labelId}` raderar etiketten för alla kunder, i en transaktion:
+  1. Etiketten låses med `FOR UPDATE`. En kund som samtidigt får etiketten väntar då på FK-kontrollen.
+  2. Kunderna som har etiketten läses via `idx_customer_label_label_id`.
+  3. Etiketten raderas med Hibernate, och databasens kaskad, `fk_customer_label_label_id`, raderar referenserna
+     ([§4.2]).
+  4. Varje kund loggas som `LABEL_REMOVED` och markeras för omindexering. Markeringarna skrivs före commit i
+     `customer_id`-ordning, som andra markeringar ([§6.2]).
+- Samma kaskad gäller när etiketten raderas direkt i databasen med `delete from label where id = ?`. Då skrivs ingen
+  loggrad, och sökindexet byggs om som efter andra raderingar direkt i databasen ([beslut 25a]).
+- Läggs en etikett på en kund medan etiketten raderas misslyckas FK-kontrollen när raderingen är klar. Svaret blir 400,
+  som för en okänd etikett, och ingen etikett läggs på.
+- Anropen görs om vid deadlock, som andra REST-anrop som skriver ([§3.6]).
+
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
 [§5.4]: #54-skyddad-identitet
 [§6]: 06-rest-api.md
@@ -578,4 +632,8 @@ eller ett företag vill bli kontaktad på. ContactSettings publicerar dem som `C
 [§5.6]: #56-kontaktinställningar
 [§3.7]: 03-meddelanden.md#37-felhantering
 [beslut 72]: 00-beslutslogg.md#beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
+[beslut 73]: 00-beslutslogg.md#beslut-73-etiketter-finns-i-en-katalog-som-kunden-pekar-på
+[§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
+[beslut 25a]: 00-beslutslogg.md#beslut-25a-ingen-databastrigger-för-raderingar-i-sökindexet
+[§5.7]: #57-etiketter
 

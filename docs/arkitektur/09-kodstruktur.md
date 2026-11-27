@@ -6,10 +6,10 @@ Del av [arkitekturen för party-overview](README.md).
 se.sundsvall.partyoverview
 ├─ api/                         CustomerResource, CustomerSearchResource, EngagementResource,
 │  │                            NoteResource, ContactPersonResource, TechnicalLogResource, PartyRoleResource,
-│  │                            SearchIndexResource, WorkplaceResource
-│  └─ model/                    Customer, EnterpriseProfile, Workplace, Engagement, HistoryEntry, Note, …
+│  │                            SearchIndexResource, WorkplaceResource, LabelResource, CustomerLabelResource
+│  └─ model/                    Customer, EnterpriseProfile, Workplace, Engagement, HistoryEntry, Note, Label, …
 ├─ service/                     CustomerService, EngagementService, NoteService, ContactPersonService,
-│  │                            TechnicalLogService, PartyRoleService
+│  │                            TechnicalLogService, PartyRoleService, LabelService (katalogen och kundens etiketter)
 │  ├─ message/                  MessageService (ingen tx), MessageWriter (@Transactional)
 │  ├─ protection/               ProtectionService (räknar om kundens skyddsnivå och skriver personer i registry_person)
 │  ├─ enterprise/               EnterpriseProfileService (skriver profilen), EnterpriseProfileMapper (SNI-koderna),

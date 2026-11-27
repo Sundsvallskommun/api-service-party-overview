@@ -12,6 +12,8 @@ erDiagram
     customer ||--o{ note : "äger"
     customer ||--o{ manual_contact_person : "äger"
     manual_contact_person ||--o{ manual_contact_person_channel : "har"
+    customer ||--o{ customer_label : "har"
+    label ||--o{ customer_label : "används i"
     customer ||--o{ asserted_protection : "har"
     customer ||--o| enterprise_profile : "har"
     enterprise_profile ||--o{ enterprise_workplace : "har"
@@ -53,21 +55,22 @@ erDiagram
 
 `source_object`, `technical_log`, `party_role`, `registry_person`, `contact_setting`, `search_index_queue` och
 `shedlock` står fristående, utan FK. `sni_classification` har bara en FK till sig själv, och arbetsställenas SNI-koder
-slås upp i den med koden, utan FK ([beslut 72]).
+slås upp i den med koden, utan FK ([beslut 72]). `label` hör inte till någon kund, och `customer_label` har en FK till
+både kunden och etiketten ([beslut 73]).
 
 ## 4.2 Gemensamt för alla tabeller
 
 - `id varchar(36)`, UUID från `@UuidGenerator` ([beslut 63]). Undantagen är `contact_channel`,
-  `manual_contact_person_channel` och `contact_setting_channel`, som har sammansatta primärnycklar,
+  `manual_contact_person_channel`, `contact_setting_channel` och `customer_label`, som har sammansatta primärnycklar,
   `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, `sni_classification`, som nycklas på
   SNI-koden, och `shedlock`.
 - `municipality_id varchar(8)` finns på `customer` och på de tabeller som läses utan att gå via en kund: `engagement`
   (uppslag per källobjekt, [§3.5]), `source_object`, `technical_log`, `party_role`, `registry_person`,
-  `contact_setting` och `search_index_queue`. Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn.
-  `sni_classification` gäller alla kommuner och har ingen kommunkolumn.
-  `contact` och `manual_contact_person` nås också på `party_id` när en persons kontaktrader raderas, och då avgörs
-  kommunen via `customer_id` ([§5.3]).
-- `namespace varchar(32)` finns på `engagement`, `contact`, `manual_contact_person` och `note` ([§5.1]).
+  `contact_setting`, `label` och `search_index_queue`. Övriga tabeller nås via sin förälder och har ingen egen
+  kommunkolumn. `sni_classification` gäller alla kommuner och har ingen kommunkolumn. `contact` och
+  `manual_contact_person` nås också på `party_id` när en persons kontaktrader raderas, och då avgörs kommunen via
+  `customer_id` ([§5.3]).
+- `namespace varchar(32)` finns på `engagement`, `contact`, `manual_contact_person`, `note` och `label` ([§5.1]).
 - En adress har samma kolumner i `customer_address`, `contact`, `manual_contact_person` och
   `enterprise_workplace_address`: `address_type varchar(32)`, `care_of`, `street`, `city` och `country varchar(255)`
   samt `postal_code varchar(16)`. Alla fyra entiteterna använder samma `@Embeddable`, med nullbara kolumner, `equals`
@@ -90,6 +93,11 @@ slås upp i den med koden, utan FK ([beslut 72]).
   vilket `schema.sql` visar, modelleras `contact_channel` i stället som en entitet med `@ManyToOne` och samma
   primärnyckel. Valet görs i C2. `enterprise_profile` har `@OneToOne(fetch = LAZY)` med `@MapsId`, så att kundens id
   också är profilens, och profilens barn har sina FK mot profilen.
+- `customer_label` har dessutom en FK till `label` med `on delete cascade`. Entiteten `CustomerLabelEntity` har en
+  `@EmbeddedId` och två `@ManyToOne(fetch = LAZY)` med `@MapsId`, `@ForeignKey` och `@OnDelete(action = CASCADE)`, en
+  mot kunden och en mot etiketten. Varken kunden eller etiketten har någon kollektion, så Hibernate raderar bara
+  etikettens egen rad och lämnar referenserna till databasens kaskad, precis som en radering direkt i databasen
+  ([§5.7]).
 - Index, unika nycklar och FK har samma namn i `@Table`/`@ForeignKey` och i Flyway: `uq_<tabell>_<kolumner>`,
   `idx_<tabell>_<kolumner>` och `fk_<tabell>_<kolumn>`. Ett namn får vara högst 64 tecken, MariaDB:s gräns för
   identifierare. Engagemangets unika nyckel är den enda som skulle gå över gränsen och namnges därför efter vad den
@@ -406,6 +414,38 @@ kolumnerna ligger i en `@MappedSuperclass AbstractHistoryEntity`.
 
 Index: `idx_note_history_note_id_occurred_at`.
 
+**`label`**: etiketterna, en katalog per kommun ([§5.7], [beslut 73]). Etiketterna hör inte till någon kund och
+raderas bara via REST eller direkt i databasen.
+
+|         Kolumn          |            Typ            | Null |                                     Anmärkning                                      |
+|-------------------------|---------------------------|------|-------------------------------------------------------------------------------------|
+| `id`                    | varchar(36)               | nej  | PK                                                                                  |
+| `municipality_id`       | varchar(8)                | nej  |                                                                                     |
+| `namespace`             | varchar(32)               | ja   | null betyder globalt                                                                |
+| `name`                  | varchar(64)               | nej  | Trimmat, som det skrevs när etiketten skapades                                      |
+| `namespace_key`         | varchar(32)               | ja   | Genererad: `coalesce(namespace, '')`, `persistent`. Aldrig null.                    |
+| `name_key`              | varchar(64)               | ja   | Genererad: `lower(name)`, `persistent`, med kollationen `utf8mb4_bin`. Aldrig null. |
+| `created`, `created_by` | datetime(6), varchar(255) | nej  | `created_by` från `X-Sent-By`                                                       |
+
+Index: `uq_label_municipality_id_namespace_key_name_key (municipality_id, namespace_key, name_key)`, en etikett per
+kommun, namespace och namn utan hänsyn till stora och små bokstäver. MariaDB räknar varje null som ett eget värde i en
+unik nyckel, så nyckeln har `namespace_key` och inte `namespace`. `utf8mb4_bin` gör att `Hög` och `Hog` är olika
+etiketter, oavsett serverns kollation. Förslagen läser kommunens etiketter med nyckelns början ([§5.7]).
+
+`namespace_key` och `name_key` mappas i `LabelEntity` med `insertable = false, updatable = false` och uttrycket i
+`columnDefinition`, så att `schema.sql` får samma kolumner som Flyway.
+
+**`customer_label`**: kundens etiketter ([§5.7]).
+
+|         Kolumn          |            Typ            | Null |                                Anmärkning                                |
+|-------------------------|---------------------------|------|--------------------------------------------------------------------------|
+| `customer_id`           | varchar(36)               | nej  | PK och FK `fk_customer_label_customer_id`, cascade                       |
+| `label_id`              | varchar(36)               | nej  | PK och FK `fk_customer_label_label_id` till `label`, cascade             |
+| `created`, `created_by` | datetime(6), varchar(255) | nej  | När och av vem etiketten lades på kunden. `created_by` från `X-Sent-By`. |
+
+Primärnyckeln är `(customer_id, label_id)`, så en etikett finns högst en gång per kund, och den ger kundens etiketter.
+Index: `idx_customer_label_label_id`, som hittar kunderna när en etikett raderas.
+
 **`source_object`**: versionsregistret ([beslut 12]). Tabellen har ingen FK. För `CUSTOMER` är `object_id` kundens
 partyId. De raderna blir aldrig tombstones utan raderas med kunden ([§3.6]). Övriga rader innehåller inga
 kunduppgifter.
@@ -521,4 +561,6 @@ rader med var sin fråga, med likhet på `priority`, så att indexet ger `queued
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 [beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 [beslut 72]: 00-beslutslogg.md#beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
+[beslut 73]: 00-beslutslogg.md#beslut-73-etiketter-finns-i-en-katalog-som-kunden-pekar-på
 

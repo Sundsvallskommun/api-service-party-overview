@@ -110,9 +110,9 @@ Del av [arkitekturen för party-overview](README.md).
 
   **Hantering:** Låset släpps inom fem minuter ([§6.2]). README beskriver att reindexeringen då körs igen.
 
-- Varje namespace ger upp till fem fält i sökindexet (`contacts_ns_`, `engagements_ns_`, `notes_ns_`, `phones_ns_` och
-  `references_ns_`). OpenSearch tillåter förvalt 1 000 fält per index, och noteringarnas namespace väljs av
-  anroparen.
+- Varje namespace ger upp till sex fält i sökindexet (`contacts_ns_`, `engagements_ns_`, `notes_ns_`, `labels_ns_`,
+  `phones_ns_` och `references_ns_`). OpenSearch tillåter förvalt 1 000 fält per index, och namespacet för
+  noteringar, kontaktpersoner och etiketter väljs av anroparen.
 
   **Hantering:** Antalet namespaces är några tiotal. `index.mapping.total_fields.limit` höjs i indexinställningarna om
   det behövs, och ett mappningsfel syns som `attempts ≥ 5` i `OpenSearchHealthIndicator`.
@@ -273,6 +273,14 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Funktionärerna blir kontaktpersoner med partyId, och numren slås upp och kastas utan att sparas eller
   loggas ([beslut 70], [§7.2]). `fullSignatureDescription` mappas aldrig. C3 verifierar det.
 
+- Etiketternas namn är fritext som verksamheterna själva skriver, och en etikett på en kund är en uppgift om kunden. En
+  etikett som "Hotfull" kan vara en känslig bedömning av en person. Alla som kan anropa API:t ser kundens etiketter,
+  kan skapa nya och kan radera en etikett för alla kunder i kommunen, i alla namespaces ([§5.7]).
+
+  **Hantering:** Accepteras, som för noteringar. Den tekniska loggen visar vem som lade på och tog bort varje etikett,
+  också när en etikett raderades för alla kunder ([§8.1]). Vilka etiketter som får skapas bestäms av verksamheterna.
+  Etikettnamnen skrivs aldrig till applikationsloggen.
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
@@ -311,4 +319,5 @@ Del av [arkitekturen för party-overview](README.md).
 [beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 [beslut 70]: 00-beslutslogg.md#beslut-70-ett-företags-funktionärer-blir-kontaktpersoner
 [beslut 72]: 00-beslutslogg.md#beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 

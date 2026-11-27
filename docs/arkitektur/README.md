@@ -13,23 +13,23 @@ listar de krav party-overview ställer på det.
 
 ## Innehåll
 
-| §  |                                   Fil                                   |                                                         Innehåll                                                         |
-|----|-------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
-| 0  | [Beslutslogg](00-beslutslogg.md)                                        | Besluten, med bortvalda alternativ och skäl                                                                              |
-| 1  | [Översikt](01-oversikt.md)                                              | Flödet från publicerarna till kundvyn och delarnas ansvar                                                                |
-| 2  | [Principer och regler](02-principer.md)                                 | Regler som gäller hela tjänsten                                                                                          |
-| 3  | [Meddelanden](03-meddelanden.md)                                        | Krav på meddelandeformatet, topologi, flöde, versionsmatris, tillämpning, kundradering och felhantering                  |
-| 4  | [Datamodell](04-datamodell.md)                                          | Tabeller, index och Flyway                                                                                               |
-| 5  | [Synlighet, kunddata och kontaktpersoner](05-synlighet-och-kunddata.md) | Synlighet per namespace, namn och adress, kontaktpersoner, skyddad identitet, företagsuppgifter och kontaktinställningar |
-| 6  | [REST-API](06-rest-api.md)                                              | Endpoints och kundsökningen i OpenSearch                                                                                 |
-| 7  | [Integrationer](07-integrationer.md)                                    | Uppslag av partyId, Citizen och LegalEntity                                                                              |
-| 8  | [Teknisk logg och radering](08-teknisk-logg.md)                         | Utfall i den tekniska loggen och radering av den                                                                         |
-| 9  | [Kodstruktur och konventioner](09-kodstruktur.md)                       | Paketstruktur och kodkonventioner                                                                                        |
-| 10 | [Teststrategi](10-teststrategi.md)                                      | Vad varje testnivå täcker                                                                                                |
-| 11 | [Publicerarna](11-publicerare.md)                                       | Gemensamma krav och ändringarna i SupportManagement, party-assets, contract, Casedata och ContactSettings                |
-| 12 | [Drift och konfiguration](12-drift.md)                                  | Konfiguration, driftsättning och larm för dead letter-köer                                                               |
-| 13 | [Risker och öppna frågor](13-risker-och-oppna-fragor.md)                | Öppna frågor, förutsättningar före driftsättning och risker                                                              |
-| 14 | [Uppgifter att bygga](14-uppgifter.md)                                  | Uppgifterna att bygga, med acceptanskriterier                                                                            |
+| §  |                                   Fil                                   |                                                              Innehåll                                                               |
+|----|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| 0  | [Beslutslogg](00-beslutslogg.md)                                        | Besluten, med bortvalda alternativ och skäl                                                                                         |
+| 1  | [Översikt](01-oversikt.md)                                              | Flödet från publicerarna till kundvyn och delarnas ansvar                                                                           |
+| 2  | [Principer och regler](02-principer.md)                                 | Regler som gäller hela tjänsten                                                                                                     |
+| 3  | [Meddelanden](03-meddelanden.md)                                        | Krav på meddelandeformatet, topologi, flöde, versionsmatris, tillämpning, kundradering och felhantering                             |
+| 4  | [Datamodell](04-datamodell.md)                                          | Tabeller, index och Flyway                                                                                                          |
+| 5  | [Synlighet, kunddata och kontaktpersoner](05-synlighet-och-kunddata.md) | Synlighet per namespace, namn och adress, kontaktpersoner, skyddad identitet, företagsuppgifter, kontaktinställningar och etiketter |
+| 6  | [REST-API](06-rest-api.md)                                              | Endpoints och kundsökningen i OpenSearch                                                                                            |
+| 7  | [Integrationer](07-integrationer.md)                                    | Uppslag av partyId, Citizen och LegalEntity                                                                                         |
+| 8  | [Teknisk logg och radering](08-teknisk-logg.md)                         | Utfall i den tekniska loggen och radering av den                                                                                    |
+| 9  | [Kodstruktur och konventioner](09-kodstruktur.md)                       | Paketstruktur och kodkonventioner                                                                                                   |
+| 10 | [Teststrategi](10-teststrategi.md)                                      | Vad varje testnivå täcker                                                                                                           |
+| 11 | [Publicerarna](11-publicerare.md)                                       | Gemensamma krav och ändringarna i SupportManagement, party-assets, contract, Casedata och ContactSettings                           |
+| 12 | [Drift och konfiguration](12-drift.md)                                  | Konfiguration, driftsättning och larm för dead letter-köer                                                                          |
+| 13 | [Risker och öppna frågor](13-risker-och-oppna-fragor.md)                | Öppna frågor, förutsättningar före driftsättning och risker                                                                         |
+| 14 | [Uppgifter att bygga](14-uppgifter.md)                                  | Uppgifterna att bygga, med acceptanskriterier                                                                                       |
 
 En hänvisning som §5.4 pekar på avsnitt 5.4 i filen som börjar med `05-`, och "beslut 12" pekar på beslut 12 i
 beslutsloggen.

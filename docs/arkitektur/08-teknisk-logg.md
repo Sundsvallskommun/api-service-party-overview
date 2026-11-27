@@ -25,6 +25,8 @@ Ett meddelande kan ge flera rader per kund, t.ex. `ENGAGEMENT_REMOVED` följt av
 | `CONTACT_PERSON_DELETED`  | En kontaktperson från REST raderades                                                                                                                                                                                  |
 | `CONTACT_SETTING_UPDATED` | Kundens kontaktinställning från ContactSettings skapades eller ändrades ([§5.6])                                                                                                                                      |
 | `CONTACT_SETTING_DELETED` | Kundens kontaktinställning från ContactSettings togs bort ([§5.6])                                                                                                                                                    |
+| `LABEL_ADDED`             | Kunden fick en etikett via REST ([§5.7]). Raden har etikettens id i `object_id` och anroparen i `performed_by`.                                                                                                       |
+| `LABEL_REMOVED`           | En etikett togs bort från kunden, eller raderades för alla kunder ([§5.7]). Raden har etikettens id i `object_id` och anroparen i `performed_by`.                                                                     |
 
 Ändringar i `registry_person` loggas inte, eftersom raden inte hör till någon kund. En kunds egen nivå loggas som
 `PROTECTION_CHANGED`.
@@ -72,4 +74,5 @@ Inget annat gallras efter en lagringstid:
 [§5.5]: 05-synlighet-och-kunddata.md#55-företagsuppgifter
 [beslut 60]: 00-beslutslogg.md#beslut-60-den-tekniska-loggen-gallras-efter-en-lagringstid
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 

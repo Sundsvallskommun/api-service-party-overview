@@ -6,9 +6,9 @@ Alla sökvägar validerar med `@ValidMunicipalityId` och `@ValidUuid`. Ingen sö
 
 - Vid läsning är `namespace` en valfri query-parameter som kan anges flera gånger, t.ex. `?namespace=A&namespace=B`.
   Utan den returneras allt. Med den returneras de angivna namespacena och det som saknar namespace. Det gäller
-  kunden, uppslaget, sökningen, engagemangen, noteringarna och kontaktpersonerna.
-- När en notering eller kontaktperson skapas är `namespace` ett valfritt fält i kroppen. Saknas det blir den global.
-  Namespace går inte att ändra efteråt.
+  kunden, uppslaget, sökningen, engagemangen, noteringarna, kontaktpersonerna och etiketterna.
+- När en notering, kontaktperson eller etikett skapas är `namespace` ett valfritt fält i kroppen. Saknas det blir den
+  global. Namespace går inte att ändra efteråt.
 - Fältet i kroppen valideras med `@ValidNamespace(nullable = true)` och varje värde i filtret med `@ValidNamespace`. Ett
   ogiltigt värde ger 400.
 
@@ -17,13 +17,14 @@ till sist på `id`, så att sidorna är stabila när sorteringsnyckeln är lika.
 sätts inte på id-fält som är READ_ONLY.
 
 `X-Sent-By` krävs för alla anrop som ändrar något: noteringar och kontaktpersoner (`POST`, `PATCH`, `DELETE`),
-kundradering, radering av den tekniska loggen, partsrollerna och `POST /search/reindex`. Läsningar kräver den
-inte, inte heller uppslaget och sökningen, som är `POST` bara för att hålla numret och frågan borta från URL:en.
+etiketter och kundens etiketter (`POST`, `DELETE`), kundradering, radering av den tekniska loggen, partsrollerna och
+`POST /search/reindex`. Läsningar kräver den inte, inte heller uppslaget och sökningen, som är `POST` bara för att
+hålla numret och frågan borta från URL:en.
 
 Headern läses med dept44:s `Identifier`, och formatet är `<värde>; type=<typ>`, t.ex. `joe01doe; type=adAccount`. Ett
 ändrande anrop ger 400 om headern saknas, om den inte går att tolka, t.ex. för att `type=` saknas, eller om värdet är
 längre än 255 tecken. Det tolkade värdet, `Identifier.getValue()`, sparas som `created_by` och `modified_by` på
-noteringar och partsroller och som `performed_by` i historiken och den tekniska loggen ([§4.3]). `parse` tar
+noteringar, partsroller och etiketter och som `performed_by` i historiken och den tekniska loggen ([§4.3]). `parse` tar
 bort alla blanksteg, så `Anna Berg; type=custom` sparas som `AnnaBerg`, och en okänd typ, också en med fel skiftläge,
 blir `CUSTOM`.
 
@@ -31,7 +32,7 @@ blir `CUSTOM`.
 
 |                                 Metod och sökväg                                 |                                                                                                                                                                      Beskrivning                                                                                                                                                                      |                                                           Svar                                                            |
 |----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `GET /{municipalityId}/customers/{partyId}?namespace=`                           | Kunden, med sina egna kontaktuppgifter och kontaktpersoner enligt filtret, men inget från engagemangen ([§5.1], [§5.3])                                                                                                                                                                                                                               | 200, 400, 404                                                                                                             |
+| `GET /{municipalityId}/customers/{partyId}?namespace=`                           | Kunden, med sina egna kontaktuppgifter, kontaktpersoner och etiketter enligt filtret, men inget från engagemangen ([§5.1], [§5.3], [§5.7])                                                                                                                                                                                                            | 200, 400, 404                                                                                                             |
 | `POST /{municipalityId}/customers/lookup?namespace=`                             | Slår upp en kund på personnummer eller organisationsnummer. Kropp: `legalId` och `partyType`. Numret mappas till partyId via Citizen eller LegalEntity ([§7.1]) och kastas sedan. Svaret är detsamma som för `GET` på kunden.                                                                                                                         | 200, 400, 404, 503                                                                                                        |
 | `POST /{municipalityId}/customers/search?namespace=`                             | Fritextsökning bland kunderna, i kontaktuppgifter och noteringar enligt filtret. Kropp: `query` och `partyType` ([§6.2]).                                                                                                                                                                                                                             | 200, 400, 503, 504                                                                                                        |
 | `POST /search/reindex`                                                           | Bygger om sökindexet från databasen, asynkront ([§6.2])                                                                                                                                                                                                                                                                                               | 202, 400, 409, 503                                                                                                        |
@@ -50,14 +51,24 @@ blir `CUSTOM`.
 | `GET /{municipalityId}/customers/{partyId}/contact-persons/{contactPersonId}`    | En kontaktperson som har lagts till via REST, med versionen som `ETag`                                                                                                                                                                                                                                                                                | 200, 400, 404                                                                                                             |
 | `PATCH /{municipalityId}/customers/{partyId}/contact-persons/{contactPersonId}`  | Ändrar `name`, `role`, `contactChannels[]` eller `address`. Namespace och vem kontaktpersonen är går inte att ändra. `modifiedBy` sätts från `X-Sent-By`. Kräver `If-Match`.                                                                                                                                                                          | 200, 400, 404, 412, 428                                                                                                   |
 | `DELETE /{municipalityId}/customers/{partyId}/contact-persons/{contactPersonId}` | Raderar kontaktpersonen. Har kunden sedan inget annat kvar raderas den ([§3.6]). Kräver `If-Match`.                                                                                                                                                                                                                                                   | 204, 400, 404, 412, 428                                                                                                   |
+| `POST /{municipalityId}/customers/{partyId}/labels`                              | Lägger etiketter på kunden ([§5.7]). Kropp: `labelIds[]` med 1–50 id:n. En etikett som kunden redan har hoppas över. Ett id som står flera gånger räknas en gång. Skapar aldrig kunden.                                                                                                                                                               | 204, 400, 404 om kunden saknas                                                                                            |
+| `DELETE /{municipalityId}/customers/{partyId}/labels/{labelId}`                  | Tar bort etiketten från kunden. Etiketten finns kvar i katalogen.                                                                                                                                                                                                                                                                                     | 204, 400, 404                                                                                                             |
 | `DELETE /{municipalityId}/customers/{partyId}`                                   | Raderar kunden med allt den äger och loggar `CUSTOMER_DELETED`. Raderar också personens kontaktrader hos andra kunder, även de som har lagts till via REST och även när personen bara är kontaktperson, och loggar `CONTACT_REMOVED` för de kunderna ([§5.3]). Raderar personens kontaktinställning ([§5.6]).                                         | 204, 400, 404 när varken kund, kontaktrader eller kontaktinställning finns                                                |
 | `GET /{municipalityId}/customers/{partyId}/technical-log`                        | Den tekniska loggen, förvalt `created,desc`. Fungerar även efter radering.                                                                                                                                                                                                                                                                            | 200, 400                                                                                                                  |
 | `DELETE /{municipalityId}/technical-log?partyId=&createdBefore=`                 | Raderar rader i den tekniska loggen. Minst ett av filtren krävs, och båda kan kombineras ([§8.2]).                                                                                                                                                                                                                                                    | 204, 400                                                                                                                  |
 | `GET /{municipalityId}/party-roles`                                              | Partsrollerna per källa, med klassning ([§5.3])                                                                                                                                                                                                                                                                                                       | 200, 400                                                                                                                  |
 | `PUT /{municipalityId}/party-roles/{source}`                                     | Ersätter källans roller. Kropp: lista med `role` och `classification` (`CUSTOMER`, `CONTACT_PERSON` eller `IGNORED`). En okänd källa ger 400.                                                                                                                                                                                                         | 204, 400                                                                                                                  |
+| `GET /{municipalityId}/labels?namespace=&query=`                                 | Kommunens etiketter enligt filtret ([§5.7]). `query` (valfri, högst 64 tecken) ger de etiketter vars namn innehåller texten, utan hänsyn till stora och små bokstäver. Sorteras förvalt på `name,asc`.                                                                                                                                                | 200, 400                                                                                                                  |
+| `POST /{municipalityId}/labels`                                                  | Skapar en etikett. Kropp: `namespace` (valfritt, saknas det blir etiketten global) och `name`. Finns en etikett med samma namn i samma namespace returneras den. `createdBy` sätts från `X-Sent-By`.                                                                                                                                                  | 201 med Location, 200 med den befintliga, 400                                                                             |
+| `GET /{municipalityId}/labels/{labelId}`                                         | En etikett                                                                                                                                                                                                                                                                                                                                            | 200, 400, 404                                                                                                             |
+| `DELETE /{municipalityId}/labels/{labelId}`                                      | Raderar etiketten och tar bort den från alla kunder ([§5.7])                                                                                                                                                                                                                                                                                          | 204, 400, 404                                                                                                             |
 
 - En notering, kontaktperson eller ett engagemang som inte tillhör kunden i sökvägen ger 404. De hämtas med sitt id
   oavsett namespace. Bara kontaktpersoner som har lagts till via REST har ett id.
+- `POST` på kundens etiketter ger 400 om ett id inte är en etikett i kommunen, och om kunden då skulle få fler än 50
+  etiketter. Då läggs ingen etikett på. Problem-detail anger de okända id:na. `DELETE` på en etikett som kunden inte
+  har ger 404 ([§5.7]).
+- Namnet på en ny etikett trimmas och ska sedan vara 1–64 tecken utan kontrolltecken. Annars blir svaret 400.
 - Ett `legalId` för en kontaktperson tas bara i kroppen, mappas till partyId och sparas aldrig ([§7.1]). Finns numret
   inte blir svaret 400, och Problem-detail innehåller aldrig numret.
 - `PATCH` och `DELETE` på en notering eller en kontaktperson kräver `If-Match` med dess `ETag` ([beslut 61]):
@@ -71,21 +82,24 @@ blir `CUSTOM`.
     samma version lyckas bara den ena. Ett `OptimisticLockingFailureException` ger ändå 412.
   - OpenAPI-specen beskriver `If-Match` och `ETag`.
 - `PATCH` ändrar bara de fält som finns i kroppen och inte är null.
-- `DELETE` på kund, den tekniska loggen och partsrollerna gäller hela kommunen. De finns i samma interna API
-  som resten ([beslut 30]).
+- `DELETE` på kund, den tekniska loggen, partsrollerna och en etikett gäller hela kommunen. De finns i samma interna
+  API som resten ([beslut 30]).
 - Tillåtna sorteringsfält är `sourceModified` och `sourceCreated` för engagemang, `occurredAt` för historik, `created`
-  och `modified` för noteringar, `name`, `created` och `modified` för kontaktpersoner och `created` för den tekniska
-  loggen. Ett annat fält ger 400. Arbetsställena har en fast ordning: huvudarbetsstället först, sedan efter namn, där
-  ett arbetsställe utan namn kommer sist, och sist efter `id`.
+  och `modified` för noteringar, `name`, `created` och `modified` för kontaktpersoner, `name` och `created` för
+  etiketter och `created` för den tekniska loggen. Ett annat fält ger 400. Arbetsställena har en fast ordning:
+  huvudarbetsstället först, sedan efter namn, där ett arbetsställe utan namn kommer sist, och sist efter `id`.
 - Uppslaget på personnummer tar numret i kroppen och aldrig i URL:en. Om numret inte finns, eller om kunden inte
   finns i party-overview, blir svaret 404. Svarar Citizen eller LegalEntity inte, eller med 5xx, blir svaret 503.
   Problem-detail innehåller aldrig numret.
 - Responsmodeller:
   - `Customer`: `partyId`, `partyType`, `protectionLevel`, `classified`, `protectedNR`, `name`, `addresses[]`,
-    `contactChannels[]` och `contactPersons[]`, och för ett företag `enterpriseProfile`. `classified` och
+    `contactChannels[]`, `contactPersons[]` och `labels[]`, och för ett företag `enterpriseProfile`. `classified` och
     `protectedNR` är Citizens värden ([§5.4]). `contactChannels[]` är kundens egna kontaktuppgifter utanför
     engagemangen, från `CUSTOMER`-meddelanden och ContactSettings ([§5.6]), och `contactPersons[]` är ett företags
-    funktionärer och kontaktpersonerna som har lagts till via REST ([§5.3]).
+    funktionärer och kontaktpersonerna som har lagts till via REST ([§5.3]). `labels[]` är kundens etiketter enligt
+    filtret, sorterade på namn ([§5.7]).
+  - `Label`: `id`, `namespace`, `name`, `created` och `createdBy`, både i katalogen och i kundens `labels[]`.
+    `namespace` saknas för en global etikett.
   - `Engagement`: engagemangets uppgifter, `contactChannels[]` med kundens kontaktuppgifter i objektet och
     `contactPersons[]` med objektets kontaktpersoner, utan `id` och `version` ([§5.3]).
   - `Address`: `type`, `careOf`, `street`, `postalCode`, `city` och `country` ([§5.2])
@@ -133,9 +147,9 @@ begränsat ([beslut 25b]). Förebilder i SM finns i `integration/db/search/` och
 **Indexmodell**
 
 `@Indexed` sitter på `CustomerEntity`, och en `CustomerDocumentBinder` (TypeBinder) bygger dokumentet. Bindaren läser
-kundens adresser, kontakter, engagemang, noteringar och företagsprofil genom sessionen, deduplicerade och grupperade per
-namespace. Det sker med projektioner, utan att hela entiteter laddas, så `customer` behöver ingen kollektion ([§4.2]).
-Grupperingen är en ren funktion som går att enhetstesta.
+kundens adresser, kontakter, engagemang, noteringar, etiketter och företagsprofil genom sessionen, deduplicerade och
+grupperade per namespace. Det sker med projektioner, utan att hela entiteter laddas, så `customer` behöver ingen
+kollektion ([§4.2]). Grupperingen är en ren funktion som går att enhetstesta.
 
 |                        Fält                        |                                                                                                                                                       Mappning                                                                                                                                                       |
 |----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -150,10 +164,11 @@ Grupperingen är en ren funktion som går att enhetstesta.
 | `references_global`, `references_ns_<namespace>`   | keyword med `lowercase_normalizer` via fieldTemplate: engagemangens `reference` och `objectId`, alla. Engagemang utan namespace hamnar i `references_global`.                                                                                                                                                        |
 | `engagements_global`, `engagements_ns_<namespace>` | text (`text_sv`) via fieldTemplate: engagemangens titel och kategori, de 1 000 senast ändrade per fält. Engagemang utan namespace hamnar i `engagements_global`.                                                                                                                                                     |
 | `notes_global`, `notes_ns_<namespace>`             | text (`text_sv`) via fieldTemplate: noteringarnas ämne och text, de 200 senaste per fält. Noteringar utan namespace hamnar i `notes_global`.                                                                                                                                                                         |
+| `labels_global`, `labels_ns_<namespace>`           | text (`text_sv`) via fieldTemplate: namnen på kundens etiketter, alla, eftersom en kund har högst 50 ([§5.7]). Etiketter utan namespace hamnar i `labels_global`.                                                                                                                                                    |
 
 - Namespace i fältnamnet skrivs med gemener. Det är säkert, eftersom `@ValidNamespace` bara tillåter `[\w-]{2,32}`.
-- Engagemang, kontaktuppgifter och noteringar söks i de globala fälten och i de namespaces som filtret anger, eller i
-  alla namespaces när filtret saknas. Sökningen följer samma filter som listorna ([§5.1]).
+- Engagemang, kontaktuppgifter, noteringar och etiketter söks i de globala fälten och i de namespaces som filtret
+  anger, eller i alla namespaces när filtret saknas. Sökningen följer samma filter som listorna ([§5.1]).
 - En skyddad kund indexeras som andra kunder ([beslut 39]). Skyddade kontaktpersoner indexeras också, och träffen
   visar dem med `hasProtectedContacts` (se *Svar* nedan).
 - Personnummer indexeras aldrig.
@@ -173,9 +188,9 @@ Grupperingen är en ren funktion som går att enhetstesta.
    person försvinner ur indexet före andra ändringar ([§8.1]).
 
    Markeringarna samlas per transaktion och skrivs före commit i `customer_id`-ordning. Två transaktioner tar därför
-   aldrig köns radlås i olika ordning. Det gäller också kunder som inte är låsta och vars kontaktrader raderas när en
-   person raderas ([§5.3]). Övriga kunder är redan låsta ([§3.3], [§3.6]). Primärnyckeln gör att det högst finns en rad
-   per kund, även när OpenSearch ligger nere.
+   aldrig köns radlås i olika ordning. Det gäller också kunder som inte är låsta: de vars kontaktrader raderas när en
+   person raderas ([§5.3]), och de som förlorar en etikett som raderas ([§5.7]). Övriga kunder är redan låsta
+   ([§3.3], [§3.6]). Primärnyckeln gör att det högst finns en rad per kund, även när OpenSearch ligger nere.
 
 2. *Relay:* `SearchIndexRelay` körs direkt efter varje commit som har markerat kunder, och var 10:e sekund som skyddsnät
    ([beslut 40]).
@@ -242,19 +257,19 @@ kroppen ([beslut 46]).
   valfria i OpenSearch, och då träffar varje sökning alla kunder i kommunen. SM gör likadant med
   `.filter(…).must(query)`.
   - en `simple_query_string` med AND, utan fuzzy, över namn, adress, `business`, `workplaces` och fälten för
-    kontakter, engagemang och noteringar, både de globala och namespace-fälten. Alla fält står i samma klausul, så att
-    AND gäller över dem ([beslut 25b]).
+    kontakter, engagemang, noteringar och etiketter, både de globala och namespace-fälten. Alla fält står i samma
+    klausul, så att AND gäller över dem ([beslut 25b]).
   - en matchning av telefonnummer och referenser över de globala fälten och namespace-fälten för telefon och
     referenser. Telefonfälten tas bara med när frågan innehåller en siffra, eftersom normalizern annars gör frågan
     till en tom sträng.
 - Med filtret är namespace-fälten de angivna namespacenas, t.ex. `contacts_ns_a`, `engagements_ns_a`, `notes_ns_a`,
-  `phones_ns_a` och `references_ns_a`, och klausulerna byggs med Hibernate Searchs DSL (`simpleQueryString` och
-  `match`). Andra namespaces fält ingår aldrig.
+  `labels_ns_a`, `phones_ns_a` och `references_ns_a`, och klausulerna byggs med Hibernate Searchs DSL
+  (`simpleQueryString` och `match`). Andra namespaces fält ingår aldrig.
 - Utan filter ingår alla namespaces fält, med jokertecken i fältnamnet: `contacts_ns_*`, `engagements_ns_*`,
-  `notes_ns_*`, `phones_ns_*` och `references_ns_*`. Fälten från en fieldTemplate går inte att räkna upp i förväg, så
-  hela must-klausulen byggs då som ett native-predikat via `ElasticsearchExtension`: en `simple_query_string` med alla
-  fält i samma klausul, och en `multi_match` för telefon och referenser, eftersom `match` inte tar jokertecken i
-  fältnamn.
+  `notes_ns_*`, `labels_ns_*`, `phones_ns_*` och `references_ns_*`. Fälten från en fieldTemplate går inte att räkna
+  upp i förväg, så hela must-klausulen byggs då som ett native-predikat via `ElasticsearchExtension`: en
+  `simple_query_string` med alla fält i samma klausul, och en `multi_match` för telefon och referenser, eftersom
+  `match` inte tar jokertecken i fältnamn.
 - `failAfter(search.timeout)`.
 
 *Träffarna:*
@@ -301,4 +316,5 @@ kunden själv är oskyddad. Nivåerna läses med en fråga för hela sidan.
 [§6]: #6-rest-api
 [beslut 48]: 00-beslutslogg.md#beslut-48-okänd-skyddsstatus-när-citizen-inte-svarar
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 

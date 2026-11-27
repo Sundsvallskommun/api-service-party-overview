@@ -50,6 +50,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 30   | CS2 | ContactSettings: grundladdning                       | CS1                                |
 | 31   | C17 | Kontaktinställningar från ContactSettings            | C5, C6, C7, C9, C11, C12           |
 | 32   | C18 | SNI-kodernas sökväg                                  | C2, C3, C5, C7, F3                 |
+| 33   | C19 | Etiketter                                            | C2, C5, C7, C9, C12, C13           |
 
 ## C1 — Projektgrund
 
@@ -89,7 +90,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `search_index_queue` ([§6.2]). Frågorna för ett visst flöde läggs till i uppgiften som bygger flödet.
 - Valet av modell för `contact_channel` ([§4.2]), med primärnyckeln `(contact_id, type, value)` i båda fallen.
 - `DeadlockRetry`, som gör om en hel transaktion högst tre gånger vid `PessimisticLockingFailureException`, utanför
-  transaktionen ([§3.6]). C4, C8, C9, C10 och C16 använder den.
+  transaktionen ([§3.6]). C4, C8, C9, C10, C16 och C19 använder den.
 - `schema.sql`, `truncate.sql`, `CascadeIT` och `SchemaParityIT`.
 
 **Acceptans:**
@@ -101,9 +102,11 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `CascadeIT`: `DELETE FROM customer WHERE id = ?` lämnar noll rader i `customer_address`, `engagement`,
   `engagement_history`, `contact`, `contact_channel`, `manual_contact_person`, `manual_contact_person_channel`, `note`,
   `note_history`, `asserted_protection`, `enterprise_profile`, `enterprise_workplace`, `enterprise_workplace_address`,
-  `enterprise_workplace_sni_code` och `enterprise_proceeding` för kunden. Raderna i `technical_log`, `source_object`,
-  `search_index_queue`, `registry_person`, `contact_setting` och `sni_classification` finns kvar, och likaså kundens
-  kontaktrader hos andra kunder (`party_id`).
+  `enterprise_workplace_sni_code`, `enterprise_proceeding` och `customer_label` för kunden. Raderna i `technical_log`,
+  `source_object`, `search_index_queue`, `registry_person`, `contact_setting`, `sni_classification` och `label` finns
+  kvar, och likaså kundens kontaktrader hos andra kunder (`party_id`).
+- `CascadeIT`: `DELETE FROM label WHERE id = ?` lämnar noll rader i `customer_label` för etiketten, och kunderna finns
+  kvar.
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
@@ -1137,6 +1140,50 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   Hibernates statistik.
 - `openapi.yaml` beskriver de fem värdena för `level`, och att `path[]` är tom när koden saknas i trädet.
 
+## C19 — Etiketter
+
+**Bygg:**
+
+- `LabelResource` med listan, `POST`, `GET` och `DELETE` under `/{municipalityId}/labels`, och `CustomerLabelResource`
+  med `POST` och `DELETE` på kundens etiketter, enligt [§6.1].
+- `LabelService` med skapandet med IODKU, förslagen, kundens etiketter under kundens lås och raderingen av en etikett
+  för alla kunder, enligt [§5.7]. `LabelEntity` och `CustomerLabelEntity` enligt [§4.2] och [§4.3]. Tabellerna finns
+  redan från C2.
+- Kundens `labels[]` i `Customer`, både för kunden och för uppslaget ([§6.1]).
+- Utfallen `LABEL_ADDED` och `LABEL_REMOVED` i den tekniska loggen ([§8.1]).
+- Fälten `labels_global` och `labels_ns_<namespace>` i `CustomerDocumentBinder` och i sökfrågan ([§6.2]).
+
+**Acceptans:**
+
+- `POST /labels` med `VIP` ger 201 med Location. Med `vip` i samma kommun och namespace ger den 200 med samma id och
+  namnet `VIP`. `vip` i ett annat namespace, globalt och i en annan kommun ger en ny etikett. `Hög` och `Hog` blir två
+  etiketter. Det gäller både mot `schema.sql` i repository-testet och mot Flyway i `LabelIT`.
+- Två trådar som skapar samma etikett samtidigt får samma id, och ingen av dem får ett fel.
+- Ett namn som är tomt efter trimning, som är längre än 64 tecken eller som har ett kontrolltecken ger 400. ` VIP `
+  sparas som `VIP`.
+- `GET /labels?query=ip` ger `VIP`. Med `namespace=A` ger listan A:s och de globala etiketterna, men inte B:s. En
+  `query` med `%` eller `_` ger bara namn som innehåller just det tecknet.
+- `POST` på kundens etiketter med tre id:n ger kunden tre etiketter och tre rader `LABEL_ADDED` med `performed_by`. Ett
+  andra anrop med samma id:n och ett nytt ger en ny rad i `customer_label` och en ny loggrad. Samma id två gånger i
+  ett anrop ger en rad.
+- Ett okänt id, en etikett i en annan kommun och ett anrop som skulle ge kunden 51 etiketter ger 400, och ingen
+  etikett läggs på. En okänd kund ger 404, och ingen kund skapas.
+- `DELETE` på en etikett som kunden har tar bort den från kunden och loggar `LABEL_REMOVED`. En etikett som kunden inte
+  har ger 404.
+- Kundens `labels[]` är sorterade på namn och följer namespace-filtret, både för kunden och för uppslaget.
+- `DELETE /{municipalityId}/labels/{labelId}` tar bort etiketten från alla kunder. Varje kund får en rad
+  `LABEL_REMOVED` och en markering för omindexering, och ingen kund raderas.
+- En kund som bara har etiketter raderas när dess sista engagemang försvinner. Dess rader i `customer_label` raderas,
+  och etiketterna finns kvar i katalogen ([§3.6]).
+- En etikett som läggs på en kund medan etiketten raderas ger 400, och ingen etikett läggs på. Det testas med två
+  transaktioner och en latch.
+- En sökning på `VIP` hittar kunden när etiketten är global. När etiketten ligger i namespace A hittas kunden utan
+  filter och med `namespace=A`, men inte med `namespace=B` ([§6.2]).
+- Inget etikettnamn finns i någon rad i applikationsloggen.
+- `POST` och `DELETE` på etiketter och på kundens etiketter utan `X-Sent-By` ger 400.
+- Varje skrivning som faller på deadlock görs om med `DeadlockRetry` från C2.
+- `openapi.yaml` beskriver `Label`, kundens `labels[]` och svaren 200 och 201 för `POST /labels`.
+
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi
 [§3.3]: 03-meddelanden.md#33-flödet-genom-tjänsten
@@ -1184,4 +1231,5 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 [beslut 69]: 00-beslutslogg.md#beslut-69-den-nattliga-kontrollen-raderar-kunder-utan-innehåll
 [§11.6]: 11-publicerare.md#116-contactsettings-contact_setting
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
+[§5.7]: 05-synlighet-och-kunddata.md#57-etiketter
 
