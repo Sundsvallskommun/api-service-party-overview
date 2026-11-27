@@ -12,7 +12,8 @@ se.sundsvall.partyoverview
 │  │                            TechnicalLogService, PartyRoleService
 │  ├─ message/                  MessageService (ingen tx), MessageWriter (@Transactional)
 │  ├─ protection/               ProtectionService (räknar om kundens skyddsnivå och skriver personer i registry_person)
-│  ├─ enterprise/               EnterpriseProfileService (skriver profilen), EnterpriseProfileMapper (SNI-koderna)
+│  ├─ enterprise/               EnterpriseProfileService (skriver profilen), EnterpriseProfileMapper (SNI-koderna),
+│  │                            SniClassificationService (skriver och läser SNI-trädet)
 │  ├─ search/                   CustomerSearchService, SearchIndexMarker, SearchIndexRelay,
 │  │                            SearchReindexService, SearchAvailability, SearchSchemaInitializer
 │  ├─ mapper/

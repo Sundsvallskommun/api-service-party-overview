@@ -11,6 +11,7 @@ Del av [arkitekturen för party-overview](README.md).
 | 3 | Ändringskön för företag och personer finns inte ännu, och dess meddelandemodell är inte fastställd ([§5.5]). Vem förvaltar den, och vad heter exchangen?                                                                                                                                              | Kraven i [§5.5]: partyId, partens typ, vad som har hänt och ett id per meddelande, enligt CloudEvents ([beslut 62]). C14, C15 och T3 kan inte avslutas innan kön finns. Tills dess skrivs profilen när kunden skapas och av den nattliga kontrollen. |
 | 4 | Hur länge ska den tekniska loggen sparas ([beslut 60])?                                                                                                                                                                                                                                               | Fem år, tills arkivfunktionen och dataskyddsombudet har svarat.                                                                                                                                                                                      |
 | 5 | Kan LegalEntity ge företagets egna SNI-koder, rangordnade som i SCB:s företagsregister?                                                                                                                                                                                                               | Fråga LegalEntitys förvaltare. Tills dess räknas koderna fram ur arbetsställenas ([§5.5]).                                                                                                                                                           |
+| 6 | Kan LegalEntity ge varje SNI-kods sökväg, med kod och namn för varje nivå från avdelningen till koden (F3)? Ger LegalEntity koderna i SNI 2025, som gäller sedan december 2025?                                                                                                                       | Fråga LegalEntitys förvaltare, tillsammans med fråga 5. Tills dess har alla koder en tom sökväg ([§5.5]), och C18 kan inte avslutas. Trädet följer den version som LegalEntity ger ([beslut 72]).                                                    |
 
 ## 13.2 Förutsättningar före driftsättning
 
@@ -254,6 +255,19 @@ Del av [arkitekturen för party-overview](README.md).
   **Hantering:** Accepteras, utan tak ([beslut 58]). Profilen skrivs bara om när den har ändrats, och raderna skrivs i
   JDBC-batchar. C5 testar en profil med 2 000 arbetsställen.
 
+- SNI-kodernas sökväg kräver en ändring i LegalEntity (F3). Innan den finns har alla koder en tom sökväg. Efter
+  ändringen får en kod sin sökväg först när ett företag med koden hämtas, och ett företag vars koder ingen annan har
+  väntar tills dess profil hämtas igen ([§5.5]).
+
+  **Hantering:** Accepteras. Alla kunder delar trädet, så de vanliga koderna får sin sökväg snabbt. Kommer F3 före
+  driftsättningen finns ingen lucka.
+
+- När SNI byter version kan en kod få en ny betydelse. Nästa hämtning med koden skriver över noden, och ett företag vars
+  profil fortfarande har den gamla versionens kod visas då med den nya sökvägen tills profilen hämtas igen
+  ([beslut 72]).
+
+  **Hantering:** Accepteras. SNI byter version sällan, och kodens eget namn på arbetsstället följer alltid profilen.
+
 - LegalEntitys svar innehåller personnummer och namn på företagets funktionärer.
 
   **Hantering:** Funktionärerna blir kontaktpersoner med partyId, och numren slås upp och kastas utan att sparas eller
@@ -296,4 +310,5 @@ Del av [arkitekturen för party-overview](README.md).
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 [beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
 [beslut 70]: 00-beslutslogg.md#beslut-70-ett-företags-funktionärer-blir-kontaktpersoner
+[beslut 72]: 00-beslutslogg.md#beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
 

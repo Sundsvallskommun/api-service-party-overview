@@ -5,7 +5,8 @@ Del av [arkitekturen för party-overview](README.md).
 Varje uppgift går att slå ihop för sig. Acceptanskriterierna kan klistras in i en Jira-subtask. **C** är
 party-overview, **T** är infrastrukturen (RabbitMQ och OpenSearch) och **SM**, **PA**, **CT**, **CD** och **CS** är
 publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Ändringskön för företag och personer
-(**F2**) ägs av sin förvaltare, och det som återstår att ta reda på står i [§13.1].
+(**F2**) ägs av sin förvaltare, och SNI-kodernas sökväg i LegalEntity (**F3**) ägs av LegalEntitys förvaltare. Det som
+återstår att ta reda på står i [§13.1].
 
 **Gäller alla uppgifter (Definition of Done):**
 
@@ -48,6 +49,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 | 29   | CS1 | ContactSettings: outbox, relay och publicering       | F1                                 |
 | 30   | CS2 | ContactSettings: grundladdning                       | CS1                                |
 | 31   | C17 | Kontaktinställningar från ContactSettings            | C5, C6, C7, C9, C11, C12           |
+| 32   | C18 | SNI-kodernas sökväg                                  | C2, C3, C5, C7, F3                 |
 
 ## C1 — Projektgrund
 
@@ -100,8 +102,8 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
   `engagement_history`, `contact`, `contact_channel`, `manual_contact_person`, `manual_contact_person_channel`, `note`,
   `note_history`, `asserted_protection`, `enterprise_profile`, `enterprise_workplace`, `enterprise_workplace_address`,
   `enterprise_workplace_sni_code` och `enterprise_proceeding` för kunden. Raderna i `technical_log`, `source_object`,
-  `search_index_queue`, `registry_person` och `contact_setting` finns kvar, och likaså kundens kontaktrader hos andra
-  kunder (`party_id`).
+  `search_index_queue`, `registry_person`, `contact_setting` och `sni_classification` finns kvar, och likaså kundens
+  kontaktrader hos andra kunder (`party_id`).
 - `created` och `modified` sätts av `@PrePersist`/`@PreUpdate`, trunkeras till millisekunder och testas per entitet.
 - Repository-tester: IODKU för `source_object` och `customer` är idempotent. Samtidighetstestet med två trådar som
   skapar samma kund ger en rad och inget undantag.
@@ -189,6 +191,7 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `CompanySniCodes` ger 70100, 72190, 86212 och 91012, i den ordningen, för arbetsställena i SCA-stubben. Enhetstester
   täcker ett företag utan huvudarbetsställe, ett med två, och ett arbetsställe utan storleksklass eller med en som inte
   är ett tal, som räknas som minst.
+- En SNI-kod sparas utan punkter och blanksteg, så att `62.010` blir `62010` ([§5.5]). Enhetstest.
 - `fullSignatureDescription` finns inte i integrationens modell, och ingenting ur LegalEntitys svar loggas. `officers`
   mappas med namn, funktion och nummer, och numret finns bara i minnet, aldrig i en entitet eller loggrad ([§5.5]).
   Profilen har inget organisationsnummer.
@@ -1101,6 +1104,38 @@ publicerarna. Formatet (**F1**) ägs av beställaren och definieras senare. Änd
 - `DELETE` på kund och `CUSTOMER DELETE` raderar personens rad i `contact_setting`. `DELETE` på kund ger 204 när
   personen bara har en kontaktinställning.
 - `MessageIT` ([§10]) får fallen `CONTACT_SETTING UPDATE` och `DELETE`.
+
+## C18 — SNI-kodernas sökväg
+
+**Bygg:**
+
+- Mappningen av sökvägen för varje SNI-kod i LegalEntitys svar, med valideringen i [§5.5]. Vilka fält som ger sökvägen
+  verifieras mot LegalEntitys specifikation när F3 är klar och dokumenteras i [§5.5].
+- `SniClassificationService`, som skriver noderna i `sni_classification` i samma transaktion som
+  `EnterpriseProfileService` skriver profilen, och som läser sökvägarna för ett svar med en rekursiv fråga ([§4.3],
+  [§5.5]). Tabellen finns redan från C2.
+- `SniCode` med `path[]` och enumen `SniLevel` i API-modellen, för företagets och arbetsställenas `sniCodes[]`
+  ([§6.1]).
+- WireMock-stubbarna för LegalEntity får sökvägar.
+
+**Acceptans:**
+
+- En kod 56300 med sökvägen `I`, `56`, `563`, `5630` och `56300` från LegalEntity returneras med fem noder i `path[]`,
+  i den ordningen, med `level` `SECTION`, `DIVISION`, `GROUP`, `CLASS` och `SUBCLASS` och med namnen från LegalEntity.
+  Det gäller både i `enterpriseProfile.sniCodes[]` och i arbetsställets `sniCodes[]`.
+- En sökväg som inte börjar med en bokstav, som hoppar över en nivå, där en nod inte börjar med förälderns kod eller
+  som inte slutar med koden själv sparas inte. En WARN skrivs, utan kod och namn. Koden sparas ändå på arbetsstället.
+  Det testas tabelldrivet, med ett fall per regel.
+- En kod som saknar nod returneras med `code`, `name` och en tom `path[]`.
+- En andra hämtning med samma sökvägar skriver ingen nod, och `modified` är oförändrad på alla noder. Ett ändrat namn
+  eller en ändrad förälder skrivs, och nästa läsning visar den nya sökvägen för alla kunder med koden, utan att deras
+  profiler har skrivits om.
+- En profil som hämtas först utan sökvägar och sedan med dem får noderna, fast profilen bara får ny `fetched`.
+- Samtidighetstest: två transaktioner skriver profiler för två företag med samma nya noder. Resultatet blir en rad per
+  nod och inget undantag.
+- Sökvägarna för ett svar läses med en fråga, både för kunden och för en sida arbetsställen. Det verifieras med
+  Hibernates statistik.
+- `openapi.yaml` beskriver de fem värdena för `level`, och att `path[]` är tom när koden saknas i trädet.
 
 [§3.1]: 03-meddelanden.md#31-krav-på-det-gemensamma-formatet
 [§3.2]: 03-meddelanden.md#32-topologi

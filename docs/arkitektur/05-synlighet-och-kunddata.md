@@ -358,6 +358,7 @@ företagsregister ([beslut 58]). Profilen syns för alla namespaces, som kundens
 | Verksamhetsbeskrivning                                                                                                                          | `businessDescription`                                                        | `business_description`                                                                  |
 | Registrerad e-post och telefon                                                                                                                  | `eMail`, `phoneNumber`                                                       | `email`, `phone_number`                                                                 |
 | Arbetsställen: CFAR-nummer, namn, om det är huvudarbetsstället, postadress och besöksadress, telefon, storleksklass för anställda och SNI-koder | `workplaces[]`                                                               | `enterprise_workplace`, `enterprise_workplace_address`, `enterprise_workplace_sni_code` |
+| SNI-kodernas sökväg, från avdelningen till koden (se nedan)                                                                                     | kommer med F3                                                                | `sni_classification`                                                                    |
 | Funktionärer, t.ex. styrelseledamöter, firmatecknare och revisorer: namn och funktion                                                           | `officers[]`                                                                 | kontaktpersoner i `contact` med `source = LEGAL_ENTITY` (se nedan)                      |
 
 Antalet anställda finns bara som storleksklass, t.ex. "200–499 anställda", eftersom SCB sekretesskyddar det exakta
@@ -368,6 +369,7 @@ koder räknas fram ur arbetsställenas. LegalEntity ger bara arbetsställenas ko
 arbetsställe och räknar fram företagets när profilen läses och indexeras:
 
 - En kod med tomt `sniId` sparas inte. LegalEntity ger ett sådant element först för varje arbetsställe.
+- Koden sparas utan punkter och blanksteg, så att `62.010` och `62010` blir samma kod.
 - Varje kod tas med en gång. Koderna från huvudarbetsstället (`mainWorkplace = true`) kommer först, i LegalEntitys
   ordning. Saknas huvudarbetsställe hoppas steget över, och finns flera tas de i LegalEntitys ordning.
 - Sedan kommer övriga koder, ordnade efter storleksklassen hos det största arbetsställe som har koden, störst först, och
@@ -376,6 +378,41 @@ arbetsställe och räknar fram företagets när profilen läses och indexeras:
 
 För SCA Forest Products, med tio arbetsställen, ger det 70100, 72190, 86212 och 91012, och branschen "Verksamheter som
 utövas av huvudkontor".
+
+**SNI-kodernas sökväg** ([beslut 72]). Varje SNI-kod visas med sin sökväg i SNI, från avdelningen till koden själv. SNI
+har fem nivåer:
+
+|    Nivå     |  `level`   |     Kod      |                     Exempel                     |
+|-------------|------------|--------------|-------------------------------------------------|
+| Avdelning   | `SECTION`  | en bokstav   | `I` "Hotell- och restaurangverksamhet"          |
+| Huvudgrupp  | `DIVISION` | två siffror  | `56` "Restaurang-, catering- och barverksamhet" |
+| Grupp       | `GROUP`    | tre siffror  | `563` "Barverksamhet"                           |
+| Undergrupp  | `CLASS`    | fyra siffror | `5630` "Barverksamhet"                          |
+| Detaljgrupp | `SUBCLASS` | fem siffror  | `56300` "Barverksamhet"                         |
+
+LegalEntity ger bara koden och dess namn. Sökvägen kräver en ändring i LegalEntity, F3 ([§13.1]): varje kod i
+`workplaces[].sniCodes[]` ska ha kod och namn för varje nivå, från avdelningen till koden själv, i ordning. Vilka fält
+som ger sökvägen verifieras när LegalEntity har ändrats.
+
+party-overview sparar sökvägen som ett träd i `sni_classification`, med en nod per kod ([§4.3]). Noden har kod, nivå,
+namn och förälderns kod. Arbetsställets kod pekar på sin nod med koden, utan FK, och företagets framräknade koder slås
+upp på samma sätt.
+
+- Sökvägen valideras innan den sparas. Första noden är en bokstav och den andra två siffror. Varje följande nod har en
+  siffra mer än föräldern och börjar med förälderns kod. Sista noden är koden själv. Nivån följer av platsen i
+  sökvägen.
+- En sökväg som bryter mot reglerna sparas inte, och en WARN utan värden skrivs. Koden sparas ändå på arbetsstället.
+- Noderna skrivs när profilen skrivs, i samma transaktion, också när bara `fetched` flyttas fram. De läses först, och
+  bara de noder som saknas eller har en annan nivå, förälder eller namn skrivs, med IODKU, sorterade på nivå och kod.
+  Föräldern skrivs då före barnet, och två transaktioner låser noderna i samma ordning.
+- Den senaste skrivningen vinner. En ändrad nod gäller direkt för alla kunder med koden, utan att deras profiler skrivs
+  om.
+- Noderna raderas aldrig. Trädet växer med klassifikationen, inte med antalet kunder.
+- Sökvägarna för ett svar läses med en fråga, en rekursiv CTE från kodernas noder uppåt ([§6.1]).
+- En kod som saknar nod får en tom sökväg. Det gäller alla koder tills LegalEntity ger sökvägen, och en kod vars
+  sökväg inte gick att validera. Eftersom alla kunder delar trädet får koden sin sökväg så fort något företag med
+  koden hämtas med en giltig sökväg.
+- Sökvägen indexeras inte ([§6.2]), så en ändrad nod kräver ingen omindexering.
 
 Arbetsställenas adresser mappas som företagets ([§7.2]). Arbetsställena läses sidvis med en egen endpoint, med
 huvudarbetsstället först ([§6.1]).
@@ -424,7 +461,8 @@ och en profil skrivs bara om den är nyare än den sparade. Anropen görs utanf�
 i omvänd ordning mot den de hämtade i. Då vinner den senaste hämtningen.
 
 `content_hash` är en SHA-256 av den mappade profilen med arbetsställen, förfaranden och funktionärer, där funktionärerna
-har partyId i stället för nummer. Är den oförändrad flyttas bara `fetched` fram, utan loggrad och utan omindexering.
+har partyId i stället för nummer. SNI-kodernas sökvägar ingår inte, eftersom de sparas i trädet och inte i profilen.
+Är den oförändrad flyttas bara `fetched` fram, utan loggrad och utan omindexering.
 Annars ersätts profilen som helhet, och en profil som skrivs av ändringskön eller den nattliga kontrollen loggas som
 `PROFILE_UPDATED` ([§8.1]).
 
@@ -539,4 +577,5 @@ eller ett företag vill bli kontaktad på. ContactSettings publicerar dem som `C
 [§3.4]: 03-meddelanden.md#34-versionsmatrisen
 [§5.6]: #56-kontaktinställningar
 [§3.7]: 03-meddelanden.md#37-felhantering
+[beslut 72]: 00-beslutslogg.md#beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
 

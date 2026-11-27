@@ -9,9 +9,10 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
 - **`SchemaVerificationTest`**: `schema.sql` stämmer med entiteterna, inklusive `on delete cascade`.
 - **Repository-tester** (`@DataJpaTest`, junit-profil): Att IODKU är idempotent, `FOR UPDATE`, synlighetsfrågorna,
   sortering och paginering, raderingen av "kunder som inte längre är parter", radering av teknisk logg med `LIMIT`,
-  urvalet till den nattliga skyddskontrollen och till rensningen av kunder utan innehåll. Ett samtidighetstest där två
-  trådar skapar samma kund (`NOT_SUPPORTED`, `TransactionTemplate` och latch) och resultatet blir en kund utan
-  undantag.
+  urvalet till den nattliga skyddskontrollen och till rensningen av kunder utan innehåll, och den rekursiva frågan för
+  SNI-kodernas sökvägar ([§5.5]). Ett samtidighetstest där två trådar skapar samma kund (`NOT_SUPPORTED`,
+  `TransactionTemplate` och latch) och resultatet blir en kund utan undantag, och ett där två trådar skriver samma nya
+  SNI-noder och resultatet blir en rad per nod utan undantag.
 - **Servicetester** (Mockito): Skyddsnivån: tabelldrivet över alla kombinationer av de tre källorna, Citizens flaggor
   och `UNKNOWN` ([§5.4]), att namn, adresser, kontaktuppgifter och profil sparas och står kvar när kunden blir skyddad,
   att en kontaktpersons nivå räknas fram från källans `protection`, kunden, `registry_person` och den fasta nivån
@@ -22,7 +23,8 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
   när den har noteringar eller kontaktpersoner från REST, att en automatisk radering inte tar personens kontaktpersoner
   från REST hos andra kunder, att den nattliga kontrollen raderar en kund som inte har något kvar ([§3.6]),
   legalId-mappning och 404, valideringsfel, notering och kontaktperson som skapar kund
-  (PRIVATE, ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall.
+  (PRIVATE, ENTERPRISE, Citizen tom, okänd part), synlighetsregler och 404-fall. Valideringen av SNI-kodernas
+  sökvägar, tabelldrivet med ett fall per regel, och att bara nya eller ändrade noder skrivs ([§5.5]).
 - **Integrationstester (enhet)**: `CitizenIntegration`, `LegalEntityIntegration`: mappning,
   `Optional.empty` vid 404, att undantag inte sväljs och att legalId inte finns i några meddelanden. `MessageListener`:
   källan slås upp från kön.
@@ -37,8 +39,8 @@ felfall testas på ett ställe. JaCoCo-gränsen i dept44-service-parent gäller.
 - **`CascadeIT`**: `DELETE FROM customer` med `JdbcTemplate` raderar `customer_address`, `engagement`,
   `engagement_history`, `contact`, `contact_channel`, `manual_contact_person`, `manual_contact_person_channel`,
   `note`, `note_history`, `asserted_protection` och profilens tabeller (`enterprise_*`). `technical_log`,
-  `source_object`, `search_index_queue`, `registry_person`, `contact_setting` och personens kontaktrader hos andra
-  kunder (`party_id`) lämnas orörda.
+  `source_object`, `search_index_queue`, `registry_person`, `contact_setting`, `sni_classification` och personens
+  kontaktrader hos andra kunder (`party_id`) lämnas orörda.
 - **`SchemaParityIT`**: Jämför index (namn, kolumner, unikhet) och FK (namn, `DELETE_RULE`) i `information_schema`
   mellan den Flyway-migrerade IT-databasen och ett schema som skapats från `schema.sql`.
 - **`OpenApiSpecificationIT`**: `openapi.yaml` stämmer med koden.

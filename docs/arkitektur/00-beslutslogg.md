@@ -702,7 +702,8 @@ kontaktperson behöver bara en adress för att gå att nå, och färre adresser 
 Uppgifterna om ett företag från LegalEntity, som storleksklass för anställda och omsättning, juridisk form, pågående
 konkurs och arbetsställen, lagras i `enterprise_profile`, en rad per företagskund, med typade kolumner. Arbetsställena,
 med sina adresser och SNI-koder, och de pågående förfarandena ligger i egna tabeller under profilen ([§5.5]).
-Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med huvudarbetsställets först.
+Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med huvudarbetsställets först. Kodernas sökväg i
+SNI lagras i ett eget träd ([beslut 72]).
 
 **Valdes bort:**
 
@@ -710,7 +711,6 @@ Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med
 - En JSON-kolumn eller en tabell med nyckel och värde.
 - Att spara företagets framräknade SNI-koder.
 - Arbetsställets adresser som kolumner på arbetsställets rad.
-- En egen tabell med SCB:s SNI-klassifikation.
 - Firmateckningen (`fullSignatureDescription`).
 - Organisationsnumret.
 - Ett tak för antalet arbetsställen.
@@ -719,12 +719,11 @@ Företagets SNI-koder räknas fram ur arbetsställenas när profilen läses, med
 i en egen takt och ersätts som en helhet. Med typade kolumner ser schemakontrollen fälten, och SNI-koderna går att fråga
 på. SCB:s företagsnivå är aggregerad från arbetsställena, men LegalEntity ger bara arbetsställenas koder, utan andelar.
 Företagets koder följer av arbetsställenas, så att spara dem vore att spara samma uppgift två gånger. Arbetsställets
-adresser har samma form som kundens och kontaktpersonens. LegalEntity ger kodernas namn, så ingen klassifikation behöver
-underhållas, inte heller när SNI 2025 ersatte SNI 2007. Firmateckningen är fritext med namn och personnummer, och
-funktionärerna sparas i stället som kontaktpersoner ([beslut 70]). Kunden
-identifieras med partyId:t, och ett organisationsnummer mappas alltid till det ([beslut 54]). Ett tak skulle ge en lista
-som inte stämmer med antalet arbetsställen, utan att det syns. Ett företag med hundratals arbetsställen skrivs om bara
-när profilen har ändrats, och då i JDBC-batchar ([§13.3]).
+adresser har samma form som kundens och kontaktpersonens. Firmateckningen är fritext med namn och personnummer, och
+funktionärerna sparas i stället som kontaktpersoner ([beslut 70]). Kunden identifieras med partyId:t, och ett
+organisationsnummer mappas alltid till det ([beslut 54]). Ett tak skulle ge en lista som inte stämmer med antalet
+arbetsställen, utan att det syns. Ett företag med hundratals arbetsställen skrivs om bara när profilen har ändrats, och
+då i JDBC-batchar ([§13.3]).
 
 ## Beslut 59: Ändringskön uppdaterar företagsprofilen och kontrollerar personers skydd
 
@@ -913,6 +912,27 @@ ContactSettings. Den som har en inställning med partyId har en koppling till ko
 innan personen är kund. Då behövs varken ett anrop när kunden skapas eller en nattlig hämtning, och inställningen syns
 direkt när personen blir kund. En inställning är inget engagemang och gör ingen till kund.
 
+## Beslut 72: SNI-kodernas sökväg kommer från LegalEntity och lagras som ett träd
+
+Varje SNI-kod visas med sin sökväg i SNI, från avdelningen till koden själv, med alla fem nivåerna ([§5.5]). LegalEntity
+ger sökvägen (F3, [§13.1]). party-overview sparar den som ett träd i `sni_classification`, med en nod per kod och en
+pekare till föräldern ([§4.3]). Arbetsställets kod pekar på sin nod med koden, utan FK, och sökvägen slås upp när
+profilen läses.
+
+**Valdes bort:**
+
+- SCB:s struktur för SNI, inläst i party-overview med Flyway.
+- Sökvägen sparad på varje kodrad under arbetsstället.
+- En FK från arbetsställets kod till trädet.
+- Bara avdelning, huvudgrupp och koden.
+
+**Skäl:** LegalEntity ger redan kodernas namn. Ger den också sökvägen behöver ingen klassifikation underhållas i
+party-overview, inte heller när SNI byter version. Sökvägen hör till koden och inte till arbetsstället. I ett träd
+lagras den en gång, en ändrad nod gäller direkt för alla kunder, och koderna går att gruppera i SQL på varje nivå. På
+varje kodrad skulle samma sökväg upprepas för tusentals arbetsställen, och en ändring skulle bara nå de profiler som
+skrivs om. Med en FK skulle varje kod behöva en nod innan dess sökväg är känd, och en kod som inte följer SNI:s form
+skulle inte gå att spara. Med alla fem nivåerna väljer konsumenten vilka den visar.
+
 [§4.2]: 04-datamodell.md#42-gemensamt-för-alla-tabeller
 [§5.3]: 05-synlighet-och-kunddata.md#53-kunder-kontaktpersoner-och-kontaktuppgifter
 [§5.4]: 05-synlighet-och-kunddata.md#54-skyddad-identitet
@@ -968,4 +988,5 @@ direkt när personen blir kund. En inställning är inget engagemang och gör in
 [§11.6]: 11-publicerare.md#116-contactsettings-contact_setting
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 [beslut 71]: #beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
+[beslut 72]: #beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
 

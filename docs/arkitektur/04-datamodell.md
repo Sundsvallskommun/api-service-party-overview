@@ -17,6 +17,8 @@ erDiagram
     enterprise_profile ||--o{ enterprise_workplace : "har"
     enterprise_workplace ||--o{ enterprise_workplace_address : "har"
     enterprise_workplace ||--o{ enterprise_workplace_sni_code : "har"
+    enterprise_workplace_sni_code }o..o| sni_classification : "slås upp i"
+    sni_classification |o--o{ sni_classification : "är förälder till"
     enterprise_profile ||--o{ enterprise_proceeding : "har"
     engagement ||--o{ engagement_history : "har"
     engagement ||--o{ contact : "härleds från"
@@ -50,16 +52,19 @@ erDiagram
 ```
 
 `source_object`, `technical_log`, `party_role`, `registry_person`, `contact_setting`, `search_index_queue` och
-`shedlock` står fristående, utan FK.
+`shedlock` står fristående, utan FK. `sni_classification` har bara en FK till sig själv, och arbetsställenas SNI-koder
+slås upp i den med koden, utan FK ([beslut 72]).
 
 ## 4.2 Gemensamt för alla tabeller
 
 - `id varchar(36)`, UUID från `@UuidGenerator` ([beslut 63]). Undantagen är `contact_channel`,
   `manual_contact_person_channel` och `contact_setting_channel`, som har sammansatta primärnycklar,
-  `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, och `shedlock`.
+  `search_index_queue` och `enterprise_profile`, som nycklas på `customer_id`, `sni_classification`, som nycklas på
+  SNI-koden, och `shedlock`.
 - `municipality_id varchar(8)` finns på `customer` och på de tabeller som läses utan att gå via en kund: `engagement`
   (uppslag per källobjekt, [§3.5]), `source_object`, `technical_log`, `party_role`, `registry_person`,
   `contact_setting` och `search_index_queue`. Övriga tabeller nås via sin förälder och har ingen egen kommunkolumn.
+  `sni_classification` gäller alla kommuner och har ingen kommunkolumn.
   `contact` och `manual_contact_person` nås också på `party_id` när en persons kontaktrader raderas, och då avgörs
   kommunen via `customer_id` ([§5.3]).
 - `namespace varchar(32)` finns på `engagement`, `contact`, `manual_contact_person` och `note` ([§5.1]).
@@ -201,17 +206,31 @@ Index: `idx_enterprise_workplace_address_workplace_id`.
 
 **`enterprise_workplace_sni_code`**: arbetsställets SNI-koder, i LegalEntitys ordning ([§5.5]).
 
-|     Kolumn     |     Typ      | Null |                         Anmärkning                          |
-|----------------|--------------|------|-------------------------------------------------------------|
-| `id`           | varchar(36)  | nej  | PK                                                          |
-| `workplace_id` | varchar(36)  | nej  | FK `fk_enterprise_workplace_sni_code_workplace_id`, cascade |
-| `ordinal`      | int          | nej  | 1 är arbetsställets första kod                              |
-| `sni_code`     | varchar(16)  | nej  |                                                             |
-| `name`         | varchar(255) | ja   |                                                             |
+|     Kolumn     |     Typ      | Null |                                Anmärkning                                |
+|----------------|--------------|------|--------------------------------------------------------------------------|
+| `id`           | varchar(36)  | nej  | PK                                                                       |
+| `workplace_id` | varchar(36)  | nej  | FK `fk_enterprise_workplace_sni_code_workplace_id`, cascade              |
+| `ordinal`      | int          | nej  | 1 är arbetsställets första kod                                           |
+| `sni_code`     | varchar(16)  | nej  | Utan punkter och blanksteg. Pekar på `sni_classification.code`, utan FK. |
+| `name`         | varchar(255) | ja   |                                                                          |
 
-Index: `uq_enterprise_workplace_sni_code_workplace_id_ordinal (workplace_id, ordinal)`.
+Index: `uq_enterprise_workplace_sni_code_workplace_id_ordinal (workplace_id, ordinal)` och
+`idx_enterprise_workplace_sni_code_sni_code`.
 
 Företagets SNI-koder lagras inte. De räknas fram ur arbetsställenas när profilen läses och indexeras ([§5.5]).
+
+**`sni_classification`**: SNI-trädet, med en nod per kod från sökvägarna som LegalEntity ger ([§5.5], [beslut 72]).
+Noderna hör inte till någon kund och raderas aldrig.
+
+|        Kolumn         |     Typ      |  Null  |                                                 Anmärkning                                                 |
+|-----------------------|--------------|--------|------------------------------------------------------------------------------------------------------------|
+| `code`                | varchar(16)  | nej    | PK. Koden utan punkter och blanksteg, t.ex. `I`, `56`, `563`, `5630` och `56300`                           |
+| `level`               | varchar(16)  | nej    | `SECTION`, `DIVISION`, `GROUP`, `CLASS` eller `SUBCLASS`                                                   |
+| `parent_code`         | varchar(16)  | ja     | FK `fk_sni_classification_parent_code` till `sni_classification`, utan kaskad. Null bara för en avdelning. |
+| `name`                | varchar(255) | ja     |                                                                                                            |
+| `created`, `modified` | datetime(6)  | nej/ja |                                                                                                            |
+
+Index: `idx_sni_classification_parent_code`.
 
 **`enterprise_proceeding`**: pågående likvidation, konkurs eller rekonstruktion ([§5.5]).
 
@@ -501,4 +520,5 @@ rader med var sin fråga, med likhet på `priority`, så att indexet ger `queued
 [beslut 65]: 00-beslutslogg.md#beslut-65-verksamheter-lägger-till-egna-kontaktpersoner-via-rest
 [§5.6]: 05-synlighet-och-kunddata.md#56-kontaktinställningar
 [beslut 71]: 00-beslutslogg.md#beslut-71-kontaktinställningarna-sparas-för-alla-med-partyid
+[beslut 72]: 00-beslutslogg.md#beslut-72-sni-kodernas-sökväg-kommer-från-legalentity-och-lagras-som-ett-träd
 
